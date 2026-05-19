@@ -21,7 +21,7 @@ pushd "%REPO%"
 REM Store path without quotes; quote at use sites.
 set GH=C:\Program Files\GitHub CLI\gh.exe
 
-if not exist ""%GH%"" (
+if not exist "%GH%" (
     echo [ERROR] gh.exe not found at "%GH%"
     echo         winget install --id GitHub.cli
     goto :fail
