@@ -23,7 +23,7 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 
 ## Where things live
 
-| | Path |
+| Item | Path |
 |---|---|
 | Plugin VST3 | `C:\Program Files\Common Files\VST3\Remember.vst3\` |
 | App | `C:\Program Files\Remember\Remember.exe` |

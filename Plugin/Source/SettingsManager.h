@@ -13,7 +13,7 @@ public:
     bool       isConfigured() const;
 
     // Recording parameters — read live from config.json on every call (cheap;
-    // only invoked at plugin prepare / capture start, never on the audio loop).
+    // only invoked at plugin prepare time, never on the audio loop).
     // Defaults match the previously hard-coded constants so existing users see
     // no behaviour change until they explicitly opt in.
     int  readRecordSeconds() const;   // default 60

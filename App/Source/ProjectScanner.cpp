@@ -497,12 +497,12 @@ int ProjectScanner::getRecordSeconds()
 {
     auto j = loadConfig();
     if (! j.isObject()) return 60;
-    return juce::jlimit (5, 300, (int) j.getProperty ("recordSeconds", 60));
+    return juce::jlimit (15, 120, (int) j.getProperty ("recordSeconds", 60));
 }
 
 void ProjectScanner::setRecordSeconds (int s)
 {
-    saveConfigField ("recordSeconds", juce::jlimit (5, 300, s));
+    saveConfigField ("recordSeconds", juce::jlimit (15, 120, s));
 }
 
 int ProjectScanner::getOggQuality()

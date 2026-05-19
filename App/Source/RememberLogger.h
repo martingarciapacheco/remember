@@ -1,12 +1,13 @@
 #pragma once
 #include <JuceHeader.h>
+#include <mutex>
 
 // Singleton-style helper that wires a juce::FileLogger as the global logger
 // the first time it's used. Logs go to:
 //
 //   %APPDATA%/Remember/logs/<name>.log
 //
-// 1 MB cap (FileLogger rolls the file once it exceeds that).
+// 1 MB cap — FileLogger truncates (starts fresh) when the file exceeds that size.
 namespace RememberLogger
 {
     inline void ensureInitialised (const juce::String& name,

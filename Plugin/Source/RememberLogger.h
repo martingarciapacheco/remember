@@ -1,12 +1,13 @@
 #pragma once
 #include <JuceHeader.h>
+#include <mutex>
 
 // Singleton-style helper that wires a juce::FileLogger as the global logger
 // the first time it's used. Logs go to:
 //
 //   %APPDATA%/Remember/logs/<name>.log
 //
-// 1 MB cap (FileLogger rolls the file once it exceeds that).
+// 1 MB cap — FileLogger truncates (starts fresh) when the file exceeds that size.
 //
 // The plugin can be instantiated many times in the same DAW session — we
 // only want ONE logger, so initialisation is std::call_once'd. The logger
@@ -26,7 +27,7 @@ namespace RememberLogger
             logsFolder.createDirectory();
 
             auto logFile = logsFolder.getChildFile (name + ".log");
-            // 1 MB cap; FileLogger truncates when exceeded.
+            // 1 MB cap; FileLogger truncates the file when exceeded.
             auto* logger = new juce::FileLogger (logFile, headerLine, 1024 * 1024);
             juce::Logger::setCurrentLogger (logger);
         });

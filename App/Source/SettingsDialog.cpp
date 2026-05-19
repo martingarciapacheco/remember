@@ -109,12 +109,15 @@ SettingsDialog::SettingsDialog (bool firstRunFlag) : firstRun (firstRunFlag)
     addAndMakeVisible (sizeEstimate);
 
     // Duration presets
+    durationCombo.addItem ("15 s",  15);
     durationCombo.addItem ("30 s",  30);
     durationCombo.addItem ("60 s",  60);
     durationCombo.addItem ("90 s",  90);
     durationCombo.addItem ("120 s", 120);
-    int initialDur = (recordSeconds == 30 || recordSeconds == 90 || recordSeconds == 120)
+    int initialDur = (recordSeconds == 15 || recordSeconds == 30
+                      || recordSeconds == 90 || recordSeconds == 120)
                         ? recordSeconds : 60;
+    recordSeconds = initialDur;   // keep state in sync if config had an unsupported value
     durationCombo.setSelectedId (initialDur, juce::dontSendNotification);
     durationCombo.onChange = [this]
     {
@@ -131,6 +134,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag) : firstRun (firstRunFlag)
     qualityCombo.addItem ("High" + kbpsStr (6), 6 + 1);
     qualityCombo.addItem ("Max"  + kbpsStr (8), 8 + 1);
     int initialQ = (oggQuality == 2 || oggQuality == 6 || oggQuality == 8) ? oggQuality : 4;
+    oggQuality = initialQ;   // keep state in sync if config had an unsupported value
     qualityCombo.setSelectedId (initialQ + 1, juce::dontSendNotification);
     qualityCombo.onChange = [this]
     {
