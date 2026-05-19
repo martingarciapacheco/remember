@@ -42,6 +42,7 @@ public:
     juce::String getDetectedKey()    const;
     double       getDetectedBpm()    const noexcept { return capturedBpm.load(); }
     juce::String getLastSavedTime()  const;
+    int          getTotalSeconds()   const noexcept { return (int) currentRecordSeconds; }
 
 private:
     void run() override;

@@ -1,19 +1,31 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#include "RememberLogger.h"
+#include "BuildInfo.h"
 
 class RememberApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName()    override { return "Remember"; }
-    const juce::String getApplicationVersion() override { return "1.0.0"; }
+    const juce::String getApplicationVersion() override { return REMEMBER_VERSION; }
     bool               moreThanOneInstanceAllowed() override { return false; }
 
     void initialise (const juce::String&) override
     {
+        RememberLogger::ensureInitialised ("app",
+            juce::String ("App ") + REMEMBER_VERSION_LINE);
+        juce::Logger::writeToLog ("App started.");
+
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
     }
 
-    void shutdown() override { mainWindow.reset(); }
+    void shutdown() override
+    {
+        juce::Logger::writeToLog ("App shutting down.");
+        mainWindow.reset();
+        // The FileLogger leak is intentional — letting JUCE tear it down here
+        // would close the file before any late destructor logging.
+    }
 
     void systemRequestedQuit() override { quit(); }
 

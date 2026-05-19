@@ -23,6 +23,7 @@ private:
     juce::TextEditor  nameEditor;
     juce::Label       bpmKeyLabel;   // "128.0 BPM  •  C major"
     juce::Label       statusLabel;
+    juce::Label       versionLabel;  // "v1.0.0-beta1 a1b2c3d" in the bottom-right
     juce::TextButton  settingsButton { "..." };
 
     std::unique_ptr<juce::FileChooser> fileChooser;

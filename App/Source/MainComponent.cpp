@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "ProjectScanner.h"
 #include "SettingsDialog.h"
+#include "BuildInfo.h"
 
 // Pal:: colours are defined in ProjectListComponent.h
 
@@ -126,6 +127,12 @@ void MainComponent::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::FontOptions{}.withHeight (17.0f).withStyle ("Bold")));
     g.setColour (juce::Colour (Pal::Accent));
     g.drawText ("REMEMBER", 16, 0, 160, 44, juce::Justification::centredLeft);
+
+    // Build version (next to logo, small + muted)
+    g.setFont (juce::Font (juce::FontOptions{}.withHeight (10.5f)));
+    g.setColour (juce::Colour (Pal::Subtext).withAlpha (0.7f));
+    g.drawText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
+                140, 0, 200, 44, juce::Justification::centredLeft);
 
     // Separator between list and player
     g.setColour (juce::Colour (Pal::Border));

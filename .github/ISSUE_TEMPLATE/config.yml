@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Beta notes & install guide
+    url: https://github.com/martingarciapacheco/remember/blob/main/BETA_NOTES.md
+    about: Read this first — installation, known limitations, where logs live.

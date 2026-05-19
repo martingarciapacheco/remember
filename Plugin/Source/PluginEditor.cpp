@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "SettingsManager.h"
+#include "BuildInfo.h"
 
 namespace
 {
@@ -43,6 +44,16 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (kSubtext));
     settingsButton.onClick = [this] { showSettingsPanel(); };
     addAndMakeVisible (settingsButton);
+
+    // ── Version footer ────────────────────────────────────────────────────────
+    versionLabel.setText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
+                          juce::dontSendNotification);
+    versionLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (9.5f)));
+    versionLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext).withAlpha (0.6f));
+    versionLabel.setJustificationType (juce::Justification::centredRight);
+    versionLabel.setInterceptsMouseClicks (false, false);
+    versionLabel.setTooltip (REMEMBER_VERSION_LINE);
+    addAndMakeVisible (versionLabel);
 
     if (! SettingsManager::getInstance().isConfigured())
         juce::MessageManager::callAsync ([this] { showSettingsPanel(); });
@@ -118,8 +129,9 @@ void RememberEditor::refreshFromEngine()
         {
             recordingNow = true;
             progress     = eng.getProgress();
-            int secs     = (int) (progress * 60.0f);
-            statusText   = "Recording  " + juce::String (secs) + "s / 60s";
+            int total    = eng.getTotalSeconds();
+            int secs     = (int) (progress * (float) total);
+            statusText   = "Recording  " + juce::String (secs) + "s / " + juce::String (total) + "s";
             statusColour = kAccent;
             break;
         }
@@ -226,7 +238,10 @@ void RememberEditor::resized()
     bpmKeyLabel.setBounds (14, 98, getWidth() - 28, 26);
 
     // Status — below progress bar
-    statusLabel.setBounds (14, 150, getWidth() - 28, 32);
+    statusLabel.setBounds (14, 150, getWidth() - 28, 24);
+
+    // Version footer — bottom-right corner, very small
+    versionLabel.setBounds (getWidth() - 158, getHeight() - 14, 154, 12);
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

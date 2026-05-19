@@ -143,6 +143,9 @@ void RecordingEngine::startCapture (double bpm)
     samplesWritten.store (0);
     capturedBpm.store (bpm);
     state.store (State::Recording);
+    // Cheap: writeToLog uses a CriticalSection (not blocking enough to matter
+    // for a capture-start event, which happens at most every minute).
+    juce::Logger::writeToLog ("Capture started (host bpm=" + juce::String (bpm, 1) + ")");
 }
 
 // ── Windows project-path detection ───────────────────────────────────────────
@@ -274,7 +277,13 @@ void RecordingEngine::encodeAndSave()
     auto folder = outputFolder;
     auto name   = projectName.isEmpty() ? "Unnamed Project" : projectName;
 
-    if (! folder.isDirectory()) { state.store (State::Error); return; }
+    if (! folder.isDirectory())
+    {
+        juce::Logger::writeToLog ("encodeAndSave: previews folder not configured or missing: "
+                                  + folder.getFullPathName());
+        state.store (State::Error);
+        return;
+    }
 
     auto projectFolder = folder.getChildFile (sanitizeFolderName (name));
     projectFolder.createDirectory();
@@ -297,7 +306,14 @@ void RecordingEngine::encodeAndSave()
                              .withQualityOptionIndex (currentOggQuality);
 
     auto writer = format.createWriterFor (outStream, writerOptions);
-    if (writer == nullptr) { state.store (State::Error); return; }
+    if (writer == nullptr)
+    {
+        juce::Logger::writeToLog ("encodeAndSave: OggVorbisAudioFormat::createWriterFor returned null"
+                                  " (sr=" + juce::String (currentSampleRate, 0)
+                                  + ", q=" + juce::String (currentOggQuality) + ")");
+        state.store (State::Error);
+        return;
+    }
 
     int samplesRecorded = juce::jmin (samplesWritten.load(), samplesToCapture);
 
@@ -345,6 +361,12 @@ void RecordingEngine::encodeAndSave()
     }
 
     state.store (State::Done);
+
+    juce::Logger::writeToLog ("Saved preview: \"" + projectFolder.getFileName()
+        + "\"  key=" + key
+        + "  bpm=" + juce::String (capturedBpm.load(), 1)
+        + "  samples=" + juce::String (samplesRecorded)
+        + (currentRecordMono ? "  (mono)" : "  (stereo)"));
 }
 
 void RecordingEngine::saveMetadata (const juce::File& projectFolder, const juce::String& key)

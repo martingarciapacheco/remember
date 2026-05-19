@@ -1,12 +1,20 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "SettingsManager.h"
+#include "RememberLogger.h"
+#include "BuildInfo.h"
 
 RememberProcessor::RememberProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
+    RememberLogger::ensureInitialised ("plugin",
+        juce::String ("Plugin ") + REMEMBER_VERSION_LINE);
+
+    juce::Logger::writeToLog (juce::String ("Processor created. Host: ")
+        + juce::PluginHostType().getHostDescription());
+
     engine.setOutputFolder (SettingsManager::getInstance().getPreviewsFolder());
 }
 

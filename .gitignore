@@ -2,6 +2,7 @@
 build/
 out/
 Builds/
+dist/
 **/CMakeCache.txt
 **/CMakeFiles/
 **/cmake_install.cmake
