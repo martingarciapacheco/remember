@@ -1,7 +1,10 @@
 #pragma once
 #include <JuceHeader.h>
 
-// Captures 60 seconds of audio from the master bus and encodes it to OGG.
+// Captures N seconds of audio from the master bus and encodes it to OGG.
+// N, OGG quality and mono/stereo are configurable from the browser app and
+// snapshotted into members at every prepare() call (so the audio thread
+// never touches the config file).
 // Trigger: DAW transport starts playing from near position 0.
 // Encoding + key detection run on a background thread — audio callback never blocked.
 class RecordingEngine : public juce::Thread
@@ -48,9 +51,16 @@ private:
     juce::String detectProjectFilePath() const;
     static juce::String sanitizeFolderName (const juce::String& name);
 
-    static constexpr float kRecordSeconds    = 60.0f;
     static constexpr float kTriggerThreshold = 2.0f;
-    static constexpr int   kOggQualityIndex  = 4;       // 128 kbps
+
+    // Defaults if config is missing or invalid. Live values come from
+    // SettingsManager and are snapshotted in prepare().
+    static constexpr float kDefaultRecordSeconds = 60.0f;
+    static constexpr int   kDefaultOggQuality    = 4;       // ~128 kbps
+
+    float currentRecordSeconds { kDefaultRecordSeconds };
+    int   currentOggQuality    { kDefaultOggQuality };
+    bool  currentRecordMono    { false };
 
     std::atomic<State> state { State::Idle };
     std::atomic<int>   samplesWritten { 0 };

@@ -62,3 +62,35 @@ bool SettingsManager::isConfigured() const
 {
     return previewsFolder != juce::File{} && previewsFolder.isDirectory();
 }
+
+// ── Live-read accessors for new recording parameters ─────────────────────────
+
+static juce::var readJson (const juce::File& f)
+{
+    if (! f.existsAsFile()) return {};
+    return juce::JSON::parse (f.loadFileAsString());
+}
+
+int SettingsManager::readRecordSeconds() const
+{
+    auto j = readJson (configFile);
+    if (! j.isObject()) return 60;
+    int v = (int) j.getProperty ("recordSeconds", 60);
+    // Clamp to the preset range so a hand-edited config can't blow up the buffer
+    return juce::jlimit (5, 300, v);
+}
+
+int SettingsManager::readOggQuality() const
+{
+    auto j = readJson (configFile);
+    if (! j.isObject()) return 4;
+    int v = (int) j.getProperty ("oggQuality", 4);
+    return juce::jlimit (0, 10, v);
+}
+
+bool SettingsManager::readRecordMono() const
+{
+    auto j = readJson (configFile);
+    if (! j.isObject()) return false;
+    return (bool) j.getProperty ("recordMono", false);
+}

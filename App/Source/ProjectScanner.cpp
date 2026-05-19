@@ -490,3 +490,41 @@ void ProjectScanner::setSidebarSort (SidebarSort s)
     }
     saveConfigField ("sidebarSort", juce::String (str));
 }
+
+// ── Plugin recording parameters ─────────────────────────────────────────────
+
+int ProjectScanner::getRecordSeconds()
+{
+    auto j = loadConfig();
+    if (! j.isObject()) return 60;
+    return juce::jlimit (5, 300, (int) j.getProperty ("recordSeconds", 60));
+}
+
+void ProjectScanner::setRecordSeconds (int s)
+{
+    saveConfigField ("recordSeconds", juce::jlimit (5, 300, s));
+}
+
+int ProjectScanner::getOggQuality()
+{
+    auto j = loadConfig();
+    if (! j.isObject()) return 4;
+    return juce::jlimit (0, 10, (int) j.getProperty ("oggQuality", 4));
+}
+
+void ProjectScanner::setOggQuality (int q)
+{
+    saveConfigField ("oggQuality", juce::jlimit (0, 10, q));
+}
+
+bool ProjectScanner::getRecordMono()
+{
+    auto j = loadConfig();
+    if (! j.isObject()) return false;
+    return (bool) j.getProperty ("recordMono", false);
+}
+
+void ProjectScanner::setRecordMono (bool m)
+{
+    saveConfigField ("recordMono", m);
+}

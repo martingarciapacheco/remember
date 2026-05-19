@@ -27,6 +27,7 @@ private:
     void commit();
     void refreshLabels();
     void rebuildFoldersList();
+    void updateSizeEstimate();
 
     bool firstRun { false };
 
@@ -35,6 +36,16 @@ private:
     juce::Label  previewsHint    { {}, "Where the plugin saves recordings" };
     juce::Label  previewsPath;
     juce::TextButton previewsBrowse { "Change..." };
+
+    // Recording settings block
+    juce::Label       recordCaption { {}, "Recording" };
+    juce::Label       recordHint    { {}, "Applies on the next time the plugin is loaded in your DAW" };
+    juce::Label       durationLbl   { {}, "Duration" };
+    juce::Label       qualityLbl    { {}, "Quality" };
+    juce::ComboBox    durationCombo;
+    juce::ComboBox    qualityCombo;
+    juce::ToggleButton monoToggle   { "Record in mono (smaller file)" };
+    juce::Label       sizeEstimate;
 
     juce::Label  projectsCaption { {}, "DAW project search folders" };
     juce::Label  projectsHint    { {}, "Add every folder where you keep your DAW project files" };
@@ -50,6 +61,11 @@ private:
 
     juce::File              previewsFolder;
     juce::Array<juce::File> projectsFolders;
+
+    // Local copies of the recording settings; persisted on commit()
+    int  recordSeconds { 60 };
+    int  oggQuality    { 4 };
+    bool recordMono    { false };
 
     std::unique_ptr<juce::FileChooser> chooser;
 

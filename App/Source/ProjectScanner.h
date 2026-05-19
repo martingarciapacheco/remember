@@ -83,4 +83,14 @@ public:
     enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc };
     static SidebarSort getSidebarSort();
     static void        setSidebarSort (SidebarSort s);
+
+    // ── Plugin recording parameters (live in config.json, read by the plugin
+    //    at prepareToPlay time). Defaults preserve the previous hard-coded
+    //    values so existing users don't see behaviour changes.
+    static int  getRecordSeconds();        // default 60
+    static void setRecordSeconds (int s);
+    static int  getOggQuality();           // default 4
+    static void setOggQuality (int q);
+    static bool getRecordMono();           // default false (stereo)
+    static void setRecordMono (bool m);
 };

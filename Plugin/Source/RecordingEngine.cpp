@@ -53,8 +53,16 @@ RecordingEngine::~RecordingEngine()
 void RecordingEngine::prepare (double sampleRate, int /*maxBlockSize*/)
 {
     currentSampleRate = sampleRate;
-    samplesToCapture  = (int) (sampleRate * kRecordSeconds);
-    // Allocate once; avoidReallocating=true keeps memory across prepareToPlay calls
+
+    // Snapshot current settings — never touched again on the audio thread.
+    auto& s = SettingsManager::getInstance();
+    currentRecordSeconds = (float) s.readRecordSeconds();
+    currentOggQuality    = s.readOggQuality();
+    currentRecordMono    = s.readRecordMono();
+
+    samplesToCapture = (int) (sampleRate * currentRecordSeconds);
+    // captureBuffer is ALWAYS stereo so key/BPM detection still sees the full
+    // signal; mono downmix is applied later, at encode time.
     if (captureBuffer.getNumSamples() != samplesToCapture
         || captureBuffer.getNumChannels() != 2)
         captureBuffer.setSize (2, samplesToCapture, false, false, true);
@@ -281,17 +289,33 @@ void RecordingEngine::encodeAndSave()
 
     std::unique_ptr<juce::OutputStream> outStream = std::move (fileStream);
 
+    const int writeChannels = currentRecordMono ? 1 : 2;
     auto writerOptions = juce::AudioFormatWriterOptions{}
                              .withSampleRate (currentSampleRate)
-                             .withNumChannels (captureBuffer.getNumChannels())
+                             .withNumChannels (writeChannels)
                              .withBitsPerSample (16)
-                             .withQualityOptionIndex (kOggQualityIndex);
+                             .withQualityOptionIndex (currentOggQuality);
 
     auto writer = format.createWriterFor (outStream, writerOptions);
     if (writer == nullptr) { state.store (State::Error); return; }
 
     int samplesRecorded = juce::jmin (samplesWritten.load(), samplesToCapture);
-    writer->writeFromAudioSampleBuffer (captureBuffer, 0, samplesRecorded);
+
+    if (currentRecordMono)
+    {
+        // Downmix L+R → mono on the encode thread. Cheap (< 1 ms for 60 s of 44.1k).
+        juce::AudioBuffer<float> monoBuffer (1, samplesRecorded);
+        auto* dst = monoBuffer.getWritePointer (0);
+        auto* l   = captureBuffer.getReadPointer (0);
+        auto* r   = captureBuffer.getReadPointer (1);
+        for (int i = 0; i < samplesRecorded; ++i)
+            dst[i] = (l[i] + r[i]) * 0.5f;
+        writer->writeFromAudioSampleBuffer (monoBuffer, 0, samplesRecorded);
+    }
+    else
+    {
+        writer->writeFromAudioSampleBuffer (captureBuffer, 0, samplesRecorded);
+    }
     writer.reset();
 
     // Build a "view" buffer containing only the samples actually recorded —
@@ -364,7 +388,7 @@ void RecordingEngine::saveMetadata (const juce::File& projectFolder, const juce:
     obj->setProperty ("projectPath",     finalPath);
     obj->setProperty ("daw",             finalDaw);
     obj->setProperty ("recordedAt",      juce::Time::getCurrentTime().toISO8601 (true));
-    obj->setProperty ("durationSeconds", (int) kRecordSeconds);
+    obj->setProperty ("durationSeconds", (int) currentRecordSeconds);
     obj->setProperty ("bpm",             capturedBpm.load());
     obj->setProperty ("key",             key);
     obj->setProperty ("favorite",        finalFav);
