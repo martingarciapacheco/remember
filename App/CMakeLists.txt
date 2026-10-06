@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── Version + commit hash injected at configure time ─────────────────────────
-set(REMEMBER_VERSION "1.0.0-beta1" CACHE STRING "Product version string")
+set(REMEMBER_VERSION "1.0.0-beta3" CACHE STRING "Product version string")
 
 execute_process(
     COMMAND git rev-parse --short HEAD
@@ -42,6 +42,7 @@ target_sources(RememberApp PRIVATE
     Source/SettingsDialog.cpp
     Source/TagsEditorDialog.cpp
     Source/FoldersSidebarComponent.cpp
+    ../Shared/ProjectIdentity.cpp
 )
 
 target_compile_definitions(RememberApp PRIVATE
@@ -64,6 +65,7 @@ target_link_libraries(RememberApp PRIVATE
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_core
+    juce::juce_cryptography
     juce::juce_data_structures
     juce::juce_events
     juce::juce_graphics

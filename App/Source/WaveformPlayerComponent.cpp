@@ -86,13 +86,15 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     isLoaded     = false;
 
     nameLabel.setText (entry.name, juce::dontSendNotification);
-    pathLabel.setText (entry.projectPath.isEmpty()
+    pathLabel.setText (entry.pending ? "Unsaved project - save in the DAW to keep this audio"
+                       : entry.projectPath.isEmpty()
                            ? "(no project file - press Assign path)"
                            : entry.projectPath,
                        juce::dontSendNotification);
     timeLabel.setText ("", juce::dontSendNotification);
 
     openBtn.setEnabled (entry.projectPath.isNotEmpty());
+    assignBtn.setEnabled (! entry.pending);
 
     auto* reader = formatManager.createReaderFor (entry.previewOgg);
     if (reader == nullptr) return;

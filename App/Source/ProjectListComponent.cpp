@@ -87,6 +87,7 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
 
 void ProjectRowComponent::startInlineRename()
 {
+    if (entry.projectPath.isNotEmpty() && juce::File (entry.projectPath).existsAsFile()) return;
     renaming = true;
     renameEditor.setText (entry.name, false);
     auto bounds = getLocalBounds().withTrimmedLeft (36).withTrimmedRight (46).reduced (0, 14);
@@ -102,19 +103,31 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
     if (e.mods.isRightButtonDown())
     {
         juce::PopupMenu m;
-        m.addItem (1, "Rename  (R)");
+        bool canRename = entry.projectPath.isEmpty() || ! juce::File (entry.projectPath).existsAsFile();
+        m.addItem (1, canRename ? "Rename  (R)" : "Name follows DAW file", canRename);
         m.addItem (2, "Edit tags  (T)");
         m.addItem (3, entry.projectPath.isNotEmpty() ? "Open in DAW" : "Open in DAW (no path)",
                    entry.projectPath.isNotEmpty());
+        const auto projectFile = juce::File::isAbsolutePath (entry.projectPath)
+            ? juce::File (entry.projectPath) : juce::File{};
+        m.addItem (5, "Show project file in Explorer", ! entry.pending && projectFile.existsAsFile());
         m.addSeparator();
         m.addItem (4, "Delete entry");
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-                         [this] (int r)
+                         [safe = juce::Component::SafePointer<ProjectRowComponent> (this), projectFile] (int r)
                          {
-                             if      (r == 1) startInlineRename();
-                             else if (r == 2 && onEditTags)  onEditTags();
-                             else if (r == 3 && onOpenInDaw) onOpenInDaw();
-                             else if (r == 4 && onDelete)    onDelete();
+                             // Keep the clicked file even if this row is rebound
+                             // by a background refresh while the menu is open.
+                             if (r == 5)
+                             {
+                                 if (projectFile.existsAsFile()) projectFile.revealToUser();
+                                 return;
+                             }
+                             if (safe == nullptr) return;
+                             if      (r == 1) safe->startInlineRename();
+                             else if (r == 2 && safe->onEditTags)  safe->onEditTags();
+                             else if (r == 3 && safe->onOpenInDaw) safe->onOpenInDaw();
+                             else if (r == 4 && safe->onDelete)    safe->onDelete();
                          });
         return;
     }
@@ -275,8 +288,13 @@ static juce::int64 sumSubfolderMtimes (const juce::File& root)
 {
     if (! root.isDirectory()) return 0;
     juce::int64 sum = 0;
-    for (auto& sub : root.findChildFiles (juce::File::findDirectories, false))
+    auto directories = root.findChildFiles (juce::File::findDirectories, false);
+    directories.addArray (root.getChildFile (".pending").findChildFiles (juce::File::findDirectories, false));
+    for (auto& sub : directories)
+    {
         sum += sub.getLastModificationTime().toMilliseconds();
+        sum += sub.getChildFile ("metadata.json").getLastModificationTime().toMilliseconds();
+    }
     return sum;
 }
 

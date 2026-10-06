@@ -35,7 +35,6 @@ private:
     float        lastProgress    { -1.0f };
     juce::String lastBpmKeyText;
     juce::String lastStatusText;
-    juce::String lastNameText;
 
     // Palette — pure black/dark gray with purple accent
     static constexpr uint32_t kBgDeep   = 0xff0a0a0a;

@@ -13,7 +13,7 @@
 ; runs ISCC on this script.
 
 #define MyAppName       "Remember"
-#define MyAppVersion    "1.0.0-beta1"
+#define MyAppVersion    "1.0.0-beta3"
 #define MyAppPublisher  "Martin Garcia Pacheco"
 #define MyAppURL        "https://github.com/martingarciapacheco/remember"
 #define MyAppExeName    "Remember.exe"
@@ -43,12 +43,12 @@ WizardStyle=modern
 SetupIconFile=
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; VersionInfoVersion / VersionInfoProductVersion must be pure numeric (a.b.c.d).
-; The user-visible string {#MyAppVersion} (which contains "-beta1") is shown in
+; The user-visible string {#MyAppVersion} (which contains "-beta3") is shown in
 ; the wizard caption via AppVersion above.
-VersionInfoVersion=1.0.0.1
+VersionInfoVersion=1.0.0.3
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=1.0.0.1
+VersionInfoProductVersion=1.0.0.3
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

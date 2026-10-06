@@ -1,4 +1,5 @@
 #include "ProjectScanner.h"
+#include "../../Shared/ProjectIdentity.h"
 #include <unordered_map>
 
 // ── ProjectEntry ──────────────────────────────────────────────────────────────
@@ -23,6 +24,11 @@ void ProjectEntry::save() const
     auto existing = juce::JSON::parse (metadataFile.loadFileAsString());
     juce::DynamicObject::Ptr obj (new juce::DynamicObject());
 
+    // Preserve plugin identity and future fields when editing tags/folders.
+    if (existing.isObject())
+        for (auto& property : existing.getDynamicObject()->getProperties())
+            obj->setProperty (property.name, property.value);
+
     // Preserve fields we don't own (recordedAt, durationSeconds, key, bpm if unchanged)
     auto copy = [&] (const juce::String& field, const juce::var& fallback)
     {
@@ -39,7 +45,13 @@ void ProjectEntry::save() const
     copy ("key",             key);
 
     // Owned/mutable fields
+    const bool relocated = existing.getProperty ("projectPath", "").toString() != projectPath;
     obj->setProperty ("projectPath", projectPath);
+    if (relocated && projectPath.isNotEmpty() && juce::File (projectPath).existsAsFile())
+    {
+        obj->setProperty ("projectFileId", ProjectIdentity::fileId (juce::File (projectPath)));
+        obj->setProperty ("projectFingerprint", ProjectIdentity::fingerprint (juce::File (projectPath)));
+    }
     obj->setProperty ("favorite",    favorite);
 
     juce::Array<juce::var> tagsVar;
@@ -51,7 +63,8 @@ void ProjectEntry::save() const
     obj->setProperty ("folders", foldersVar);
 
     // Also persist edits the user made (name)
-    obj->setProperty ("projectName", name);
+    obj->setProperty ("projectName", projectPath.isNotEmpty() && juce::File (projectPath).existsAsFile()
+        ? juce::File (projectPath).getFileNameWithoutExtension() : name);
 
     metadataFile.replaceWithText (juce::JSON::toString (juce::var (obj.get())));
 }
@@ -145,34 +158,12 @@ void ProjectScanner::setProjectsRootFolders (const juce::Array<juce::File>& fold
 }
 
 juce::String ProjectScanner::tryAutoResolveProjectPath (const juce::String& name,
-                                                        const juce::String& daw)
+                                                        const juce::String& daw,
+                                                        const juce::String& previousPath,
+                                                        const juce::String& fileId,
+                                                        const juce::String& fingerprint)
 {
-    if (name.isEmpty()) return {};
-
-    auto d = daw.toLowerCase();
-    juce::StringArray exts;
-
-    if      (d.contains ("fl studio") || d.contains ("fruity")) exts.add ("flp");
-    else if (d.contains ("ableton")   || d.contains ("live"))   exts.add ("als");
-    else if (d.contains ("cubase"))                              exts.add ("cpr");
-    else if (d.contains ("nuendo"))                              exts.add ("npr");
-    else if (d.contains ("reaper"))                              exts.add ("rpp");
-    else if (d.contains ("studio one"))                          exts.add ("song");
-    else if (d.contains ("pro tools"))                           exts.add ("ptx");
-    else if (d.contains ("bitwig"))                              exts.add ("bwproject");
-    else exts = { "als", "flp", "cpr", "npr", "rpp", "song", "ptx", "bwproject" };
-
-    for (auto& root : getProjectsRootFolders())
-    {
-        if (! root.isDirectory()) continue;
-        for (auto& ext : exts)
-        {
-            auto found = root.findChildFiles (juce::File::findFiles, true, name + "." + ext);
-            if (! found.isEmpty())
-                return found.getFirst().getFullPathName();
-        }
-    }
-    return {};
+    return ProjectIdentity::resolve (name, daw, getProjectsRootFolders(), previousPath, fileId, fingerprint);
 }
 
 juce::StringArray ProjectScanner::getAllUniqueTags()
@@ -210,12 +201,17 @@ bool ProjectScanner::deleteEntry (const ProjectEntry& entry)
 
 juce::Array<ProjectEntry> ProjectScanner::scan()
 {
+    return scan (getPreviewsFolder(), getProjectsRootFolders());
+}
+
+juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
+                                              const juce::Array<juce::File>& searchRoots)
+{
     // Mtime-keyed cache: avoid re-parsing JSON when nothing changed
     static std::unordered_map<std::string, std::pair<juce::int64, ProjectEntry>> cache;
 
     juce::Array<ProjectEntry> results;
 
-    auto root = getPreviewsFolder();
     if (! root.isDirectory())
     {
         cache.clear();
@@ -224,8 +220,12 @@ juce::Array<ProjectEntry> ProjectScanner::scan()
 
     std::unordered_map<std::string, bool> seen;
 
-    for (auto& dir : root.findChildFiles (juce::File::findDirectories, false))
+    auto directories = root.findChildFiles (juce::File::findDirectories, false);
+    auto pendingRoot = root.getChildFile (".pending");
+    directories.addArray (pendingRoot.findChildFiles (juce::File::findDirectories, false));
+    for (auto& dir : directories)
     {
+        if (dir.getFileName().startsWithChar ('.')) continue;
         auto metaFile = dir.getChildFile ("metadata.json");
         auto oggFile  = dir.getChildFile ("preview.ogg");
 
@@ -238,7 +238,9 @@ juce::Array<ProjectEntry> ProjectScanner::scan()
         seen[cacheKey] = true;
 
         auto it = cache.find (cacheKey);
-        if (it != cache.end() && it->second.first == mtime)
+        if (it != cache.end() && it->second.first == mtime
+            && it->second.second.projectPath.isNotEmpty()
+            && juce::File (it->second.second.projectPath).existsAsFile())
         {
             results.add (it->second.second);
             continue;
@@ -247,6 +249,8 @@ juce::Array<ProjectEntry> ProjectScanner::scan()
         auto json = juce::JSON::parse (metaFile.loadFileAsString());
         if (! json.isObject())
             continue;
+        const bool pending = (bool) json.getProperty ("pending", false);
+        if (pending && json.getProperty ("projectName", "").toString().isEmpty()) continue;
 
         ProjectEntry e;
         e.name         = json.getProperty ("projectName", dir.getFileName()).toString();
@@ -254,7 +258,10 @@ juce::Array<ProjectEntry> ProjectScanner::scan()
         e.key          = json.getProperty ("key",         "").toString();
         e.bpm          = (double) json.getProperty ("bpm", 0.0);
         e.favorite     = (bool)   json.getProperty ("favorite", false);
+        e.pending      = pending;
         e.projectPath  = json.getProperty ("projectPath", "").toString();
+        e.projectFileId = json.getProperty ("projectFileId", "").toString();
+        e.projectFingerprint = json.getProperty ("projectFingerprint", "").toString();
         e.recordedAt   = json.getProperty ("recordedAt",  "").toString();
         e.previewOgg   = oggFile;
         e.metadataFile = metaFile;
@@ -273,12 +280,15 @@ juce::Array<ProjectEntry> ProjectScanner::scan()
         // Auto-resolve project path on first sight (or if file vanished)
         bool needsResolve = e.projectPath.isEmpty()
                             || ! juce::File (e.projectPath).existsAsFile();
-        if (needsResolve)
+        if (needsResolve && ! e.pending)
         {
-            auto found = tryAutoResolveProjectPath (e.name, e.daw);
+            auto found = ProjectIdentity::resolve (e.name, e.daw, searchRoots, e.projectPath, e.projectFileId, e.projectFingerprint);
             if (found.isNotEmpty() && found != e.projectPath)
             {
                 e.projectPath = found;
+                e.name = juce::File (found).getFileNameWithoutExtension();
+                e.projectFileId = ProjectIdentity::fileId (juce::File (found));
+                e.projectFingerprint = ProjectIdentity::fingerprint (juce::File (found));
                 e.save();
                 mtime = metaFile.getLastModificationTime().toMilliseconds();
             }

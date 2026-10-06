@@ -76,6 +76,9 @@ void RememberEditor::refreshFromEngine()
     auto& eng   = processor.getEngine();
     auto  state = eng.getState();
     int   stInt = (int) state;
+    nameEditor.setReadOnly (eng.isProjectConfirmed());
+    nameEditor.setTooltip (eng.isProjectConfirmed() ? "Name follows the DAW project filename"
+                                                   : "Name this pending recording; save the DAW project to keep it");
 
     // Adapt poll rate: 10Hz only while Recording, 2Hz otherwise
     int desiredHz = (state == RecordingEngine::State::Recording
@@ -86,10 +89,9 @@ void RememberEditor::refreshFromEngine()
     if (! nameEditor.hasKeyboardFocus (false))
     {
         auto name = processor.getProjectName();
-        if (name != lastNameText)
+        if (name != nameEditor.getText())
         {
             nameEditor.setText (name, false);
-            lastNameText = name;
         }
     }
 
@@ -145,6 +147,13 @@ void RememberEditor::refreshFromEngine()
             progress     = 1.0f;
             statusText   = "Saved  " + eng.getLastSavedTime();
             statusColour = kSuccess;
+            break;
+
+        case RecordingEngine::State::Pending:
+            progress     = 1.0f;
+            statusText   = eng.getProjectName().isEmpty() ? "Audio pending - name or save the project"
+                                                        : "Named audio - save the DAW project to keep it";
+            statusColour = kSubtext;
             break;
 
         case RecordingEngine::State::Error:

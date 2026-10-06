@@ -8,7 +8,9 @@ struct ProjectEntry
     juce::String      key;
     double            bpm          { 0.0 };
     bool              favorite     { false };
+    bool              pending      { false };
     juce::String      projectPath;        // path to the .als / .flp / .cpr / .rpp / ... file
+    juce::String      projectFileId, projectFingerprint;
     juce::String      recordedAt;
     juce::StringArray tags;
     juce::StringArray folders;     // each item is a path like "Hip-Hop/Trap"
@@ -28,6 +30,8 @@ public:
     // Returns all valid entries sorted by recordedAt descending (newest first).
     // Uses an internal mtime-keyed cache so unchanged metadata files are not re-parsed.
     static juce::Array<ProjectEntry> scan();
+    static juce::Array<ProjectEntry> scan (const juce::File& previews,
+                                         const juce::Array<juce::File>& searchRoots);
 
     static juce::File getPreviewsFolder();
     static void       setPreviewsFolder (const juce::File& folder);
@@ -43,7 +47,10 @@ public:
     // for `daw` (falls back to all known DAW extensions if `daw` is unknown).
     // Returns empty string if nothing found.
     static juce::String tryAutoResolveProjectPath (const juce::String& name,
-                                                   const juce::String& daw);
+                                                   const juce::String& daw,
+                                                   const juce::String& previousPath = {},
+                                                   const juce::String& fileId = {},
+                                                   const juce::String& fingerprint = {});
 
     // Removes everything associated with this entry from disk (the project
     // folder containing preview.ogg + metadata.json). Returns true on success.

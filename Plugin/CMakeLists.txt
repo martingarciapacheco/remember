@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── Version + commit hash injected at configure time ─────────────────────────
-set(REMEMBER_VERSION "1.0.0-beta1" CACHE STRING "Product version string")
+set(REMEMBER_VERSION "1.0.0-beta3" CACHE STRING "Product version string")
 
 # Look up the short HEAD commit; empty string if not in a git work-tree
 execute_process(
@@ -30,6 +30,7 @@ configure_file(
 set(JUCE_PATH "E:/JUCE" CACHE PATH "Path to JUCE root")
 add_subdirectory(${JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
 
+option(REMEMBER_COPY_PLUGIN_AFTER_BUILD "Install the VST3 after building" ON)
 juce_add_plugin(RememberPlugin
     PLUGIN_NAME             "Remember"
     PLUGIN_MANUFACTURER_CODE "Mnjl"
@@ -40,7 +41,7 @@ juce_add_plugin(RememberPlugin
     NEEDS_MIDI_OUTPUT       FALSE
     IS_MIDI_EFFECT          FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${REMEMBER_COPY_PLUGIN_AFTER_BUILD}
     VST3_COPY_DIR           "C:/Program Files/Common Files/VST3"
     PRODUCT_NAME            "Remember"
 )
@@ -52,6 +53,7 @@ target_sources(RememberPlugin PRIVATE
     Source/KeyDetector.cpp
     Source/BpmDetector.cpp
     Source/SettingsManager.cpp
+    ../Shared/ProjectIdentity.cpp
 )
 
 target_compile_definitions(RememberPlugin PUBLIC
@@ -72,6 +74,7 @@ target_link_libraries(RememberPlugin PRIVATE
     juce::juce_audio_formats
     juce::juce_audio_processors
     juce::juce_core
+    juce::juce_cryptography
     juce::juce_data_structures
     juce::juce_dsp
     juce::juce_events
@@ -81,3 +84,19 @@ target_link_libraries(RememberPlugin PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+option(REMEMBER_BUILD_TESTS "Build Remember regression tests" OFF)
+if(REMEMBER_BUILD_TESTS)
+    enable_testing()
+    juce_add_console_app(RememberTests PRODUCT_NAME "Remember regression tests")
+    target_sources(RememberTests PRIVATE ../Tests/RememberTests.cpp ../App/Source/ProjectScanner.cpp)
+    target_link_libraries(RememberTests PRIVATE RememberPlugin
+        juce::juce_audio_processors juce::juce_audio_formats juce::juce_dsp
+        juce::juce_cryptography juce::juce_recommended_config_flags)
+    juce_generate_juce_header(RememberTests)
+    add_test(NAME RememberRegression COMMAND RememberTests)
+    if(WIN32)
+        add_test(NAME RememberHostLoading COMMAND RememberTests --host-loading)
+        set_tests_properties(RememberHostLoading PROPERTIES TIMEOUT 30)
+    endif()
+endif()

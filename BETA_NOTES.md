@@ -11,13 +11,30 @@ Remember is two pieces that work together:
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
+## Changes in 1.0.0-beta3
+
+- Fixed a Windows deadlock when loading projects containing Remember. Host detection reads the cached window caption without waiting for the DAW's UI thread.
+- Added a native Windows regression that checks host detection and repeated project loading while the DAW window thread is occupied. Loading, preparation, and editor creation now log their completion to help diagnose host issues.
+
+## Changes in 1.0.0-beta2
+
+- The browser app opens in the foreground. Launching Remember again restores its existing window when hidden or minimised. Closing the window hides it in the system tray; click the icon to reopen it, or right-click and choose **Exit** to quit.
+- Right-click an entry and choose **Show project file in Explorer** to open its folder with the DAW file selected. The option is disabled for pending entries and missing or unassigned project files.
+- The project name follows the DAW filename, without its extension. Track names and old names embedded in FL presets/templates are ignored.
+- Previews are identified independently of names and directories. A rename or move keeps the preview; Save As creates a separate entry with a copy of the full preview.
+- A 10-second re-record replaces the first 10 seconds and keeps the existing remainder. Captures below one second are discarded; stopped transport blocks aren't appended.
+- Recording works independently of the plugin window and includes offline exports. Reinitialising the audio engine rearms playback from the start.
+- Unsaved audio is held pending. Naming it in the plugin immediately associates the existing audio and makes it available in the browser. Saving and identifying the DAW project makes it permanent; closing an unsaved instance discards it, even if manually named.
+- Tags, favorites, folder membership and identity fields survive re-recording and browser edits. A lossless `preview.wav` source is retained alongside the OGG, increasing disk usage but keeping untouched sections intact.
+- Keep project search folders up to date. Auto-detection uses the hosting process's window title; bridged plugin processes and ambiguous filename matches remain unresolved. Existing incorrectly labelled audio cannot be reconstructed automatically from its old metadata.
+
 ## Install
 
-1. Download `Remember-1.0.0-beta1-setup.exe` from the release page.
+1. Download `Remember-1.0.0-beta3-setup.exe` from the release page.
 2. Run it. **Windows will warn "Unknown publisher"** — click `More info → Run anyway`. This is normal for unsigned beta builds.
 3. The installer needs admin privileges (it writes to the system VST3 folder under `Program Files\Common Files\VST3\`).
 4. After installing:
-   - Launch **Remember** (from the Start Menu) once and complete first-run setup: pick a previews folder and at least one DAW projects search folder.
+   - Launch **Remember** (from the Start Menu) and complete first-run setup: pick a previews folder and the DAW project search folders.
    - Open your DAW and load **Remember** as a VST3 on your master bus (insert, not send).
    - Hit play from the start of your project — recording is automatic.
 
@@ -73,6 +90,6 @@ Please file issues at: https://github.com/martingarciapacheco/remember/issues/ne
 | `Space` | Play/pause loaded preview |
 | `Enter` | Play selected row |
 | `F` | Toggle favourite |
-| `R` | Rename selected entry |
+| `R` | Rename an entry without an existing associated DAW file |
 | `T` | Edit tags |
 | `Delete` / `Backspace` | Delete entry (with confirmation) |
