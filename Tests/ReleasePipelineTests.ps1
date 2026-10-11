@@ -121,6 +121,7 @@ $embedded = "Remember build $buildId source $($baseline.fingerprint) commit $($b
 $app = Write-Fixture 'payload/Remember.exe' $embedded
 $vst = Write-Fixture 'payload/Remember.vst3/Contents/x86_64-win/Remember.vst3' $embedded
 $notes = Write-Fixture 'payload/BETA_NOTES.md' 'Validated notes'
+$fontLicense = Write-Fixture 'payload/Inter-LICENSE.txt' 'Inter copyright and SIL Open Font License 1.1'
 $moduleInfo = Write-Fixture 'payload/Remember.vst3/Contents/Resources/moduleinfo.json' '{"Name":"Remember"}'
 $provenance = Write-Fixture 'payload/build-provenance.json' '{"schema":1}'
 $nativeText = "Strictness level: 5`nNum plugins found: 1`nCompleted tests in pluginval / Editor`nCompleted tests in pluginval / Plugin state`nSUCCESS`n"
@@ -138,7 +139,7 @@ foreach ($file in Get-RememberInstallerPayload $payload) {
 }
 $setupText = "AppId={{C3F5A6E2-9F2D-4C8A-9F0E-1D2B3C4E5F60}}`nAppVersion=1.0.0-beta3`nArchitecturesAllowed=x64compatible`nArchitecturesInstallIn64BitMode=x64compatible`n"
 $setupScript = Write-Fixture 'extracted/install_script.iss' $setupText
-Check (@(Assert-RememberInstallerContents $payload $extracted $version).Count -eq 5) 'Valid installer extraction rejected'
+Check (@(Assert-RememberInstallerContents $payload $extracted $version).Count -eq 6) 'Valid installer extraction rejected'
 $extractedApp = Join-Path $extracted '{app}/Remember.exe'
 [IO.File]::WriteAllText($extractedApp, 'corrupt')
 Reject { Assert-RememberInstallerContents $payload $extracted $version } 'payload differs'
@@ -161,6 +162,7 @@ $manifest = @{ schema = 1; version = $version.version; tag = $version.tag; build
         validatorSha256 = $lock.pluginval.executableSha256 } }; artifacts = @(
         (Get-RememberArtifact $root $installer 'installer'), (Get-RememberArtifact $root $app 'app'),
         (Get-RememberArtifact $root $vst 'vst3'), (Get-RememberArtifact $root $notes 'notes'),
+        (Get-RememberArtifact $root $fontLicense 'evidence'),
         (Get-RememberArtifact $root $nativeLog 'pluginval-log'),
         (Get-RememberArtifact $root $moduleInfo 'evidence'), (Get-RememberArtifact $root $provenance 'evidence'),
         (Get-RememberArtifact $root $packagingReport 'installer-validation'),
@@ -178,7 +180,7 @@ function Change-Manifest([scriptblock]$Mutation) {
     & $Mutation $value
     Write-RememberJson $manifestPath $value
 }
-foreach ($file in @($installer, $app, $vst, $notes, $nativeLog)) {
+foreach ($file in @($installer, $app, $vst, $notes, $fontLicense, $nativeLog)) {
     $bytes = [IO.File]::ReadAllBytes($file)
     [IO.File]::WriteAllText($file, 'modified after validation')
     Reject { Assert-RememberManifest $manifestPath $installer $baseline $version $repository } 'content differs'
@@ -220,7 +222,7 @@ $installerEvidence.installerSha256 = '0' * 64
 Reject { Assert-RememberInstallerEvidence $installerEvidence $manifest.artifacts[0] $manifest.artifacts $lock } 'extraction validation'
 $installerEvidence.installerSha256 = $manifest.artifacts[0].sha256
 $installerEvidence.payload = @($installerEvidence.payload | Where-Object path -ne 'payload/Remember.exe')
-Reject { Assert-RememberInstallerEvidence $installerEvidence $manifest.artifacts[0] $manifest.artifacts $lock } 'extraction validation'
+Reject { Assert-RememberInstallerEvidence $installerEvidence $manifest.artifacts[0] $manifest.artifacts $lock } 'omits payload file'
 Reject { Assert-RememberEmbeddedBuildInfo $app $baseline 'wrong-build' } 'compiled build provenance'
 $extra = Write-Fixture 'payload/Remember.vst3/extra.json' 'unlisted bundle file'
 Reject { Assert-RememberManifest $manifestPath $installer $baseline $version $repository } 'Unlisted installation payload'

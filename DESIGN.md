@@ -34,7 +34,16 @@ in shared config.json on a worker; restore it on startup/editor creation.
 Changing appearance applies immediately after saving; Cancel in the app's
 settings only cancels its other pending edits. Never alter a DAW's global theme.
 
-Use the system sans-serif through `RememberUI::font` (Segoe UI on Windows): 13–14 for
+Use `RememberUI::font` from `Shared/RememberTypography.h`: embedded Inter 4.1 on
+Windows/non-Apple platforms and San Francisco through JUCE's native system UI font
+on macOS/iOS. Use Regular for body and SemiBold for emphasis, with Inter Display
+at 20 logical pixels and above. Preserve the font files and their SIL OFL licence;
+include the licence with the app, plugin and installer. Apple's downloadable fonts
+are licensed for Apple-platform mock-ups and must not be embedded in the product.
+References: [Apple Fonts and licence](https://developer.apple.com/fonts/) and
+[Inter](https://rsms.me/inter/).
+
+Use 13–14 for
 controls/body, 12–13 for supporting text, 20–24 for screen titles. Build hierarchy
 with weight and spacing. Use sentence case. Keep 16–24 logical pixels around
 major groups and 6–12 between related controls. Surface radii are 12; control

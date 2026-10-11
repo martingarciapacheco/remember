@@ -11,6 +11,7 @@ remember_generate_build_info()
 # Adjust this path if JUCE is installed elsewhere
 set(JUCE_PATH "E:/JUCE" CACHE PATH "Path to JUCE root")
 add_subdirectory(${JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
 option(REMEMBER_COPY_PLUGIN_AFTER_BUILD "Install the VST3 after building" OFF)
 juce_add_plugin(RememberPlugin
@@ -55,6 +56,14 @@ target_compile_definitions(RememberPlugin PUBLIC
 )
 
 juce_generate_juce_header(RememberPlugin)
+remember_link_fonts(RememberPlugin)
+if(NOT APPLE)
+    add_custom_command(TARGET RememberPlugin_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:RememberPlugin_VST3>/../Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../Assets/Fonts/Inter/LICENSE.txt"
+            "$<TARGET_FILE_DIR:RememberPlugin_VST3>/../Resources/Inter-LICENSE.txt")
+endif()
 
 target_include_directories(RememberPlugin PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/generated
@@ -94,6 +103,7 @@ if(REMEMBER_BUILD_TESTS)
         juce::juce_audio_processors juce::juce_audio_formats juce::juce_dsp
         juce::juce_cryptography juce::juce_recommended_config_flags)
     juce_generate_juce_header(RememberTests)
+    remember_link_fonts(RememberTests)
     remember_copy_asan_runtime(RememberTests)
     target_sources(RememberTests PRIVATE ../Tests/AssociationTests.cpp)
     target_sources(RememberTests PRIVATE ../Tests/MusicCorpus.cpp ../Tests/MusicFeatures.cpp)

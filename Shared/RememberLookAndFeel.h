@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "RememberTypography.h"
 
 // Shared semantic tokens for the native app, plugin and their dialogs.
 namespace Pal
@@ -54,15 +55,6 @@ inline void refreshColours (juce::Component& component)
             editor->setTextToShowWhenEmpty (editor->getTextToShowWhenEmpty(), colour ((uint32_t) (int) properties["rememberPlaceholder"]));
     for (auto* child : component.getChildren()) refreshColours (*child);
     component.repaint();
-}
-
-inline juce::Font font (float size = 13.0f, bool bold = false)
-{
-    auto options = juce::FontOptions{}.withHeight (size).withStyle (bold ? "Bold" : "Regular");
-   #if JUCE_WINDOWS
-    options = options.withName ("Segoe UI");
-   #endif
-    return juce::Font (options);
 }
 
 inline void panel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius = 12.0f)
@@ -180,8 +172,49 @@ public:
     }
 
     juce::Font getTextButtonFont (juce::TextButton&, int height) override { return font (juce::jmin (13.0f, height * 0.55f), true); }
+    juce::Font getLabelFont (juce::Label& label) override
+    {
+        const auto requested = label.getFont();
+        return requested.getTypefaceName() == juce::Font::getDefaultSansSerifFontName()
+            ? font (requested.getHeight(), requested.isBold()) : requested;
+    }
+    juce::Font getAlertWindowTitleFont() override { return font (20, true); }
+    juce::Font getAlertWindowMessageFont() override { return font (13); }
+    juce::Font getAlertWindowFont() override { return font (13); }
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font& requested) override
+    {
+        if (requested.getTypefaceName() == juce::Font::getDefaultSansSerifFontName())
+            return font (requested.getHeight(), requested.isBold()).getTypefacePtr();
+        return juce::LookAndFeel_V4::getTypefaceForFont (requested);
+    }
     juce::Font getComboBoxFont (juce::ComboBox&) override { return font(); }
     juce::Font getPopupMenuFont() override { return font(); }
+
+    juce::TextLayout tooltipLayout (const juce::String& text)
+    {
+        juce::AttributedString attributed (text);
+        attributed.setFont (font (13));
+        attributed.setColour (findColour (juce::TooltipWindow::textColourId));
+        juce::TextLayout layout;
+        layout.createLayoutWithBalancedLineLengths (attributed, 400);
+        return layout;
+    }
+    juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> position,
+                                           juce::Rectangle<int> parent) override
+    {
+        const auto layout = tooltipLayout (text);
+        const int w = (int) std::ceil (layout.getWidth()) + 16;
+        const int h = (int) std::ceil (layout.getHeight()) + 8;
+        return juce::Rectangle<int> (position.x > parent.getCentreX() ? position.x - w - 12 : position.x + 24,
+            position.y > parent.getCentreY() ? position.y - h - 6 : position.y + 6, w, h).constrainedWithin (parent);
+    }
+    void drawTooltip (juce::Graphics& g, const juce::String& text, int w, int h) override
+    {
+        g.fillAll (findColour (juce::TooltipWindow::backgroundColourId));
+        g.setColour (findColour (juce::TooltipWindow::outlineColourId));
+        g.drawRect (0, 0, w, h);
+        tooltipLayout (text).draw (g, juce::Rectangle<float> (8, 4, (float) w - 16, (float) h - 8));
+    }
 
     void drawComboBox (juce::Graphics& g, int w, int h, bool down, int, int, int, int, juce::ComboBox& box) override
     {

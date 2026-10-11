@@ -10,6 +10,7 @@ remember_generate_build_info()
 
 set(JUCE_PATH "E:/JUCE" CACHE PATH "Path to JUCE root")
 add_subdirectory(${JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
 juce_add_gui_app(RememberApp
     COMPANY_NAME "Martin Garcia Pacheco"
@@ -46,6 +47,13 @@ target_compile_definitions(RememberApp PRIVATE
 )
 
 juce_generate_juce_header(RememberApp)
+remember_link_fonts(RememberApp)
+if(NOT APPLE)
+    add_custom_command(TARGET RememberApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../Assets/Fonts/Inter/LICENSE.txt"
+            "$<TARGET_FILE_DIR:RememberApp>/Inter-LICENSE.txt")
+endif()
 
 target_include_directories(RememberApp PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/generated
@@ -99,6 +107,7 @@ if(REMEMBER_BUILD_TESTS)
         target_link_libraries(RememberAppTests PRIVATE bcrypt)
     endif()
     juce_generate_juce_header(RememberAppTests)
+    remember_link_fonts(RememberAppTests)
     target_include_directories(RememberAppTests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
     remember_copy_asan_runtime(RememberAppTests)
     add_test(NAME RememberAppRegression COMMAND RememberAppTests)

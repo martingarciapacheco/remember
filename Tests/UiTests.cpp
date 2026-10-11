@@ -1,5 +1,6 @@
 #include "UiTests.h"
 #include "AppearanceTests.h"
+#include "TypographyTests.h"
 #include "../App/Source/FoldersSidebarComponent.h"
 #include "../App/Source/TagsEditorDialog.h"
 #include "../App/Source/MainComponent.h"
@@ -55,6 +56,7 @@ void saveImage (juce::Component& component, const char* name, bool software = fa
 
 void testFrontendDesign (const juce::File& root)
 {
+    testFrontendTypography();
     testAppearanceContrast();
     SavedConfig restoreConfig;
     const auto library = root.getChildFile ("design-library");

@@ -95,6 +95,7 @@ New-Item -ItemType Directory -Path $payload | Out-Null
 Copy-Item -LiteralPath (Join-Path $buildRootPath 'App/RememberApp_artefacts/Release/Remember.exe') -Destination $payload
 Copy-Item -LiteralPath (Join-Path $buildRootPath 'Plugin/RememberPlugin_artefacts/Release/VST3/Remember.vst3') -Destination $payload -Recurse
 Copy-Item -LiteralPath (Join-Path $repo 'BETA_NOTES.md') -Destination $payload
+Copy-Item -LiteralPath (Join-Path $repo 'Assets/Fonts/Inter/LICENSE.txt') -Destination (Join-Path $payload 'Inter-LICENSE.txt')
 $bundle = Join-Path $payload 'Remember.vst3'
 Assert-RememberEmbeddedBuildInfo (Join-Path $payload 'Remember.exe') $source $buildId
 Assert-RememberEmbeddedBuildInfo (Join-Path $bundle 'Contents/x86_64-win/Remember.vst3') $source $buildId

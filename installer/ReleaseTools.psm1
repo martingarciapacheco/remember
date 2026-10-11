@@ -314,7 +314,7 @@ function Get-RememberInstallerPayload([string]$Payload) {
     foreach ($file in Get-ChildItem -LiteralPath $Payload -Recurse -File) {
         $relative = [IO.Path]::GetRelativePath($Payload, $file.FullName).Replace('\', '/')
         $destination = if ($relative.StartsWith('Remember.vst3/')) { "{commoncf64}/VST3/$relative" }
-            elseif ($relative -in @('Remember.exe', 'BETA_NOTES.md', 'build-provenance.json')) { "{app}/$relative" }
+            elseif ($relative -in @('Remember.exe', 'BETA_NOTES.md', 'build-provenance.json', 'Inter-LICENSE.txt')) { "{app}/$relative" }
             else { throw "Unrecognised installer payload file: $relative" }
         $artifact = Get-RememberArtifact $Payload $file.FullName 'payload'
         [pscustomobject]@{ path = "payload/$relative"; destination = $destination; bytes = $artifact.bytes; sha256 = $artifact.sha256 }

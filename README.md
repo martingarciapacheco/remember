@@ -5,8 +5,9 @@ Two-piece JUCE 8 project for Windows that auto-captures 60-second audio previews
 ## Interface design
 
 The app, plugin and dialogs use a shared Apple-inspired interface with Light and
-Dark options in Settings (the plugin's gear menu): system
-typography, a neutral sidebar, layered surfaces, blue selection and primary
+Dark options in Settings (the plugin's gear menu): shared
+typography (embedded Inter on Windows, native San Francisco on macOS), a neutral
+sidebar, layered surfaces, blue selection and primary
 actions, vector icons, rounded controls and visible keyboard focus. All future UI
 changes must follow [DESIGN.md](DESIGN.md) and [AGENTS.md](AGENTS.md), using the
 tokens and controls in `Shared/RememberLookAndFeel.h` and the `apple-design` skill.
@@ -14,6 +15,9 @@ The standalone app owns its theme; the VST3 leaves its host's global theme intac
 Appearance is saved immediately in the shared configuration and restored when
 opening the app or a plugin editor. Dark uses a very dark grey (#1C1C1E) base
 with brighter content surfaces. Both palettes validate text contrast at 4.5:1.
+Inter 4.1 uses Regular/SemiBold and Display variants for headings. Its unmodified
+fonts and SIL OFL licence are in `Assets/Fonts/Inter`; the licence also ships with
+the executable, VST3 bundle and installer. No font installation is needed.
 
 With regression tests enabled, `RememberAppTests --frontend` and
 `RememberTests --frontend` generate JUCE software-rendered PNGs in the working

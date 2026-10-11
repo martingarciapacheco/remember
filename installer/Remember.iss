@@ -73,6 +73,7 @@ Source: "{#PayloadDir}\Remember.vst3\*"; \
 ; ── Release notes (so testers find them in the install dir) ─────────────────
 Source: "{#PayloadDir}\BETA_NOTES.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "{#PayloadDir}\build-provenance.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\Inter-LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

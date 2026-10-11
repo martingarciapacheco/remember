@@ -1,5 +1,6 @@
 #include "ConfigurationTests.h"
 #include "AppearanceTests.h"
+#include "TypographyTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Plugin/Source/PluginEditor.h"
 #include "../Shared/LibraryStore.h"
@@ -13,6 +14,7 @@
 
 void testPluginFrontend (const juce::File& root)
 {
+    testFrontendTypography();
     testAppearanceContrast();
     auto* originalLookAndFeel = &juce::LookAndFeel::getDefaultLookAndFeel();
     const auto library = root.getChildFile ("design-library");
