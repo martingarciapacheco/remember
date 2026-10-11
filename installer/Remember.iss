@@ -46,7 +46,7 @@ WizardStyle=modern
 SetupIconFile=
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; VersionInfoVersion / VersionInfoProductVersion must be pure numeric (a.b.c.d).
-; The user-visible string {#MyAppVersion} (which contains "-beta3") is shown in
+; The user-visible string {#MyAppVersion} (which contains the beta suffix) is shown in
 ; the wizard caption via AppVersion above.
 VersionInfoVersion={#MyNumericVersion}
 VersionInfoCompany={#MyAppPublisher}

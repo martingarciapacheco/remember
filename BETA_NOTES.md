@@ -11,7 +11,11 @@ Remember is two pieces that work together:
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
-## Local changes awaiting release validation
+## Changes in 1.0.0-beta4
+
+- Redesigned the app, plugin and dialogs with a shared Apple-inspired interface: clearer hierarchy, layered surfaces, rounded controls, vector icons and visible keyboard focus.
+- Added persistent Light and Dark appearance options in app Settings and the plugin's gear menu. Dark uses charcoal grey surfaces; switching appearance preserves the current preview and library selection and leaves the DAW's global theme intact.
+- Integrated Inter 4.1 on Windows, with Regular/SemiBold text and Display variants for headings. Fonts are embedded and need no system installation; their SIL OFL licence ships with the app, VST3 and installer. Apple builds select native San Francisco; macOS validation remains pending.
 
 - Settings distinguishes a read failure from damaged configuration, offers reload or explicit reconstruction, preserves an original copy and rejects a stale recovery attempt. App and plugin writers reject JSON arrays where an object is required; invalid metadata can recover through verified committed history.
 - Windows JSON writes check every block and flush, preserve a native original backup during replacement, and show phase/path/error/retry instructions. Local fixtures cover denied write permissions, readers, read-only files, failed partial writes and a 272-character path. Long-path support in DAWs and physical disk failure remain unverified.
@@ -19,7 +23,7 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 - Large tag collections create controls only for visible chips/suggestions. Uncached label widths are measured in the background, allowing editing while the list loads; scroll recycling and stale layout results preserve the selected tag and saved collection.
 - Preview loading, waveform generation and decoding run in the background, with bounded read-ahead and visible storage underrun diagnostics.
 - **Audio** selects and saves an output device. Pausing/stopping releases the device after two seconds; playback continues when the browser is hidden in the tray. Disconnecting the output reports the failure and allows retry.
-- Rapid preview changes, blocked-read cleanup and closing the output selector are covered by local Release and AddressSanitizer fixtures. Real-device/DAW testing and the release pipeline remain pending.
+- Rapid preview changes, blocked-read cleanup and closing the output selector are covered by local Release and AddressSanitizer fixtures. Real-device/DAW testing remains pending.
 - Exiting coordinates preview readers, library indexing and accepted background jobs. Concurrent instances can create shared library directories without mistaking another instance's successful creation for a save failure.
 - The library uses native Windows file notifications with debounce and polling fallback. An unavailable folder or unreadable configuration retains the last results with an actionable error; reconnecting or repairing settings lets indexing recover. An explicitly empty project-search list no longer scans Desktop.
 - Full browser fixtures cover 100, 1,000 and 10,000 entries, recycled rows, search/folder/favorite filters and selected identity after reordering. Tooltips are enabled in the app and editor; short project names no longer truncate unnecessarily.
@@ -51,7 +55,7 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 
 ## Install
 
-1. Download `Remember-1.0.0-beta3-setup.exe` from the release page.
+1. Download `Remember-1.0.0-beta4-setup.exe` from the release page.
 2. Run it. **Windows will warn "Unknown publisher"** — click `More info → Run anyway`. This is normal for unsigned beta builds.
 3. The installer needs admin privileges (it writes to the system VST3 folder under `Program Files\Common Files\VST3\`).
 4. After installing:
