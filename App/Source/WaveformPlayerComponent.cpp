@@ -42,12 +42,12 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
 
     auto btnSetup = [&] (juce::TextButton& b, uint32_t bg, uint32_t fg)
     {
-        b.setColour (juce::TextButton::buttonColourId,  juce::Colour (bg));
-        b.setColour (juce::TextButton::textColourOffId, juce::Colour (fg));
+        RememberUI::bindColour (b, juce::TextButton::buttonColourId, bg);
+        RememberUI::bindColour (b, juce::TextButton::textColourOffId, fg);
     };
 
     RememberUI::iconButton (playBtn, "play", "Play or pause preview (Space)");
-    btnSetup (playBtn,   Pal::Accent,   0xffffffff);
+    btnSetup (playBtn, Pal::Action,   Pal::OnAction);
     btnSetup (openBtn,   Pal::Elevated, Pal::Text);
     btnSetup (assignBtn, Pal::Elevated, Pal::Subtext);
     btnSetup (audioBtn, Pal::Elevated, Pal::Subtext);
@@ -123,13 +123,13 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     };
 
     nameLabel.setFont (RememberUI::font (14.0f, true));
-    nameLabel.setColour (juce::Label::textColourId, juce::Colour (Pal::Text));
+    RememberUI::bindColour (nameLabel, juce::Label::textColourId, Pal::Text);
 
     pathLabel.setFont (RememberUI::font (12.0f));
-    pathLabel.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (pathLabel, juce::Label::textColourId, Pal::Subtext);
 
     timeLabel.setFont (RememberUI::font (12.0f));
-    timeLabel.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (timeLabel, juce::Label::textColourId, Pal::Subtext);
     timeLabel.setJustificationType (juce::Justification::centredRight);
 
     addAndMakeVisible (playBtn);
@@ -334,7 +334,7 @@ void WaveformPlayerComponent::showAudioSettings()
     selector->setSize (500, 340);
     options.content.setOwned (selector);
     options.dialogTitle = "Audio output";
-    options.dialogBackgroundColour = juce::Colour (Pal::Surface);
+    options.dialogBackgroundColour = RememberUI::colour (Pal::Surface);
     options.componentToCentreAround = this;
     options.useNativeTitleBar = true;
     options.escapeKeyTriggersCloseButton = true;
@@ -543,11 +543,11 @@ void WaveformPlayerComponent::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformPlayerComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::BgDeep));
+    g.fillAll (RememberUI::colour (Pal::BgDeep));
     RememberUI::panel (g, getLocalBounds().toFloat().reduced (12, 6));
     if (! isLoaded)
     {
-        g.setColour (juce::Colour (Pal::Subtext));
+        g.setColour (RememberUI::colour (Pal::Subtext));
         g.setFont (RememberUI::font (13));
         g.drawText (isLoading ? "Loading preview..." : "Select a recording to listen to its preview",
                     waveArea, juce::Justification::centred);
@@ -555,13 +555,13 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
     }
 
     // Waveform background
-    g.setColour (juce::Colour (Pal::BgDeep));
+    g.setColour (RememberUI::colour (Pal::BgDeep));
     g.fillRoundedRectangle (waveArea.toFloat(), 8.0f);
 
     if (waveform && ! waveform->channels[0].empty())
     {
         // Waveform fill
-        g.setColour (juce::Colour (Pal::Accent).withAlpha (0.7f));
+        g.setColour (RememberUI::colour (Pal::Accent).withAlpha (0.7f));
         for (int ch = 0; ch < 2; ++ch)
         {
             const auto& peaks = waveform->channels[(size_t) ch];
@@ -581,7 +581,7 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
     }
     // The cursor is usable while the background waveform is still loading.
     float posX = waveArea.getX() + (float) getPositionNormalized() * waveArea.getWidth();
-    g.setColour (juce::Colour (Pal::Text).withAlpha (0.8f));
+    g.setColour (RememberUI::colour (Pal::Text).withAlpha (0.8f));
     g.drawLine (posX, (float) waveArea.getY(), posX, (float) waveArea.getBottom(), 1.5f);
 }
 

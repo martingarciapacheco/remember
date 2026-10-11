@@ -302,6 +302,7 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
         juce::jlimit (0, 10, (int) config.getProperty ("oggQuality", 4)),
         (bool) config.getProperty ("recordMono", false) };
     snapshot.result = result; snapshot.fingerprint = fingerprint; snapshot.canRebuild = result.failed() && readable;
+    snapshot.darkAppearance = config.getProperty ("appearance", "light").toString() == "dark";
     return snapshot;
 }
 juce::File ProjectScanner::getPreviewsFolder() { return previewsFromConfig (loadConfig()); }

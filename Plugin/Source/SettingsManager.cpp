@@ -1,6 +1,7 @@
 #include "SettingsManager.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/BackgroundRetirement.h"
+#include "../../Shared/AppearanceSettings.h"
 
 namespace
 {
@@ -109,6 +110,7 @@ SettingsManager::Snapshot SettingsManager::readSnapshot (const juce::File& sourc
     result.seconds = juce::jlimit (15, 120, (int) json.getProperty ("recordSeconds", 60));
     result.quality = juce::jlimit (0, 10, (int) json.getProperty ("oggQuality", 4));
     result.mono = (bool) json.getProperty ("recordMono", false);
+    result.darkAppearance = AppearanceSettings::isDark (json);
     return result;
 }
 juce::File SettingsManager::getPreviewsFolder() const { return readSnapshot().previews; }
@@ -160,5 +162,15 @@ std::shared_ptr<SettingsManager::Request> SettingsManager::setPreviewsFolderAsyn
             if (request.result.wasOk() && request.snapshot.previews != folder)
                 request.result = juce::Result::fail ("Output settings changed before confirmation. Select the folder again");
         }
+    });
+}
+
+std::shared_ptr<SettingsManager::Request> SettingsManager::setAppearanceAsync (bool dark) const
+{
+    const auto config = configFile;
+    return launchSettingsTask ([config, dark] (Request& request)
+    {
+        request.result = AppearanceSettings::save (dark);
+        if (request.result.wasOk()) populateSettingsRequest (request, config);
     });
 }

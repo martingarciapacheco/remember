@@ -53,6 +53,7 @@ public:
         juce::Result result = juce::Result::ok();
         juce::String fingerprint;
         bool canRebuild = false;
+        bool darkAppearance = false;
     };
     enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc };
     struct LibrarySnapshot

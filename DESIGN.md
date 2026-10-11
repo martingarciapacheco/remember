@@ -13,11 +13,26 @@ are design guidance; Remember remains a native JUCE application and VST3.
 
 ## Visual language
 
-Use a calm light appearance, white content surfaces, a neutral sidebar and a blue
-accent for selection and primary actions. Colours have semantic names in
+Support Light and Dark through Appearance in Settings in both app and plugin.
+Light uses white content surfaces and a neutral sidebar. Dark uses a charcoal
+base (#1C1C1E), a #242426 sidebar and lighter #2C2C2E content / #343438 controls;
+never replace the base with pure black. Adapt foregrounds, selection, icons,
+menus and dialogs together. Use blue for selection and primary actions.
+Colours have semantic names in
 `Shared/RememberLookAndFeel.h`; never duplicate raw palettes in app/plugin code.
 Keep primary text dark and secondary text readable. Success and error retain
 written descriptions: colour alone must never communicate state.
+
+Follow Apple's [Dark Mode guidance](https://developer.apple.com/design/human-interface-guidelines/dark-mode):
+semantic colours adapt to appearance, and brighter elevated surfaces convey
+depth. These are custom JUCE palettes informed by that guidance, not fixed Apple
+system colours. Text contrast must be at least 4.5:1 in both modes. Keep the
+action fill distinct from link/focus blue so white button labels stay readable.
+Use `RememberUI::colour` for paint and `bindColour` for control overrides so
+existing controls update live. Save `appearance` independently and atomically
+in shared config.json on a worker; restore it on startup/editor creation.
+Changing appearance applies immediately after saving; Cancel in the app's
+settings only cancels its other pending edits. Never alter a DAW's global theme.
 
 Use the system sans-serif through `RememberUI::font` (Segoe UI on Windows): 13–14 for
 controls/body, 12–13 for supporting text, 20–24 for screen titles. Build hierarchy

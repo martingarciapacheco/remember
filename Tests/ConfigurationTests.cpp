@@ -1,4 +1,5 @@
 #include "ConfigurationTests.h"
+#include "AppearanceTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Plugin/Source/PluginEditor.h"
 #include "../Shared/LibraryStore.h"
@@ -12,11 +13,16 @@
 
 void testPluginFrontend (const juce::File& root)
 {
+    testAppearanceContrast();
     auto* originalLookAndFeel = &juce::LookAndFeel::getDefaultLookAndFeel();
     const auto library = root.getChildFile ("design-library");
     if (library.createDirectory().failed()) throw std::runtime_error ("Cannot create plugin design library");
     juce::var config (new juce::DynamicObject());
     config.getDynamicObject()->setProperty ("previewsFolder", library.getFullPathName());
+    config.getDynamicObject()->setProperty ("recordSeconds", 90);
+    config.getDynamicObject()->setProperty ("oggQuality", 6);
+    config.getDynamicObject()->setProperty ("recordMono", true);
+    config.getDynamicObject()->setProperty ("futureSetting", "preserved");
     if (LibraryStore::writeJsonAtomically (LibraryStore::configFile(), config).failed())
         throw std::runtime_error ("Cannot configure plugin design library");
     {
@@ -44,15 +50,66 @@ void testPluginFrontend (const juce::File& root)
                 throw std::runtime_error ("Plugin layout clipped a control");
         const auto artifacts = juce::File::getCurrentWorkingDirectory().getChildFile ("artifacts");
         if (artifacts.createDirectory().failed()) throw std::runtime_error ("Cannot create plugin artifacts");
-        const auto save = [&] (const char* name, float scale)
+        const auto save = [&] (const char* name, float scale, juce::Component* component = nullptr)
         {
-            const auto snapshot = editor->createComponentSnapshot (editor->getLocalBounds(), true, scale, juce::SoftwareImageType{});
+            auto& target = component != nullptr ? *component : *editor;
+            const auto snapshot = target.createComponentSnapshot (target.getLocalBounds(), true, scale, juce::SoftwareImageType{});
             juce::FileOutputStream output (artifacts.getChildFile (name));
             juce::PNGImageFormat png;
             if (! output.openedOk() || ! output.setPosition (0) || output.truncate().failed() || ! png.writeImageToStream (snapshot, output))
                 throw std::runtime_error ("Cannot render plugin frontend");
         };
         save ("apple-plugin.png", 1); save ("apple-plugin-2x.png", 2);
+       #if JUCE_WINDOWS
+        for (auto* child : editor->getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child);
+                button && button->getProperties()["rememberIcon"].toString() == "settings") button->onClick();
+        auto* menu = juce::Component::getCurrentlyModalComponent();
+        if (menu == nullptr || &menu->getLookAndFeel() != &editor->getLookAndFeel())
+            throw std::runtime_error ("Plugin settings menu is absent or uses the host theme");
+        save ("apple-plugin-settings.png", 1, menu);
+        menu->exitModalState (3); // Same callback as choosing Appearance > Dark.
+        const auto dispatchUntil = juce::Time::getMillisecondCounter() + 25;
+        do
+        {
+            MSG message;
+            while (PeekMessageW (&message, nullptr, 0, 0, PM_REMOVE)) { TranslateMessage (&message); DispatchMessageW (&message); }
+            juce::Thread::sleep (1);
+        } while (juce::Time::getMillisecondCounter() < dispatchUntil);
+       #else
+        editor->applyAppearance (true);
+       #endif
+        ready();
+        if (! RememberUI::isDark() || LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() != "dark")
+            throw std::runtime_error ("Plugin failed to save dark appearance");
+        for (auto* child : editor->getChildren())
+            if (auto* text = dynamic_cast<juce::TextEditor*> (child))
+                if (text->findColour (juce::TextEditor::textColourId) != RememberUI::colour (Pal::Text)
+                    || ! text->getText().contains ("Midnight sketches")) throw std::runtime_error ("Plugin appearance lost text or colour");
+        save ("apple-plugin-dark.png", 1); save ("apple-plugin-dark-2x.png", 2);
+        editor.reset(); RememberUI::setDark (false);
+        editor.reset (static_cast<RememberEditor*> (processor.createEditor())); ready();
+        if (! RememberUI::isDark()) throw std::runtime_error ("Plugin reopen failed to restore dark appearance");
+        editor->applyAppearance (false); ready();
+        if (RememberUI::isDark() || LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() != "light")
+            throw std::runtime_error ("Plugin failed to restore light appearance");
+        if (SettingsManager::getInstance().readSnapshot().previews != library)
+            throw std::runtime_error ("Appearance edit changed the output folder");
+        const auto settings = SettingsManager::getInstance().readSnapshot();
+        if (settings.seconds != 90 || settings.quality != 6 || ! settings.mono
+            || LibraryStore::readJson (LibraryStore::configFile())["futureSetting"].toString() != "preserved")
+            throw std::runtime_error ("Appearance edit replaced unrelated settings");
+        const auto validConfig = LibraryStore::configFile().loadFileAsString();
+        const juce::String brokenConfig = "{broken-settings";
+        if (! LibraryStore::configFile().replaceWithText (brokenConfig)) throw std::runtime_error ("Cannot set failed appearance fixture");
+        editor->applyAppearance (true); ready();
+        if (RememberUI::isDark() || LibraryStore::configFile().loadFileAsString() != brokenConfig)
+            throw std::runtime_error ("Failed appearance edit changed theme or overwrote malformed settings");
+        bool appearanceError = false;
+        for (auto* child : editor->getChildren())
+            if (auto* label = dynamic_cast<juce::Label*> (child)) appearanceError |= label->getText().containsIgnoreCase ("config");
+        if (! appearanceError) throw std::runtime_error ("Failed appearance edit hid its error");
+        if (! LibraryStore::configFile().replaceWithText (validConfig)) throw std::runtime_error ("Cannot restore appearance fixture");
         editor->applyOutputFolder (root.getChildFile ("unavailable-design-folder"));
         ready();
         bool errorVisible = false;

@@ -4,22 +4,58 @@
 // Shared semantic tokens for the native app, plugin and their dialogs.
 namespace Pal
 {
-    inline constexpr uint32_t BgDeep   = 0xfff5f5f7;
-    inline constexpr uint32_t Surface  = 0xffededf0;
-    inline constexpr uint32_t Elevated = 0xffe4e5ea;
-    inline constexpr uint32_t Border   = 0xffd1d3da;
-    inline constexpr uint32_t Accent   = 0xff0066cc;
-    inline constexpr uint32_t Text     = 0xff1d1d1f;
-    inline constexpr uint32_t Subtext  = 0xff62626b;
-    inline constexpr uint32_t Star     = 0xff916000;
-    inline constexpr uint32_t Success  = 0xff247343;
-    inline constexpr uint32_t Error    = 0xffb42318;
-    inline constexpr uint32_t Content  = 0xffffffff;
-    inline constexpr uint32_t Selected = 0xffe5effb;
+    enum Token : uint32_t { BgDeep, Surface, Elevated, Border, Accent, Text,
+        Subtext, Star, Success, Error, Content, Selected, Action, OnAction, Count };
 }
 
 namespace RememberUI
 {
+// Message-thread state, shared by Remember roots in this process, never the host.
+inline bool darkAppearance = false;
+inline bool isDark() { return darkAppearance; }
+inline juce::Colour colour (uint32_t token)
+{
+    static constexpr uint32_t light[] = { 0xfff5f5f7, 0xffededf0, 0xffe4e5ea,
+        0xffd1d3da, 0xff0060c0, 0xff1d1d1f, 0xff62626b, 0xff916000,
+        0xff247343, 0xffb42318, 0xffffffff, 0xffe5effb, 0xff0066cc, 0xffffffff };
+    static constexpr uint32_t dark[] = { 0xff1c1c1e, 0xff242426, 0xff343438,
+        0xff4b4b50, 0xff64a9ff, 0xfff5f5f7, 0xffb8b8c0, 0xffffd60a,
+        0xff66d98a, 0xffff8f86, 0xff2c2c2e, 0xff243a52, 0xff0066cc, 0xffffffff };
+    static_assert (std::size (light) == Pal::Count && std::size (dark) == Pal::Count);
+    return juce::Colour (token < Pal::Count ? (darkAppearance ? dark[token] : light[token]) : token);
+}
+
+// Remember semantic overrides so existing/recycled controls can change live.
+inline void bindColour (juce::Component& component, int id, uint32_t token, float alpha = 1.0f)
+{
+    auto key = "rememberColour" + juce::String (id);
+    component.getProperties().set (key, juce::Array<juce::var> { (int) token, alpha });
+    component.setColour (id, colour (token).withAlpha (alpha));
+    if (id == juce::TextEditor::textColourId)
+        if (auto* editor = dynamic_cast<juce::TextEditor*> (&component))
+            editor->applyColourToAllText (colour (token).withAlpha (alpha));
+}
+inline void placeholder (juce::TextEditor& editor, const juce::String& text, uint32_t token)
+{
+    editor.getProperties().set ("rememberPlaceholder", (int) token);
+    editor.setTextToShowWhenEmpty (text, colour (token));
+}
+inline void refreshColours (juce::Component& component)
+{
+    const auto properties = component.getProperties();
+    for (int i = 0; i < properties.size(); ++i)
+        if (const auto key = properties.getName (i).toString(); key.startsWith ("rememberColour"))
+        {
+            const auto value = properties.getValueAt (i);
+            bindColour (component, key.substring (14).getIntValue(), (uint32_t) (int) value[0], (float) value[1]);
+        }
+    if (auto* editor = dynamic_cast<juce::TextEditor*> (&component))
+        if (properties.contains ("rememberPlaceholder"))
+            editor->setTextToShowWhenEmpty (editor->getTextToShowWhenEmpty(), colour ((uint32_t) (int) properties["rememberPlaceholder"]));
+    for (auto* child : component.getChildren()) refreshColours (*child);
+    component.repaint();
+}
+
 inline juce::Font font (float size = 13.0f, bool bold = false)
 {
     auto options = juce::FontOptions{}.withHeight (size).withStyle (bold ? "Bold" : "Regular");
@@ -31,9 +67,9 @@ inline juce::Font font (float size = 13.0f, bool bold = false)
 
 inline void panel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius = 12.0f)
 {
-    g.setColour (juce::Colour (Pal::Content));
+    g.setColour (RememberUI::colour (Pal::Content));
     g.fillRoundedRectangle (bounds, radius);
-    g.setColour (juce::Colour (Pal::Border).withAlpha (0.65f));
+    g.setColour (RememberUI::colour (Pal::Border).withAlpha (0.65f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
 }
 
@@ -110,35 +146,37 @@ inline void iconButton (juce::TextButton& button, const juce::String& kind, cons
 class LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    LookAndFeel()
+    LookAndFeel() { applyPalette(); }
+    void applyPalette()
     {
-        setColour (juce::TextButton::buttonColourId, juce::Colour (Pal::Elevated));
-        setColour (juce::TextButton::buttonOnColourId, juce::Colour (Pal::Accent));
-        setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Text));
+        setColourScheme (isDark() ? getDarkColourScheme() : getLightColourScheme());
+        setColour (juce::TextButton::buttonColourId, RememberUI::colour (Pal::Elevated));
+        setColour (juce::TextButton::buttonOnColourId, RememberUI::colour (Pal::Action));
+        setColour (juce::TextButton::textColourOffId, RememberUI::colour (Pal::Text));
         setColour (juce::TextButton::textColourOnId, juce::Colours::white);
-        setColour (juce::ComboBox::backgroundColourId, juce::Colour (Pal::Content));
-        setColour (juce::ComboBox::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::ComboBox::outlineColourId, juce::Colour (Pal::Border));
-        setColour (juce::ComboBox::arrowColourId, juce::Colour (Pal::Subtext));
-        setColour (juce::PopupMenu::backgroundColourId, juce::Colour (Pal::Content));
-        setColour (juce::PopupMenu::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (Pal::Selected));
-        setColour (juce::PopupMenu::highlightedTextColourId, juce::Colour (Pal::Accent));
-        setColour (juce::Label::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::ToggleButton::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::ToggleButton::tickColourId, juce::Colour (Pal::Accent));
-        setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (Pal::Subtext));
-        setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (Pal::Content));
-        setColour (juce::TooltipWindow::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::TooltipWindow::outlineColourId, juce::Colour (Pal::Border));
-        setColour (juce::ScrollBar::thumbColourId, juce::Colour (Pal::Subtext).withAlpha (0.45f));
-        setColour (juce::TextEditor::highlightColourId, juce::Colour (Pal::Selected));
-        setColour (juce::TextEditor::highlightedTextColourId, juce::Colour (Pal::Text));
-        setColour (juce::TextEditor::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::TextEditor::backgroundColourId, juce::Colour (Pal::Content));
-        setColour (juce::AlertWindow::backgroundColourId, juce::Colour (Pal::BgDeep));
-        setColour (juce::AlertWindow::textColourId, juce::Colour (Pal::Text));
-        setColour (juce::AlertWindow::outlineColourId, juce::Colour (Pal::Border));
+        setColour (juce::ComboBox::backgroundColourId, RememberUI::colour (Pal::Content));
+        setColour (juce::ComboBox::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::ComboBox::outlineColourId, RememberUI::colour (Pal::Border));
+        setColour (juce::ComboBox::arrowColourId, RememberUI::colour (Pal::Subtext));
+        setColour (juce::PopupMenu::backgroundColourId, RememberUI::colour (Pal::Content));
+        setColour (juce::PopupMenu::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::PopupMenu::highlightedBackgroundColourId, RememberUI::colour (Pal::Selected));
+        setColour (juce::PopupMenu::highlightedTextColourId, RememberUI::colour (Pal::Accent));
+        setColour (juce::Label::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::ToggleButton::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::ToggleButton::tickColourId, RememberUI::colour (Pal::Accent));
+        setColour (juce::ToggleButton::tickDisabledColourId, RememberUI::colour (Pal::Subtext));
+        setColour (juce::TooltipWindow::backgroundColourId, RememberUI::colour (Pal::Content));
+        setColour (juce::TooltipWindow::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::TooltipWindow::outlineColourId, RememberUI::colour (Pal::Border));
+        setColour (juce::ScrollBar::thumbColourId, RememberUI::colour (Pal::Subtext).withAlpha (0.45f));
+        setColour (juce::TextEditor::highlightColourId, RememberUI::colour (Pal::Selected));
+        setColour (juce::TextEditor::highlightedTextColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::TextEditor::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::TextEditor::backgroundColourId, RememberUI::colour (Pal::Content));
+        setColour (juce::AlertWindow::backgroundColourId, RememberUI::colour (Pal::BgDeep));
+        setColour (juce::AlertWindow::textColourId, RememberUI::colour (Pal::Text));
+        setColour (juce::AlertWindow::outlineColourId, RememberUI::colour (Pal::Border));
     }
 
     juce::Font getTextButtonFont (juce::TextButton&, int height) override { return font (juce::jmin (13.0f, height * 0.55f), true); }
@@ -148,12 +186,12 @@ public:
     void drawComboBox (juce::Graphics& g, int w, int h, bool down, int, int, int, int, juce::ComboBox& box) override
     {
         auto bounds = juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1);
-        g.setColour (juce::Colour (down ? Pal::Selected : Pal::Content));
+        g.setColour (RememberUI::colour (down ? Pal::Selected : Pal::Content));
         g.fillRoundedRectangle (bounds, 7);
         const bool focused = box.hasKeyboardFocus (true);
-        g.setColour (juce::Colour (focused ? Pal::Accent : Pal::Border));
+        g.setColour (RememberUI::colour (focused ? Pal::Accent : Pal::Border));
         g.drawRoundedRectangle (bounds, 7, focused ? 2.0f : 1.0f);
-        g.setColour (juce::Colour (Pal::Subtext).withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.4f));
+        g.setColour (RememberUI::colour (Pal::Subtext).withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.4f));
         const float x = (float) w - 17, y = (float) h * 0.5f;
         juce::Path arrow;
         arrow.startNewSubPath (x - 4, y - 2); arrow.lineTo (x, y + 2); arrow.lineTo (x + 4, y - 2);
@@ -164,14 +202,14 @@ public:
     {
         auto track = juce::Rectangle<float> (2, (float) button.getHeight() / 2 - 9, 32, 18);
         const auto opacity = button.isEnabled() ? 1.0f : 0.4f;
-        auto colour = juce::Colour (button.getToggleState() ? Pal::Accent : Pal::Subtext);
+        auto colour = RememberUI::colour (button.getToggleState() ? Pal::Action : Pal::Subtext);
         if (over || down) colour = colour.darker (down ? 0.15f : 0.05f);
         g.setColour (colour.withMultipliedAlpha (opacity)); g.fillRoundedRectangle (track, 9);
         g.setColour (juce::Colours::white.withMultipliedAlpha (opacity));
         g.fillEllipse (button.getToggleState() ? 18.0f : 4.0f, track.getY() + 2, 14, 14);
         if (button.hasKeyboardFocus (false))
         {
-            g.setColour (juce::Colour (Pal::Accent));
+            g.setColour (RememberUI::colour (Pal::Accent));
             g.drawRoundedRectangle (track.expanded (2), 11, 1.5f);
         }
         g.setColour (button.findColour (juce::ToggleButton::textColourId).withMultipliedAlpha (opacity));
@@ -183,13 +221,13 @@ public:
     {
         auto bounds = b.getLocalBounds().toFloat().reduced (1.5f);
         auto colour = base;
-        if (down) colour = base.isTransparent() ? juce::Colour (Pal::Border) : base.darker (0.12f);
-        else if (over) colour = base.isTransparent() ? juce::Colour (Pal::Elevated) : base.darker (0.04f);
+        if (down) colour = base.isTransparent() ? RememberUI::colour (Pal::Border) : base.darker (0.12f);
+        else if (over) colour = base.isTransparent() ? RememberUI::colour (Pal::Elevated) : base.darker (0.04f);
         if (! b.isEnabled()) colour = colour.withMultipliedAlpha (0.45f);
         g.setColour (colour); g.fillRoundedRectangle (bounds, 7);
         if (b.hasKeyboardFocus (false))
         {
-            g.setColour (juce::Colour (Pal::Accent));
+            g.setColour (RememberUI::colour (Pal::Accent));
             g.drawRoundedRectangle (bounds, 7, 2);
         }
     }
@@ -213,7 +251,7 @@ public:
     void drawTextEditorOutline (juce::Graphics& g, int w, int h, juce::TextEditor& e) override
     {
         const bool focused = e.hasKeyboardFocus (true) && ! e.isReadOnly();
-        g.setColour (juce::Colour (focused ? Pal::Accent : Pal::Border));
+        g.setColour (RememberUI::colour (focused ? Pal::Accent : Pal::Border));
         g.drawRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1), 7, focused ? 2.0f : 1.0f);
     }
 };
@@ -222,9 +260,27 @@ public:
 // Never change JUCE's global LookAndFeel: a plugin shares its process with a host.
 struct Style final
 {
-    explicit Style (juce::Component& c) : owner (c) { owner.setLookAndFeel (&look.get()); }
-    ~Style() { owner.setLookAndFeel (nullptr); }
+    explicit Style (juce::Component& c) : owner (c)
+    { roots().add (&owner); owner.setLookAndFeel (&look.get()); }
+    ~Style() { roots().removeFirstMatchingValue (&owner); owner.setLookAndFeel (nullptr); }
+    static juce::Array<juce::Component*>& roots()
+    { static juce::Array<juce::Component*> values; return values; }
     juce::SharedResourcePointer<LookAndFeel> look;
     juce::Component& owner;
 };
+inline void setDark (bool dark)
+{
+    if (darkAppearance == dark) return;
+    darkAppearance = dark;
+    juce::SharedResourcePointer<LookAndFeel> look;
+    look->applyPalette();
+    juce::Array<juce::Component::SafePointer<juce::Component>> roots;
+    for (auto* root : Style::roots()) roots.add (root);
+    for (auto root : roots)
+    {
+        if (root == nullptr) continue;
+        refreshColours (*root);
+        root->sendLookAndFeelChange();
+    }
+}
 }

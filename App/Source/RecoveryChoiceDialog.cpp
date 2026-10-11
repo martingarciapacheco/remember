@@ -15,8 +15,8 @@ RecoveryChoiceDialog::RecoveryChoiceDialog (juce::Array<LibraryStore::RecoveryCh
     details.setFont (RememberUI::font (13.0f));
     explanation.setText ("Several complete revisions survived. Choose one and listen before restoring it. Cancel keeps every file."
                           "\nRestoring rechecks the files and the DAW owner; a changed recording requires a new review.", juce::dontSendNotification);
-    explanation.setColour (juce::Label::textColourId, juce::Colour (Pal::Text));
-    details.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (explanation, juce::Label::textColourId, Pal::Text);
+    RememberUI::bindColour (details, juce::Label::textColourId, Pal::Subtext);
     for (int i = 0; i < choices.size(); ++i)
     {
         const auto& choice = choices.getReference (i);
@@ -41,7 +41,7 @@ RecoveryChoiceDialog::RecoveryChoiceDialog (juce::Array<LibraryStore::RecoveryCh
         if (action) action (choice);
     };
     cancel.onClick = [this] { close(); };
-    restore.setColour (juce::TextButton::buttonColourId, juce::Colour (Pal::Accent));
+    RememberUI::bindColour (restore, juce::TextButton::buttonColourId, Pal::Action);
     for (auto* component : std::initializer_list<juce::Component*> { &explanation, &details, &revisions, &preview, &restore, &cancel })
         addAndMakeVisible (*component);
     restore.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -67,7 +67,7 @@ void RecoveryChoiceDialog::close()
 {
     if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>()) dialog->exitModalState (0);
 }
-void RecoveryChoiceDialog::paint (juce::Graphics& g) { g.fillAll (juce::Colour (Pal::BgDeep)); }
+void RecoveryChoiceDialog::paint (juce::Graphics& g) { g.fillAll (RememberUI::colour (Pal::BgDeep)); }
 void RecoveryChoiceDialog::resized()
 {
     auto bounds = getLocalBounds().reduced (18);

@@ -19,22 +19,21 @@ ProjectRowComponent::ProjectRowComponent()
     {
         entry.favorite = ! entry.favorite;
         favBtn.setButtonText (entry.favorite ? "*" : ".");
-        favBtn.setColour (juce::TextButton::textColourOffId,
-                          entry.favorite ? juce::Colour (Pal::Star) : juce::Colour (Pal::Subtext));
+        RememberUI::bindColour (favBtn, juce::TextButton::textColourOffId, entry.favorite ? Pal::Star : Pal::Subtext);
         if (onFavoriteToggle) onFavoriteToggle (entry.favorite);
         repaint();
     };
     addAndMakeVisible (favBtn);
 
-    playBtn.setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Accent));
+    RememberUI::bindColour (playBtn, juce::TextButton::buttonColourId, Pal::Action);
     playBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     playBtn.onClick = [this] { if (onPlay) onPlay(); };
     addAndMakeVisible (playBtn);
 
     renameEditor.setFont (RememberUI::font (13.0f, true));
-    renameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (Pal::Elevated));
-    renameEditor.setColour (juce::TextEditor::textColourId,       juce::Colour (Pal::Text));
-    renameEditor.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (Pal::Accent));
+    RememberUI::bindColour (renameEditor, juce::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (renameEditor, juce::TextEditor::textColourId, Pal::Text);
+    RememberUI::bindColour (renameEditor, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
     renameEditor.setVisible (false);
     auto commit = [this]
     {
@@ -84,8 +83,7 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
     setTooltip (e.storageError.isNotEmpty() ? e.storageError : e.name);
 
     favBtn.setButtonText (e.favorite ? "*" : ".");
-    favBtn.setColour (juce::TextButton::textColourOffId,
-                      e.favorite ? juce::Colour (Pal::Star) : juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (favBtn, juce::TextButton::textColourOffId, e.favorite ? Pal::Star : Pal::Subtext);
 
     repaint();
 }
@@ -175,15 +173,15 @@ void ProjectRowComponent::mouseDrag (const juce::MouseEvent& e)
 
 void ProjectRowComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::Content));
+    g.fillAll (RememberUI::colour (Pal::Content));
 
     if (selected)
     {
-        g.setColour (juce::Colour (Pal::Selected));
+        g.setColour (RememberUI::colour (Pal::Selected));
         g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2, 2), 8);
     }
 
-    g.setColour (juce::Colour (Pal::Border));
+    g.setColour (RememberUI::colour (Pal::Border));
     g.drawHorizontalLine (getHeight() - 1, 44.0f, (float) getWidth() - 12);
 
     auto area = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 10);
@@ -211,7 +209,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
         }
 
         g.setFont (nameFont);
-        g.setColour (juce::Colour (Pal::Text));
+        g.setColour (RememberUI::colour (Pal::Text));
         g.drawText (entry.name,
                     nameRow.getX(), nameRow.getY(), nameW, nameRow.getHeight(),
                     juce::Justification::centredLeft, true);
@@ -222,7 +220,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
             int x      = nameRow.getX() + nameW + 8;
             int rightX = nameRow.getRight();
             g.setFont (tagFont);
-            g.setColour (juce::Colour (Pal::Accent));
+            g.setColour (RememberUI::colour (Pal::Accent));
 
             for (auto& tag : entry.tags)
             {
@@ -250,7 +248,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     if (entry.recordedAt.isNotEmpty())  { sep(); meta += entry.recordedAt.substring (0, 10); }
 
     g.setFont (RememberUI::font (12.0f));
-    g.setColour (juce::Colour (Pal::Subtext));
+    g.setColour (RememberUI::colour (Pal::Subtext));
     g.drawText (meta, area, juce::Justification::centredLeft, true);
 }
 
@@ -270,40 +268,39 @@ void ProjectRowComponent::resized()
 
 ProjectListComponent::ProjectListComponent()
 {
-    searchBox.setTextToShowWhenEmpty ("Search projects, tags, key...",
-                                      juce::Colour (Pal::Subtext));
+    RememberUI::placeholder (searchBox, "Search projects, tags, key...", Pal::Subtext);
     searchBox.setFont (RememberUI::font (13.0f));
-    searchBox.setColour (juce::TextEditor::backgroundColourId,     juce::Colour (Pal::Elevated));
-    searchBox.setColour (juce::TextEditor::textColourId,           juce::Colour (Pal::Text));
+    RememberUI::bindColour (searchBox, juce::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (searchBox, juce::TextEditor::textColourId, Pal::Text);
     searchBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
-    searchBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (Pal::Accent));
+    RememberUI::bindColour (searchBox, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
     searchBox.setTitle ("Search library");
     searchBox.setIndents (10, 7);
     searchBox.onTextChange = [this] { scheduleSearchDebounce(); };
     addAndMakeVisible (searchBox);
 
     favFilterBtn.setClickingTogglesState (true);
-    favFilterBtn.setColour (juce::TextButton::buttonColourId,    juce::Colour (Pal::Elevated));
-    favFilterBtn.setColour (juce::TextButton::buttonOnColourId,  juce::Colour (Pal::Accent));
-    favFilterBtn.setColour (juce::TextButton::textColourOffId,   juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (favFilterBtn, juce::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (favFilterBtn, juce::TextButton::buttonOnColourId, Pal::Action);
+    RememberUI::bindColour (favFilterBtn, juce::TextButton::textColourOffId, Pal::Subtext);
     favFilterBtn.setColour (juce::TextButton::textColourOnId,    juce::Colours::white);
     favFilterBtn.onClick = [this] { showFavOnly = favFilterBtn.getToggleState(); applyFilter(); };
     addAndMakeVisible (favFilterBtn);
 
-    refreshBtn.setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Elevated));
-    refreshBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (refreshBtn, juce::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (refreshBtn, juce::TextButton::textColourOffId, Pal::Subtext);
     refreshBtn.onClick = [this] { refresh(); };
     addAndMakeVisible (refreshBtn);
 
     listBox.setModel (this);
     listBox.setRowHeight (kRowH);
-    listBox.setColour (juce::ListBox::backgroundColourId, juce::Colour (Pal::Content));
+    RememberUI::bindColour (listBox, juce::ListBox::backgroundColourId, Pal::Content);
     listBox.setOutlineThickness (0);
     addAndMakeVisible (listBox);
 
     libraryStatus.setFont (RememberUI::font (12.0f));
-    libraryStatus.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
-    libraryStatus.setColour (juce::Label::backgroundColourId, juce::Colour (Pal::Elevated));
+    RememberUI::bindColour (libraryStatus, juce::Label::textColourId, Pal::Subtext);
+    RememberUI::bindColour (libraryStatus, juce::Label::backgroundColourId, Pal::Elevated);
     addChildComponent (libraryStatus);
 
     ProjectScanner::addLibraryListener (this);
@@ -424,13 +421,13 @@ void ProjectListComponent::timerCallback()
 
 void ProjectListComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::BgDeep));
+    g.fillAll (RememberUI::colour (Pal::BgDeep));
     g.setFont (RememberUI::font (13, true));
-    g.setColour (juce::Colour (Pal::Text));
+    g.setColour (RememberUI::colour (Pal::Text));
     const auto title = folderFilter.isEmpty() ? juce::String ("All recordings") : folderFilter.fromLastOccurrenceOf ("/", false, false);
     g.drawText (title, 16, 66, getWidth() - 112, 28, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (12));
-    g.setColour (juce::Colour (Pal::Subtext));
+    g.setColour (RememberUI::colour (Pal::Subtext));
     g.drawText (juce::String (filtered.size()) + (filtered.size() == 1 ? " item" : " items"),
                 getWidth() - 100, 66, 84, 28, juce::Justification::centredRight);
     if (filtered.isEmpty() && ! allEntries.isEmpty())
@@ -438,10 +435,10 @@ void ProjectListComponent::paint (juce::Graphics& g)
         auto empty = getLocalBounds().withTrimmedTop (kToolbarH).reduced (24);
         if (libraryStatus.isVisible()) empty.removeFromTop (48);
         g.setFont (RememberUI::font (16, true));
-        g.setColour (juce::Colour (Pal::Text));
+        g.setColour (RememberUI::colour (Pal::Text));
         g.drawText ("No matching recordings", empty.withHeight (28).withY (empty.getCentreY() - 28), juce::Justification::centred);
         g.setFont (RememberUI::font (13));
-        g.setColour (juce::Colour (Pal::Subtext));
+        g.setColour (RememberUI::colour (Pal::Subtext));
         g.drawText ("Try another search or change your filters.", empty.withHeight (28).withY (empty.getCentreY()), juce::Justification::centred);
     }
 }
@@ -657,7 +654,7 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
         juce::DialogWindow::LaunchOptions options;
         options.content.setOwned (dialog.release());
         options.dialogTitle = "Choose a recovery revision";
-        options.dialogBackgroundColour = juce::Colour (Pal::BgDeep);
+        options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep);
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
         options.resizable = false;

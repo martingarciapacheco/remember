@@ -157,8 +157,8 @@ public:
             else
             {
                 button = std::make_unique<TagButton> (item->tag, removable, item->width);
-                button->setColour (juce::TextButton::buttonColourId, removable ? juce::Colour (Pal::Accent).withAlpha (0.25f) : juce::Colour (Pal::Elevated));
-                button->setColour (juce::TextButton::textColourOffId, juce::Colour (removable ? Pal::Text : Pal::Subtext));
+                RememberUI::bindColour (*button, juce::TextButton::buttonColourId, removable ? Pal::Accent : Pal::Elevated, removable ? 0.25f : 1.0f);
+                RememberUI::bindColour (*button, juce::TextButton::textColourOffId, removable ? Pal::Text : Pal::Subtext);
                 button->setWantsKeyboardFocus (false);
                 button->setMouseCursor (juce::MouseCursor::PointingHandCursor);
                 button->setTooltip (button->getButtonText());
@@ -221,7 +221,7 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
     auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
     {
         l.setFont (RememberUI::font (h, bold));
-        l.setColour (juce::Label::textColourId, juce::Colour (col));
+        RememberUI::bindColour (l, juce::Label::textColourId, col);
     };
 
     header.setText ("Edit tags - \"" + entryName + "\"", juce::dontSendNotification);
@@ -240,11 +240,11 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
     addAndMakeVisible (suggestEmpty);
 
     input.setFont (RememberUI::font (14.0f));
-    input.setColour (juce::TextEditor::backgroundColourId,     juce::Colour (Pal::Elevated));
-    input.setColour (juce::TextEditor::textColourId,           juce::Colour (Pal::Text));
+    RememberUI::bindColour (input, juce::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (input, juce::TextEditor::textColourId, Pal::Text);
     input.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
-    input.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (Pal::Accent));
-    input.setTextToShowWhenEmpty ("  type tag + Enter...", juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (input, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
+    RememberUI::placeholder (input, "  type tag + Enter...", Pal::Subtext);
     input.onReturnKey = [this]
     {
         auto t = normaliseTag (input.getText());
@@ -255,11 +255,11 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
 
     auto styleBtn = [] (juce::TextButton& b, uint32_t bg, uint32_t fg)
     {
-        b.setColour (juce::TextButton::buttonColourId,  juce::Colour (bg));
-        b.setColour (juce::TextButton::textColourOffId, juce::Colour (fg));
+        RememberUI::bindColour (b, juce::TextButton::buttonColourId, bg);
+        RememberUI::bindColour (b, juce::TextButton::textColourOffId, fg);
     };
 
-    styleBtn (okBtn,     Pal::Accent,   0xffffffff);
+    styleBtn (okBtn, Pal::Action,   Pal::OnAction);
     styleBtn (cancelBtn, Pal::Elevated, Pal::Subtext);
 
     okBtn.onClick = [this]
@@ -326,18 +326,18 @@ void TagsEditorDialog::rebuildSuggestions()
 
 void TagsEditorDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::BgDeep));
+    g.fillAll (RememberUI::colour (Pal::BgDeep));
 
     // Header strip
-    g.setColour (juce::Colour (Pal::Surface));
+    g.setColour (RememberUI::colour (Pal::Surface));
     g.fillRect (0, 0, getWidth(), 48);
-    g.setColour (juce::Colour (Pal::Border));
+    g.setColour (RememberUI::colour (Pal::Border));
     g.fillRect (0, 48, getWidth(), 1);
 
     // Separator between Current and Quick add sections
     if (! suggestArea.isEmpty())
     {
-        g.setColour (juce::Colour (Pal::Border));
+        g.setColour (RememberUI::colour (Pal::Border));
         g.fillRect (suggestArea.getX(), suggestCaption.getY() - 7, suggestArea.getWidth(), 1);
     }
 }
@@ -403,7 +403,7 @@ void TagsEditorDialog::launch (const juce::String& entryName,
     opts.escapeKeyTriggersCloseButton = true;
     opts.useNativeTitleBar         = true;
     opts.resizable                 = false;
-    opts.dialogBackgroundColour    = juce::Colour (Pal::BgDeep);
+    opts.dialogBackgroundColour    = RememberUI::colour (Pal::BgDeep);
     opts.launchAsync();
 }
 

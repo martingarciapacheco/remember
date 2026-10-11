@@ -11,8 +11,8 @@ MainComponent::MainComponent()
     setWantsKeyboardFocus (true);
 
     settingsButton.setTooltip ("Open settings (previews & projects folders)");
-    settingsButton.setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Elevated));
-    settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (settingsButton, juce::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (settingsButton, juce::TextButton::textColourOffId, Pal::Subtext);
     settingsButton.onClick = [this] { showSettingsDialog(); };
     settingsButton.setTitle ("Settings");
     settingsButton.setTooltip (juce::String ("Open settings (previews and project folders)\n") + REMEMBER_VERSION_LINE);
@@ -107,18 +107,22 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
 void MainComponent::checkFirstRun()
 {
     auto needsSetup = std::make_shared<bool> (false);
-    ProjectScanner::queryAsync ([needsSetup]
+    auto dark = std::make_shared<bool> (false);
+    ProjectScanner::queryAsync ([needsSetup, dark]
     {
         const auto settings = ProjectScanner::readSettings();
         if (settings.result.failed()) return settings.result;
         // A configured drive/folder can be temporarily unavailable. Its index
         // error offers Settings/Refresh; it is not a new profile to initialise.
         *needsSetup = settings.previews == juce::File{};
+        *dark = settings.darkAppearance;
         return juce::Result::ok();
     },
-        [safe = juce::Component::SafePointer<MainComponent> (this), needsSetup] (juce::Result result)
+        [safe = juce::Component::SafePointer<MainComponent> (this), needsSetup, dark] (juce::Result result)
         {
-            if (safe == nullptr || result.failed() || ! *needsSetup) return;
+            if (safe == nullptr || result.failed()) return;
+            RememberUI::setDark (*dark);
+            if (! *needsSetup) return;
             SettingsDialog::launch (true, [safe]
             { if (safe != nullptr) safe->list.refresh(); });
         });
@@ -132,20 +136,20 @@ void MainComponent::showSettingsDialog()
 
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::BgDeep));
-    g.setColour (juce::Colour (Pal::Surface));
+    g.fillAll (RememberUI::colour (Pal::BgDeep));
+    g.setColour (RememberUI::colour (Pal::Surface));
     g.fillRect (0, 0, kSidebarWidth, getHeight() - kPlayerHeight);
     g.setFont (RememberUI::font (22, true));
-    g.setColour (juce::Colour (Pal::Text));
+    g.setColour (RememberUI::colour (Pal::Text));
     g.drawText ("Remember", 20, 14, kSidebarWidth - 32, 28, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (12));
-    g.setColour (juce::Colour (Pal::Subtext));
+    g.setColour (RememberUI::colour (Pal::Subtext));
     g.drawText ("Your music, remembered.", 20, 42, kSidebarWidth - 32, 22, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (22, true));
-    g.setColour (juce::Colour (Pal::Text));
+    g.setColour (RememberUI::colour (Pal::Text));
     g.drawText ("Library", kSidebarWidth + 24, 14, 180, 28, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (12));
-    g.setColour (juce::Colour (Pal::Subtext));
+    g.setColour (RememberUI::colour (Pal::Subtext));
     g.drawText ("Browse projects and listen to previews", kSidebarWidth + 24, 42,
                 getWidth() - kSidebarWidth - 120, 22, juce::Justification::centredLeft);
 }

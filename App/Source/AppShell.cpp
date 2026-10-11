@@ -9,7 +9,7 @@ class AppShell::MainWindow : public juce::DocumentWindow, private juce::Timer
 public:
     explicit MainWindow (const juce::String& name)
         : DocumentWindow (name,
-                          juce::Colour (Pal::BgDeep),
+                          RememberUI::colour (Pal::BgDeep),
                           DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
@@ -147,7 +147,7 @@ private:
     {
         juce::Image icon (juce::Image::ARGB, 32, 32, true);
         juce::Graphics graphics (icon);
-        graphics.setColour (juce::Colour (Pal::Accent));
+        graphics.setColour (RememberUI::colour (Pal::Accent));
         graphics.fillRoundedRectangle (1.0f, 1.0f, 30.0f, 30.0f, 7.0f);
         graphics.setColour (juce::Colours::white);
 

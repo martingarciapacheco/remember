@@ -40,18 +40,18 @@ public:
         bool sel = isSelected();
         if (sel)
         {
-            g.setColour (juce::Colour (Pal::Selected));
+            g.setColour (RememberUI::colour (Pal::Selected));
             g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 6, (float) h - 4), 7);
         }
 
-        g.setColour (juce::Colour (sel ? Pal::Accent : Pal::Text));
+        g.setColour (RememberUI::colour (sel ? Pal::Accent : Pal::Text));
         g.setFont (RememberUI::font (13.0f, fullPath.isEmpty()));
         RememberUI::icon (g, "folder", juce::Rectangle<float> (6, 0, 20, (float) h));
         g.drawText (displayName, 32, 0, w - 76, h, juce::Justification::centredLeft, true);
 
         if (entryCount > 0)
         {
-            g.setColour (juce::Colour (Pal::Subtext).withAlpha (1.0f));
+            g.setColour (RememberUI::colour (Pal::Subtext).withAlpha (1.0f));
             g.setFont (RememberUI::font (10.5f));
             g.drawText (juce::String (entryCount), w - 40, 0, 34, h,
                         juce::Justification::centredRight, false);
@@ -176,13 +176,13 @@ private:
 FoldersSidebarComponent::FoldersSidebarComponent()
 {
     header.setFont (RememberUI::font (13.0f, true));
-    header.setColour (juce::Label::textColourId, juce::Colour (Pal::Text));
+    RememberUI::bindColour (header, juce::Label::textColourId, Pal::Text);
     addAndMakeVisible (header);
 
     auto styleBtn = [] (juce::TextButton& b)
     {
-        b.setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Elevated));
-        b.setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
+        RememberUI::bindColour (b, juce::TextButton::buttonColourId, Pal::Elevated);
+        RememberUI::bindColour (b, juce::TextButton::textColourOffId, Pal::Subtext);
     };
     styleBtn (newRootBtn);
     styleBtn (sortBtn);
@@ -198,7 +198,7 @@ FoldersSidebarComponent::FoldersSidebarComponent()
     tree.setRootItem (rootItem.get());
     tree.setRootItemVisible (false);
     tree.setIndentSize (16);
-    tree.setColour (juce::TreeView::backgroundColourId, juce::Colour (Pal::Surface));
+    RememberUI::bindColour (tree, juce::TreeView::backgroundColourId, Pal::Surface);
     addAndMakeVisible (tree);
 
     rebuildTree();
@@ -211,8 +211,8 @@ FoldersSidebarComponent::~FoldersSidebarComponent()
 
 void FoldersSidebarComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::Surface));
-    g.setColour (juce::Colour (Pal::Border));
+    g.fillAll (RememberUI::colour (Pal::Surface));
+    g.setColour (RememberUI::colour (Pal::Border));
     g.fillRect (getWidth() - 1, 0, 1, getHeight());
 
 }

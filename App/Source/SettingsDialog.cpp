@@ -2,6 +2,7 @@
 #include "ProjectScanner.h"
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
+#include "../../Shared/AppearanceSettings.h"
 
 // ── ListBoxModel for the project folders list ────────────────────────────────
 class SettingsDialog::FoldersListModel : public juce::ListBoxModel
@@ -16,7 +17,7 @@ public:
             remove.setTitle ("Remove search folder");
             remove.setTooltip ("Remove search folder");
             remove.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-            remove.setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
+            RememberUI::bindColour (remove, juce::TextButton::textColourOffId, Pal::Subtext);
             remove.setWantsKeyboardFocus (false);
             addAndMakeVisible (remove);
         }
@@ -31,11 +32,11 @@ public:
     void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool sel) override
     {
         if (row < 0 || row >= owner.projectsFolders.size()) return;
-        g.fillAll (juce::Colour (sel ? Pal::Elevated : Pal::BgDeep));
-        g.setColour (juce::Colour (Pal::Border));
+        g.fillAll (RememberUI::colour (sel ? Pal::Elevated : Pal::BgDeep));
+        g.setColour (RememberUI::colour (Pal::Border));
         g.drawHorizontalLine (h - 1, 0.0f, (float) w);
 
-        g.setColour (juce::Colour (Pal::Text));
+        g.setColour (RememberUI::colour (Pal::Text));
         g.setFont (RememberUI::font (12.0f));
         // Leave room on the right for the per-row remove button (32px)
         g.drawText (owner.projectsFolders.getReference (row).getFullPathName(),
@@ -84,18 +85,29 @@ static constexpr double kMonoSizeFactor = 0.6;
 
 SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner::SettingsSnapshot()> reader) : firstRun (firstRunFlag)
 {
-    setSize (680, 640);
+    setSize (680, 680);
 
     auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
     {
         l.setFont (RememberUI::font (h, bold));
-        l.setColour (juce::Label::textColourId, juce::Colour (col));
+        RememberUI::bindColour (l, juce::Label::textColourId, col);
     };
 
     header.setText (firstRun ? "Welcome to Remember" : "Settings",
                     juce::dontSendNotification);
     styleLabel (header, 22.0f, Pal::Text, true);
     addAndMakeVisible (header);
+
+    styleLabel (appearanceCaption, 13.0f, Pal::Text, true);
+    styleLabel (appearanceHint, 11.0f, Pal::Subtext);
+    appearanceCombo.setTitle ("Appearance");
+    appearanceCombo.addItem ("Light", 1);
+    appearanceCombo.addItem ("Dark", 2);
+    appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+    appearanceCombo.onChange = [this] { saveAppearance(); };
+    addAndMakeVisible (appearanceCaption);
+    addAndMakeVisible (appearanceHint);
+    addAndMakeVisible (appearanceCombo);
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
     styleLabel (previewsHint,    11.0f, Pal::Subtext);
@@ -154,7 +166,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
         updateSizeEstimate();
     };
 
-    monoToggle.setColour (juce::ToggleButton::textColourId, juce::Colour (Pal::Subtext));
+    RememberUI::bindColour (monoToggle, juce::ToggleButton::textColourId, Pal::Subtext);
     monoToggle.setToggleState (recordMono, juce::dontSendNotification);
     monoToggle.onClick = [this]
     {
@@ -176,19 +188,19 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     foldersModel = std::make_unique<FoldersListModel> (*this);
     foldersList.setModel (foldersModel.get());
     foldersList.setRowHeight (32);
-    foldersList.setColour (juce::ListBox::backgroundColourId, juce::Colour (Pal::Elevated));
+    RememberUI::bindColour (foldersList, juce::ListBox::backgroundColourId, Pal::Elevated);
     foldersList.setOutlineThickness (0);
     addAndMakeVisible (foldersList);
 
     auto styleBtn = [] (juce::TextButton& b, uint32_t bg, uint32_t fg)
     {
-        b.setColour (juce::TextButton::buttonColourId,  juce::Colour (bg));
-        b.setColour (juce::TextButton::textColourOffId, juce::Colour (fg));
+        RememberUI::bindColour (b, juce::TextButton::buttonColourId, bg);
+        RememberUI::bindColour (b, juce::TextButton::textColourOffId, fg);
     };
 
     styleBtn (previewsBrowse,  Pal::Elevated, Pal::Text);
     styleBtn (addProjectsBtn,  Pal::Elevated, Pal::Text);
-    styleBtn (okBtn,           Pal::Accent,   0xffffffff);
+    styleBtn (okBtn, Pal::Action,   Pal::OnAction);
     styleBtn (cancelBtn,       Pal::Elevated, Pal::Subtext);
     styleBtn (retrySettings,   Pal::Elevated, Pal::Text);
     styleLabel (settingsProblem, 12.0f, Pal::Subtext);
@@ -222,6 +234,32 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
 SettingsDialog::~SettingsDialog() { storageGeneration->fetch_add (1); validationGeneration->fetch_add (1); }
 
+void SettingsDialog::saveAppearance()
+{
+    if (! settingsLoaded || appearanceSaving) return;
+    const bool dark = appearanceCombo.getSelectedId() == 2;
+    appearanceSaving = true;
+    appearanceCombo.setEnabled (false);
+    okBtn.setEnabled (false);
+    ProjectScanner::editAsync ([dark] { return AppearanceSettings::save (dark); },
+        [safe = juce::Component::SafePointer<SettingsDialog> (this), dark] (juce::Result result)
+        {
+            if (result.wasOk()) RememberUI::setDark (dark);
+            if (safe == nullptr) return;
+            safe->appearanceSaving = false;
+            safe->appearanceCombo.setEnabled (true);
+            safe->appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+            safe->refreshLabels();
+            if (result.failed())
+            {
+                safe->settingsProblem.setText ("Cannot save appearance: " + result.getErrorMessage(), juce::dontSendNotification);
+                safe->settingsProblem.setVisible (true);
+                safe->retrySettings.setVisible (true);
+                safe->resized();
+            }
+        });
+}
+
 void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapshot()> reader)
 {
     settingsLoaded = false;
@@ -254,6 +292,9 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             safe->recordMono = settings->mono;
             // JUCE Button::setToggleState ignores changes while disabled.
             for (auto* child : safe->getChildren()) child->setEnabled (true);
+            if (result.wasOk()) RememberUI::setDark (settings->darkAppearance);
+            safe->appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+            safe->appearanceCombo.setEnabled (result.wasOk());
             // Preserve all supported config values, rather than silently
             // overwriting a non-preset value when saving an unrelated setting.
             if (safe->durationCombo.indexOfItemId (settings->seconds) < 0)
@@ -295,7 +336,7 @@ void SettingsDialog::refreshLabels()
         return juce::Result::ok();
     }, [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation, valid] (juce::Result result)
     {
-        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid);
+        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid && ! safe->appearanceSaving);
     });
 }
 
@@ -390,6 +431,7 @@ void SettingsDialog::addProjectFolder()
 
 void SettingsDialog::commit()
 {
+    if (appearanceSaving) return;
     validationGeneration->fetch_add (1);
     for (auto* child : getChildren()) child->setEnabled (false);
     auto originalBackup = std::make_shared<juce::File>();
@@ -430,12 +472,12 @@ void SettingsDialog::commit()
 
 void SettingsDialog::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::BgDeep));
+    g.fillAll (RememberUI::colour (Pal::BgDeep));
 
     // Header strip
-    g.setColour (juce::Colour (Pal::Surface));
+    g.setColour (RememberUI::colour (Pal::Surface));
     g.fillRect (0, 0, getWidth(), 48);
-    g.setColour (juce::Colour (Pal::Border));
+    g.setColour (RememberUI::colour (Pal::Border));
     g.fillRect (0, 48, getWidth(), 1);
 }
 
@@ -448,6 +490,13 @@ void SettingsDialog::resized()
 
     area.removeFromTop (16);
     area = area.reduced (16, 0);
+
+    auto appearanceRow = area.removeFromTop (32);
+    appearanceCaption.setBounds (appearanceRow.removeFromLeft (110));
+    appearanceCombo.setBounds (appearanceRow.removeFromLeft (150));
+    appearanceRow.removeFromLeft (16);
+    appearanceHint.setBounds (appearanceRow);
+    area.removeFromTop (12);
 
     // ── Previews block ──────────────────────────────────────────────────────
     auto block1 = area.removeFromTop (78);
@@ -527,6 +576,6 @@ void SettingsDialog::launch (bool firstRun, std::function<void()> onDone)
     opts.escapeKeyTriggersCloseButton = ! firstRun;
     opts.useNativeTitleBar         = true;
     opts.resizable                 = false;
-    opts.dialogBackgroundColour    = juce::Colour (Pal::BgDeep);
+    opts.dialogBackgroundColour    = RememberUI::colour (Pal::BgDeep);
     opts.launchAsync();
 }

@@ -16,10 +16,12 @@ public:
     // The native folder selector and other editor integrations use this same
     // asynchronous edit path; preparation applies it to future capture banks.
     void applyOutputFolder (const juce::File&);
+    void applyAppearance (bool dark);
 
 private:
     RememberUI::Style uiStyle { *this };
     void showSettingsPanel();
+    void chooseOutputFolder();
     void showAssociationMenu();
     void chooseProjectFile (const juce::String& expectedId);
     void refreshSettingsRequest();

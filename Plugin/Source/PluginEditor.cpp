@@ -18,10 +18,10 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     nameEditor.setIndents (10, 9);
     nameEditor.setTitle ("Project name");
     nameEditor.setJustification (juce::Justification::centredLeft);
-    nameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (kElevated));
-    nameEditor.setColour (juce::TextEditor::textColourId,       juce::Colour (kText));
+    RememberUI::bindColour (nameEditor, juce::TextEditor::backgroundColourId, kElevated);
+    RememberUI::bindColour (nameEditor, juce::TextEditor::textColourId, kText);
     nameEditor.setColour (juce::TextEditor::outlineColourId,    juce::Colours::transparentBlack);
-    nameEditor.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (kAccent));
+    RememberUI::bindColour (nameEditor, juce::TextEditor::focusedOutlineColourId, kAccent);
     nameEditor.setText (processor.getProjectName(), false);
     nameEditor.onReturnKey  = [this] { processor.setProjectName (nameEditor.getText()); nameEditor.unfocusAllComponents(); };
     nameEditor.onFocusLost  = [this] { processor.setProjectName (nameEditor.getText()); };
@@ -29,28 +29,28 @@ RememberEditor::RememberEditor (RememberProcessor& p)
 
     // ── BPM / Key combined label ─────────────────────────────────────────────
     bpmKeyLabel.setFont (RememberUI::font (14.0f, true));
-    bpmKeyLabel.setColour (juce::Label::textColourId, juce::Colour (kAccent));
+    RememberUI::bindColour (bpmKeyLabel, juce::Label::textColourId, kAccent);
     bpmKeyLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (bpmKeyLabel);
 
     // ── Status ───────────────────────────────────────────────────────────────
     statusLabel.setFont (bodyFont());
-    statusLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext));
+    RememberUI::bindColour (statusLabel, juce::Label::textColourId, kSubtext);
     statusLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (statusLabel);
 
     // ── Settings button ───────────────────────────────────────────────────────
     RememberUI::iconButton (settingsButton, "settings", "Recording settings");
-    settingsButton.setTooltip ("Change output folder");
+    settingsButton.setTooltip ("Settings: appearance and output folder");
     settingsButton.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
-    settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (kSubtext));
+    RememberUI::bindColour (settingsButton, juce::TextButton::textColourOffId, kSubtext);
     settingsButton.onClick = [this] { showSettingsPanel(); };
     addAndMakeVisible (settingsButton);
     associationLabel.setFont (RememberUI::font (12.0f));
-    associationLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext));
+    RememberUI::bindColour (associationLabel, juce::Label::textColourId, kSubtext);
     addAndMakeVisible (associationLabel);
-    associationButton.setColour (juce::TextButton::buttonColourId, juce::Colour (kElevated));
-    associationButton.setColour (juce::TextButton::textColourOffId, juce::Colour (kText));
+    RememberUI::bindColour (associationButton, juce::TextButton::buttonColourId, kElevated);
+    RememberUI::bindColour (associationButton, juce::TextButton::textColourOffId, kText);
     associationButton.setTooltip ("Select a DAW file, keep a recording without a file, or return to automatic association");
     associationButton.onClick = [this] { showAssociationMenu(); };
     addAndMakeVisible (associationButton);
@@ -59,7 +59,7 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     versionLabel.setText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
                           juce::dontSendNotification);
     versionLabel.setFont (RememberUI::font (11.0f));
-    versionLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext).withAlpha (1.0f));
+    RememberUI::bindColour (versionLabel, juce::Label::textColourId, kSubtext, 1.0f);
     versionLabel.setJustificationType (juce::Justification::centredRight);
     versionLabel.setTooltip (REMEMBER_VERSION_LINE);
     addAndMakeVisible (versionLabel);
@@ -214,7 +214,7 @@ void RememberEditor::refreshFromEngine()
     if (statusText != lastStatusText || stInt != lastStateInt)
     {
         statusLabel.setText (statusText, juce::dontSendNotification);
-        statusLabel.setColour (juce::Label::textColourId, juce::Colour (statusColour));
+        RememberUI::bindColour (statusLabel, juce::Label::textColourId, statusColour);
         lastStatusText = statusText;
     }
 
@@ -233,22 +233,22 @@ void RememberEditor::refreshFromEngine()
 
 void RememberEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (kBgDeep));
+    g.fillAll (RememberUI::colour (kBgDeep));
     g.setFont (titleFont());
-    g.setColour (juce::Colour (kText));
+    g.setColour (RememberUI::colour (kText));
     g.drawText ("Remember", 24, 16, 210, 28, juce::Justification::centredLeft);
     g.setFont (bodyFont());
-    g.setColour (juce::Colour (kSubtext));
+    g.setColour (RememberUI::colour (kSubtext));
     g.drawText ("Capture the idea. Keep the moment.", 24, 46, getWidth() - 48, 22, juce::Justification::centredLeft);
     RememberUI::panel (g, juce::Rectangle<float> (16, 84, (float) getWidth() - 32, 140));
     g.setFont (bodyFont());
-    g.setColour (juce::Colour (kSubtext));
+    g.setColour (RememberUI::colour (kSubtext));
     g.drawText ("Project", 28, 96, 160, 18, juce::Justification::centredLeft);
-    g.setColour (juce::Colour (kBorder));
+    g.setColour (RememberUI::colour (kBorder));
     g.drawHorizontalLine (228, 28, (float) getWidth() - 28);
     paintProgressBar (g, { 28, 304, getWidth() - 56, 5 }, recordProgress);
     g.setFont (RememberUI::font (12));
-    g.setColour (juce::Colour (kSubtext));
+    g.setColour (RememberUI::colour (kSubtext));
     g.drawText ("Automatic preview", 28, 326, 160, 22, juce::Justification::centredLeft);
 }
 
@@ -257,14 +257,14 @@ void RememberEditor::paintProgressBar (juce::Graphics& g,
                                        float progress)
 {
     // Track
-    g.setColour (juce::Colour (kElevated));
+    g.setColour (RememberUI::colour (kElevated));
     g.fillRoundedRectangle (bounds.toFloat(), 2.0f);
 
     // Fill
     if (progress > 0.0f)
     {
         auto fill = bounds.toFloat().withWidth (bounds.getWidth() * progress);
-        g.setColour (juce::Colour (kAccent));
+        g.setColour (RememberUI::colour (kAccent));
         g.fillRoundedRectangle (fill, 2.0f);
     }
 }
@@ -285,6 +285,35 @@ void RememberEditor::resized()
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 void RememberEditor::showSettingsPanel()
+{
+    if (settingsRequest) return;
+    juce::PopupMenu menu, appearance;
+    menu.setLookAndFeel (&getLookAndFeel());
+    appearance.addItem (2, "Light", true, ! RememberUI::isDark());
+    appearance.addItem (3, "Dark", true, RememberUI::isDark());
+    menu.addSubMenu ("Appearance", appearance);
+    menu.addSeparator();
+    menu.addItem (1, "Change previews output folder...");
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&settingsButton),
+        [safe = juce::Component::SafePointer<RememberEditor> (this)] (int result)
+        {
+            if (safe == nullptr) return;
+            if (result == 1) safe->chooseOutputFolder();
+            else if (result == 2 || result == 3) safe->applyAppearance (result == 3);
+        });
+}
+
+void RememberEditor::applyAppearance (bool dark)
+{
+    if (settingsRequest) return;
+    settingsMessage = "Saving appearance...";
+    settingsFailed = false;
+    settingsButton.setEnabled (false);
+    settingsRequest = SettingsManager::getInstance().setAppearanceAsync (dark);
+    refreshFromEngine();
+}
+
+void RememberEditor::chooseOutputFolder()
 {
     if (settingsRequest) return;
 
@@ -322,6 +351,7 @@ void RememberEditor::refreshSettingsRequest()
     else
     {
         settingsFolder = request->snapshot.previews;
+        RememberUI::setDark (request->snapshot.darkAppearance);
         if (savingSettings)
         {
             processor.getEngine().setOutputFolder (settingsFolder);
@@ -330,7 +360,7 @@ void RememberEditor::refreshSettingsRequest()
         else settingsMessage.clear();
     }
     savingSettings = false;
-    if (wasInitial && ! request->configured) showSettingsPanel();
+    if (wasInitial && ! request->configured) chooseOutputFolder();
 }
 
 void RememberEditor::showAssociationMenu()

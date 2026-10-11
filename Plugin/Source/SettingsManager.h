@@ -28,6 +28,7 @@ public:
         bool mono = false;
         juce::int64 revision = 0, modifiedMs = 0;
         juce::String fingerprint;
+        bool darkAppearance = false;
     };
     using Reader = std::function<Snapshot()>;
     Snapshot readSnapshot() const;
@@ -47,6 +48,7 @@ public:
     // encoding and an older constructor/restore read.
     static std::shared_ptr<Request> readSnapshotAsync (Reader);
     std::shared_ptr<Request> setPreviewsFolderAsync (const juce::File&) const;
+    std::shared_ptr<Request> setAppearanceAsync (bool dark) const;
 
 private:
     SettingsManager();

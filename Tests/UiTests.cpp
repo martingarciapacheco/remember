@@ -1,4 +1,5 @@
 #include "UiTests.h"
+#include "AppearanceTests.h"
 #include "../App/Source/FoldersSidebarComponent.h"
 #include "../App/Source/TagsEditorDialog.h"
 #include "../App/Source/MainComponent.h"
@@ -54,6 +55,7 @@ void saveImage (juce::Component& component, const char* name, bool software = fa
 
 void testFrontendDesign (const juce::File& root)
 {
+    testAppearanceContrast();
     SavedConfig restoreConfig;
     const auto library = root.getChildFile ("design-library");
     const auto projects = root.getChildFile ("projects");
@@ -121,6 +123,7 @@ void testFrontendDesign (const juce::File& root)
     search->setText ({}, true);
     awaitUi ([&] { return list->getNumRows() == 1; });
     check (rows->isVisible(), "Clearing search did not restore the list");
+    rows->selectRow (0);
     {
         SettingsDialog settings (false);
         awaitUi ([&] { return settings.hasLoadedSettings(); });
@@ -132,12 +135,54 @@ void testFrontendDesign (const juce::File& root)
         auto* remove = childOf<juce::TextButton> (*row);
         check (remove && remove->getWidth() == 32 && remove->getRight() == row->getWidth(), "Folder remove action spans or clips its row");
         saveImage (settings, "apple-settings.png", true);
+        juce::ComboBox* appearance = nullptr;
+        for (auto* child : settings.getChildren())
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Appearance") appearance = combo;
+        check (appearance && appearance->isEnabled(), "Settings lacks an enabled appearance option");
+        appearance->setSelectedId (2, juce::sendNotificationSync);
+        awaitUi ([&] { return RememberUI::isDark() && appearance->isEnabled(); });
+        check (LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() == "dark", "App did not persist dark appearance");
+        check (search->findColour (juce::TextEditor::backgroundColourId) == RememberUI::colour (Pal::Elevated), "Existing search did not change appearance");
+        check (rows->getSelectedRow() == 0 && player->hasLoadedEntry(), "Appearance switch lost selection or loaded audio");
+        saveImage (settings, "apple-settings-dark.png", true);
+        check (ProjectScanner::saveSettings (library, { projects }, 60, 4, false).wasOk()
+            && ProjectScanner::readSettings().darkAppearance, "Saving recording options discarded appearance");
+        saveImage (*scene, "apple-app-dark.png", true);
+        scene->setSize (640, 480);
+        saveImage (*scene, "apple-app-dark-minimum.png", true);
+        scene->setSize (1024, 768);
+    }
+    {
+        RememberUI::setDark (false);
+        auto reopenedApp = std::make_unique<MainComponent>();
+        awaitUi ([] { return RememberUI::isDark(); });
+    }
+    {
+        auto tags = TagsEditorDialog::create ("Midnight sketches", { "Ambient", "Work in progress" }, [] (juce::StringArray) {});
+        saveImage (*tags, "apple-tags-dark.png", true);
+    }
+    {
+        LibraryStore::RecoveryChoice choice;
+        choice.revision = "revision-for-layout-review"; choice.recordedAt = "2026-10-11T12:00:00Z";
+        choice.durationSeconds = 60; choice.channels = 2; choice.bpm = 124; choice.key = "A minor";
+        auto recovery = RecoveryChoiceDialog::create ({ choice }, [] (auto) {}, [] (auto) {}, false);
+        saveImage (*recovery, "apple-recovery-dark.png", true);
+    }
+    {
+        SettingsDialog reopened (false);
+        awaitUi ([&] { return reopened.hasLoadedSettings(); });
+        juce::ComboBox* appearance = nullptr;
+        for (auto* child : reopened.getChildren())
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Appearance") appearance = combo;
+        check (appearance && appearance->getSelectedId() == 2, "Reopened settings lost dark appearance");
+        appearance->setSelectedId (1, juce::sendNotificationSync);
+        awaitUi ([&] { return ! RememberUI::isDark() && appearance->isEnabled(); });
+        check (LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() == "light", "App did not persist light appearance");
+        check (search->findColour (juce::TextEditor::textColourId) == RememberUI::colour (Pal::Text), "Switching back left dark text colours");
     }
     {
         auto tags = TagsEditorDialog::create ("Midnight sketches", { "Ambient", "Work in progress" }, [] (juce::StringArray) {});
         saveImage (*tags, "apple-tags.png", true);
-    }
-    {
         LibraryStore::RecoveryChoice choice;
         choice.revision = "revision-for-layout-review"; choice.recordedAt = "2026-10-11T12:00:00Z";
         choice.durationSeconds = 60; choice.channels = 2; choice.bpm = 124; choice.key = "A minor";

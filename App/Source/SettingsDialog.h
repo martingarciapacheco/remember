@@ -35,6 +35,7 @@ private:
     void updateSizeEstimate();
     void updateStorageUsage();
     void loadSettings (std::function<ProjectScanner::SettingsSnapshot()> reader);
+    void saveAppearance();
     std::shared_ptr<std::atomic<uint64_t>> storageGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
     std::shared_ptr<std::atomic<uint64_t>> validationGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
     juce::File measuredFolder;
@@ -44,6 +45,10 @@ private:
     juce::TextButton retrySettings { "Reload settings" };
 
     bool firstRun { false };
+    bool appearanceSaving = false;
+    juce::Label appearanceCaption { {}, "Appearance" };
+    juce::Label appearanceHint { {}, "Saved immediately for the app and plugin" };
+    juce::ComboBox appearanceCombo;
 
     juce::Label  header;
     juce::Label  previewsCaption { {}, "Previews folder" };
