@@ -1,5 +1,21 @@
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../App/Source/ProjectScanner.h"
+#include "../Shared/LibraryStore.h"
+#include "StorageTests.h"
+#include "LifecycleTests.h"
+#include "ConfigurationTests.h"
+#include "AssociationTests.h"
+#include "AnalysisTests.h"
+#include "MusicCorpus.h"
+#include "MusicFeatures.h"
+#include "CaptureMatrixTests.h"
+#include "TransportTests.h"
+#include "PreviewQualityTests.h"
+#include "ResamplingTests.h"
+#include "FeatureCacheTests.h"
+#include "RecoveryTests.h"
+#include "StressTests.h"
+#include "../Shared/BackgroundRetirement.h"
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -179,10 +195,10 @@ void testHostLoading (const juce::File& root)
         RecordingEngine engine;
         engine.setOutputFolder (previews);
         engine.restoreState (saved);
-        engine.prepare (8000, 256);
+        engine.prepare (8000, 256, SettingsManager::Snapshot{});
         await ([&] { return engine.getProjectName() == project.getFileNameWithoutExtension(); }, "Project loading didn't finish");
         require (engine.isProjectConfirmed(), "Saved project wasn't confirmed during loading");
-        engine.prepare (16000, 256);
+        engine.prepare (16000, 256, SettingsManager::Snapshot{});
         engine.saveState (saved);
     }
     require (titleMessages.load() == 0, "Plugin lifecycle queried the DAW's UI thread");
@@ -193,16 +209,92 @@ void testHostLoading (const juce::File& root)
 
 int main (int argc, char** argv)
 {
+    if (argc == 2 && juce::String (argv[1]) == "--validation-profile-probe")
+    {
+        try { std::cout << LibraryStore::dataDirectory().getFullPathName() << std::endl; return 0; }
+        catch (const std::exception& error) { std::cerr << error.what() << std::endl; return 2; }
+    }
     juce::ScopedJuceInitialiser_GUI initialise;
-    const auto root = juce::File::getCurrentWorkingDirectory().getChildFile ("remember-regression-" + juce::Uuid().toString());
-    root.createDirectory();
+    if (argc == 4 && juce::String (argv[1]) == "--storage-crash") return storageCrash (juce::File (argv[2]), argv[3]);
+    if (argc == 3 && juce::String (argv[1]) == "--storage-writer") return storageWriter (juce::File (argv[2]));
+    // Preserve the full random UUID while leaving room for nested revisions
+    // and JUCE's atomic temporary filenames in Windows build directories.
+    const auto root = juce::File::getCurrentWorkingDirectory().getChildFile ("remember-" + juce::Uuid().toString().removeCharacters ("-"));
+    require (root.createDirectory().wasOk(), "Cannot create isolated test directory");
+    LibraryStore::setDataDirectoryForTests (root.getChildFile ("profile"));
     int status = 0;
     try
     {
+        if (argc > 1 && juce::String (argv[1]) == "--association")
+        {
+            testAssociation (root); root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--configuration")
+        {
+            testConfiguration (root); root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--sustained-capture")
+        {
+            testSustainedCapture (root); root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--capture-lifecycle")
+        {
+            testLongCaptureLifecycle (root);
+            await ([] { return BackgroundRetirement::pending() == 0; }, "Long capture resources did not retire before shutdown");
+            root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--storage-recovery")
+        {
+            testRecovery (root); root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--analysis")
+        {
+            testAnalysis(); testMusicCorpusEvaluation (root); testMusicFeatures (root); root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && (juce::String (argv[1]) == "--music-corpus" || juce::String (argv[1]) == "--music-features"))
+        {
+            require (argc == 4, "Usage: RememberTests --music-corpus|--music-features <manifest.json> <report.json>");
+            evaluateMusicCorpus (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]),
+                                 juce::File::getCurrentWorkingDirectory().getChildFile (argv[3]), juce::String (argv[1]) == "--music-features");
+            root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--transport")
+        {
+            testTransportLoops (root);
+            await ([] { return BackgroundRetirement::pending() == 0; }, "Transport cleanup did not finish before shutdown");
+            root.deleteRecursively(); return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--capture-matrix")
+        {
+            testCaptureMatrix (root);
+            await ([] { return BackgroundRetirement::pending() == 0; }, "Capture cleanup did not finish before process shutdown");
+            root.deleteRecursively();
+            return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--preview-quality")
+        {
+            testPreviewQuality (root);
+            await ([] { return BackgroundRetirement::pending() == 0; }, "Quality cleanup did not finish before process shutdown");
+            root.deleteRecursively();
+            return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--resampling")
+        {
+            testResampling (root);
+            root.deleteRecursively();
+            return 0;
+        }
+        if (argc > 1 && juce::String (argv[1]) == "--feature-cache")
+        {
+            testFeatureCache (root);
+            root.deleteRecursively();
+            return 0;
+        }
 #if JUCE_WINDOWS
         if (argc > 1 && juce::String (argv[1]) == "--host-loading")
         {
             testHostLoading (root);
+            await ([] { return BackgroundRetirement::pending() == 0; }, "Host-load cleanup did not finish before JUCE shutdown");
             root.deleteRecursively();
             return 0;
         }
@@ -228,13 +320,13 @@ int main (int argc, char** argv)
         {
             RecordingEngine engine ([observer] { return observer->get(); });
             engine.setOutputFolder (previews);
-            engine.prepare (8000, 256);
+            engine.prepare (8000, 256, SettingsManager::Snapshot{});
             await ([&] { return engine.getProjectName() == song.getFileNameWithoutExtension(); }, "DAW name wasn't detected without an editor");
             capture (engine, engine.getTotalSeconds(), 0.2f);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Full capture wasn't saved");
             originalFolder = entryNamed (previews, song.getFileNameWithoutExtension());
             require (originalFolder.isDirectory(), "Missing saved entry");
-            auto full = readAudio (originalFolder.getChildFile ("preview.wav"));
+            auto full = readAudio (LibraryStore::audioFile (originalFolder, true));
             fullLength = full.getNumSamples();
             auto metadata = meta (originalFolder);
             metadata.getDynamicObject()->setProperty ("tags", juce::Array<juce::var> { "keep" });
@@ -243,21 +335,26 @@ int main (int argc, char** argv)
             originalFolder.getChildFile ("metadata.json").replaceWithText (juce::JSON::toString (metadata));
             capture (engine, 10.0, -0.4f);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Partial capture wasn't saved");
-            auto partial = readAudio (originalFolder.getChildFile ("preview.wav"));
+            auto partial = readAudio (LibraryStore::audioFile (originalFolder, true));
             require (partial.getNumSamples() == fullLength, "Short re-record truncated the preview");
             require (std::abs (partial.getSample (0, 100) + 0.4f) < 0.00001f, "New beginning not replaced");
+            require (std::abs (partial.getSample (0, 79999) - full.getSample (0, 80000)) < 0.00001f,
+                     "Partial re-record left a discontinuity at the untouched tail");
+            for (int i = 79960; i < 80000; ++i)
+                require (partial.getSample (0, i) >= -0.40001f && partial.getSample (0, i) <= 0.20001f,
+                         "Prefix crossfade overshot its endpoints");
             for (int i = 80000; i < fullLength; ++i)
                 require (partial.getSample (0, i) == full.getSample (0, i), "Untouched tail changed");
-            auto compressed = readAudio (originalFolder.getChildFile ("preview.ogg"));
+            auto compressed = readAudio (LibraryStore::audioFile (originalFolder, false));
             require (compressed.getNumSamples() == fullLength, "OGG duration was truncated");
             require ((bool) meta (originalFolder).getProperty ("favorite", false), "Lost favorite on re-record");
             require (meta (originalFolder).getProperty ("folders", juce::var{}).isArray(), "Lost folder membership");
-            auto before = ProjectIdentity::fingerprint (originalFolder.getChildFile ("preview.wav"));
+            auto before = ProjectIdentity::fingerprint (LibraryStore::audioFile (originalFolder, true));
             capture (engine, 0.75, 0.8f);
-            require (ProjectIdentity::fingerprint (originalFolder.getChildFile ("preview.wav")) == before, "Subsecond capture overwrote audio");
+            require (ProjectIdentity::fingerprint (LibraryStore::audioFile (originalFolder, true)) == before, "Subsecond capture overwrote audio");
             capture (engine, 1.0, 0.6f);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Exactly one second was discarded");
-            auto oneSecond = readAudio (originalFolder.getChildFile ("preview.wav"));
+            auto oneSecond = readAudio (LibraryStore::audioFile (originalFolder, true));
             require (std::abs (oneSecond.getSample (0, 100) - 0.6f) < 0.00001f, "One second wasn't saved");
             engine.setProjectName ("manual override");
             require (engine.getProjectName() == song.getFileNameWithoutExtension(), "Manual name overrode the DAW");
@@ -271,29 +368,29 @@ int main (int argc, char** argv)
             observer->set (copy);
             await ([&] { return engine.getProjectName() == "Version2"; }, "Save As not detected");
             require (entries (previews).size() == 2, "Save As didn't create an independent entry");
-            require (entryNamed (previews, "Version2").getChildFile ("preview.wav").existsAsFile(), "Save As lost the full preview");
+            require (LibraryStore::audioFile (entryNamed (previews, "Version2"), true).existsAsFile(), "Save As lost the full preview");
             engine.saveState (saved);
         }
         {
             RecordingEngine restored ([observer] { return observer->get(); });
             restored.setOutputFolder (previews);
             restored.restoreState (saved);
-            restored.prepare (8000, 256);
+            restored.prepare (8000, 256, SettingsManager::Snapshot{});
             await ([&] { return restored.getProjectName() == "Version2"; }, "Reopen restored a wrong name");
             capture (restored, 1.2, -0.1f, true, 0, false);
             restored.finishCapture();
             await ([&] { return restored.getState() == RecordingEngine::State::Done; }, "Offline export not captured");
             require (entries (previews).size() == 2, "Reopen duplicated a project");
-            auto second = readAudio (entryNamed (previews, "Version2").getChildFile ("preview.wav"));
-            auto first = readAudio (originalFolder.getChildFile ("preview.wav"));
+            auto second = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
+            auto first = readAudio (LibraryStore::audioFile (originalFolder, true));
             require (std::abs (second.getSample (0, 100) + 0.1f) < 0.00001f, "Offline export audio wasn't saved");
             require (std::abs (first.getSample (0, 100) - 0.6f) < 0.00001f, "Save As changed the original audio");
             // prepareToPlay can happen again without an intervening stopped block.
-            restored.prepare (8000, 256);
+            restored.prepare (8000, 256, SettingsManager::Snapshot{});
             capture (restored, 1.2, 0.3f, false, 0, false);
             restored.finishCapture();
             await ([&] { return restored.getState() == RecordingEngine::State::Done; }, "Prepare didn't rearm the trigger");
-            restored.prepare (8000, 256);
+            restored.prepare (8000, 256, SettingsManager::Snapshot{});
             capture (restored, 1.2, 0.9f, false, 20);
             require (restored.getState() == RecordingEngine::State::Idle, "Playback from the middle recorded a preview");
         }
@@ -306,15 +403,18 @@ int main (int argc, char** argv)
             juce::XmlElement legacy ("RememberState");
             legacy.setAttribute ("projectName", "INSP");
             pending.restoreState (legacy);
-            pending.prepare (8000, 256);
+            pending.prepare (8000, 256, SettingsManager::Snapshot{});
             require (pending.getProjectName().isEmpty(), "Template leaked INSP");
             capture (pending, 1.2, 0.2f);
             await ([&] { return pending.getState() == RecordingEngine::State::Pending; }, "Unnamed audio wasn't held pending");
             juce::XmlElement xml ("state"); pending.saveState (xml);
             pendingId = xml.getStringAttribute ("projectId");
-            require (previews.getChildFile (".pending").getChildFile (pendingId).getChildFile ("preview.ogg").existsAsFile(), "Pending audio wasn't stored");
+            require (LibraryStore::audioFile (previews.getChildFile (".pending").getChildFile (pendingId), false).existsAsFile(), "Pending audio wasn't stored");
             pending.setProjectName ("My idea");
             require (pending.getProjectName() == "My idea", "Can't name pending audio");
+            await ([&] { return meta (previews.getChildFile (".pending").getChildFile (pendingId))
+                                  .getProperty ("projectName", "").toString() == "My idea"; },
+                   "Background name edit wasn't persisted");
             auto named = ProjectScanner::scan (previews, { projects });
             bool associated = false;
             for (auto& entry : named)
@@ -325,19 +425,33 @@ int main (int argc, char** argv)
                 }
             require (associated, "Naming didn't associate the pending audio in the browser");
         }
-        require (! previews.getChildFile (".pending").getChildFile (pendingId).exists(), "Unsaved audio survived closing the DAW");
+        await ([&] { return ! previews.getChildFile (".pending").getChildFile (pendingId).exists(); }, "Unsaved audio survived asynchronous close cleanup");
         for (auto& entry : ProjectScanner::scan (previews, { projects }))
             require (entry.name != "My idea", "Discarded pending entry remained in the browser");
         {
             RecordingEngine pending ([pendingObserver] { return pendingObserver->get(); });
             pending.setOutputFolder (previews);
-            pending.prepare (8000, 256);
+            pending.prepare (8000, 256, SettingsManager::Snapshot{});
             capture (pending, 1.2, 0.35f);
             await ([&] { return pending.getState() == RecordingEngine::State::Pending; }, "Pending capture failed");
             auto savedProject = projects.getChildFile ("NewlySaved.flp"); savedProject.replaceWithText ("newly saved project");
             pendingObserver->set (savedProject);
-            await ([&] { return entryNamed (previews, "NewlySaved").isDirectory(); }, "Saving didn't associate pending audio");
-            require (entryNamed (previews, "NewlySaved").getChildFile ("preview.ogg").existsAsFile(), "Pending audio lost during association");
+            // The folder becomes visible before the promotion's final metadata
+            // commit. Wait for the engine's publication, not that intermediate
+            // filesystem state, then inspect one coherent manifest.
+            await ([&] { return pending.getState() == RecordingEngine::State::Error
+                            || (pending.isProjectConfirmed() && pending.getState() == RecordingEngine::State::Done); },
+                   "Saving didn't finish associating pending audio");
+            if (pending.getState() == RecordingEngine::State::Error) throw std::runtime_error (pending.getLastError().toStdString());
+            const auto associatedFolder = entryNamed (previews, "NewlySaved");
+            const auto associatedMetadata = LibraryStore::readJson (associatedFolder.getChildFile ("metadata.json"));
+            require (associatedFolder.isDirectory() && ! (bool) associatedMetadata.getProperty ("pending", true)
+                     && associatedMetadata.getProperty ("projectPath", "").toString() == savedProject.getFullPathName(),
+                     "Pending association did not publish its verified project and completed metadata");
+            require (LibraryStore::audioFile (associatedFolder, associatedMetadata, false).existsAsFile(), "Pending OGG lost during association");
+            const auto associatedAudio = readAudio (LibraryStore::audioFile (associatedFolder, associatedMetadata, true));
+            require (associatedAudio.getNumSamples() == 9600 && std::abs (associatedAudio.getSample (0, 100) - 0.35f) < 0.00001f,
+                     "Pending PCM duration/content changed during association");
         }
         require (entryNamed (previews, "NewlySaved").exists(), "Saved pending audio was deleted on close");
         std::cout << "PASS: stale INSP template, pending capture, discard unsaved, associate on first save\n";
@@ -348,7 +462,7 @@ int main (int argc, char** argv)
             RecordingEngine engine ([templateObserver] { return templateObserver->get(); });
             engine.setOutputFolder (previews);
             engine.restoreState (saved);
-            engine.prepare (8000, 256);
+            engine.prepare (8000, 256, SettingsManager::Snapshot{});
             await ([&] { return engine.getProjectName() == "FromTemplate"; }, "Saved template name was reused");
             require (! entryNamed (previews, "FromTemplate").exists(), "Template inherited another project's audio");
             capture (engine, 1.2, 0.7f);
@@ -360,25 +474,25 @@ int main (int argc, char** argv)
             auto delayed = std::make_shared<Observation>();
             RecordingEngine engine ([delayed] { return delayed->get(); });
             engine.setOutputFolder (previews);
-            engine.prepare (8000, 256);
+            engine.prepare (8000, 256, SettingsManager::Snapshot{});
             capture (engine, 1.2, -0.25f);
             await ([&] { return engine.getState() == RecordingEngine::State::Pending; }, "Delayed discovery didn't record pending audio");
             delayed->set (projects.getChildFile ("Version2.flp"));
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Pending audio couldn't merge into an existing entry");
-            auto merged = readAudio (entryNamed (previews, "Version2").getChildFile ("preview.wav"));
+            auto merged = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
             require (merged.getNumSamples() == fullLength, "Pending association lost the existing tail");
             require (std::abs (merged.getSample (0, 100) + 0.25f) < 0.00001f, "Pending prefix wasn't associated");
             require (entries (previews).size() == 4, "Pending association duplicated an existing entry");
-            engine.prepare (16000, 256);
+            engine.prepare (16000, 256, SettingsManager::Snapshot{});
             capture (engine, 1.2, 0.45f, false, 0, true, 16000);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Sample rate change failed");
-            auto resampled = readAudio (entryNamed (previews, "Version2").getChildFile ("preview.wav"));
+            auto resampled = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
             require (resampled.getNumSamples() == 2 * fullLength, "Sample rate change lost preview duration");
             require (std::abs (resampled.getSample (0, 32000) - merged.getSample (0, 16000)) < 0.0001f, "Sample rate change changed the tail");
             capture (engine, 1.2, 0.15f, false, 0, true, 16000);
             capture (engine, 1.2, -0.55f, false, 0, true, 16000);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Queued re-records weren't saved");
-            auto queued = readAudio (entryNamed (previews, "Version2").getChildFile ("preview.wav"));
+            auto queued = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
             require (std::abs (queued.getSample (0, 100) + 0.55f) < 0.0001f, "Older capture overwrote a newer queued capture");
         }
         std::cout << "PASS: saved template isolation, pending association to existing preview, sample rate change\n";
@@ -406,6 +520,36 @@ int main (int argc, char** argv)
         auto decoy = duplicateRoot.getChildFile ("Missing.flp"); decoy.replaceWithText ("another project");
         require (ProjectIdentity::resolve ("Missing", "FL Studio", { duplicateRoot }, {}, "known-other-id", "known-other-hash").isEmpty(), "Identity fell back to the wrong same-name file");
         std::cout << "PASS: moved file, browser cache invalidation, metadata preservation, ambiguous names\n";
+        testStorage (root);
+        {
+            const auto library = root.getChildFile ("checksum-pipeline"); library.createDirectory();
+            const auto project = root.getChildFile ("ChecksumPipeline.rpp"); project.replaceWithText ("checksum pipeline fixture");
+            RecordingEngine engine ([project] { return HostProject { true, "ChecksumPipeline", project.getFullPathName(), "REAPER" }; });
+            SettingsManager::Snapshot settings; settings.seconds = 15;
+            engine.setOutputFolder (library); engine.prepare (8000, 256, settings);
+            await ([&] { return engine.isProjectConfirmed(); }, "Checksum pipeline discovery timed out");
+            capture (engine, 3.0, 0.2f);
+            await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Checksum pipeline first save failed");
+            const auto folder = entryNamed (library, "ChecksumPipeline");
+            const auto original = meta (folder).getProperty ("audioRevision", "").toString();
+            capture (engine, 2.0, 0.6f);
+            await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Checksum pipeline second save failed");
+            const auto pcm = LibraryStore::audioFile (folder, true);
+            juce::MemoryBlock bytes; require (pcm.loadFileAsData (bytes), "Cannot read pipeline checksum fixture");
+            static_cast<unsigned char*> (bytes.getData())[bytes.getSize() / 2] ^= 4;
+            require (pcm.replaceWithData (bytes.getData(), bytes.getSize()), "Cannot damage pipeline checksum fixture");
+            capture (engine, 1.2, 0.9f);
+            await ([&] { return engine.getState() == RecordingEngine::State::Done || engine.getState() == RecordingEngine::State::Error; }, "Checksum pipeline recovery timed out");
+            require (engine.getState() == RecordingEngine::State::Done, "Pipeline did not recover its corrupt previous PCM");
+            const auto merged = readAudio (LibraryStore::audioFile (folder, true));
+            require (meta (folder).getProperty ("previousAudioRevision", "").toString() == original
+                && merged.getNumSamples() == 24000 && std::abs (merged.getSample (0, 100) - 0.9f) < 0.00001f
+                && std::abs (merged.getSample (0, 12000) - 0.2f) < 0.00001f,
+                "Fresh prefix was merged into a corrupt/unverified tail instead of the last complete revision");
+            std::cout << "PASS: recording pipeline recovers corrupt previous PCM before preserving its tail\n";
+        }
+        testLifecycle (root);
+        await ([] { return BackgroundRetirement::pending() == 0; }, "Retired engines did not finish cleanup");
     }
     catch (const std::exception& error)
     {
@@ -413,6 +557,7 @@ int main (int argc, char** argv)
         status = 1;
     }
     require (root.isAChildOf (juce::File::getCurrentWorkingDirectory()), "Unsafe test cleanup path");
+    await ([] { return BackgroundRetirement::pending() == 0; }, "Retired engines did not release fixture files");
     root.deleteRecursively();
     return status;
 }

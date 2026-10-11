@@ -1,29 +1,22 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "SettingsManager.h"
-#include "RememberLogger.h"
-#include "BuildInfo.h"
+#include "../../Shared/LibraryStore.h"
 
-RememberProcessor::RememberProcessor (RecordingEngine::ProjectDetector detector)
+RememberProcessor::RememberProcessor (RecordingEngine::ProjectDetector detector, SettingsManager::Reader reader)
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      settingsReader (reader ? std::move (reader) : [] { return SettingsManager::getInstance().readSnapshot(); }),
       engine (std::move (detector))
 {
-    RememberLogger::ensureInitialised ("plugin",
-        juce::String ("Plugin ") + REMEMBER_VERSION_LINE);
-
-    juce::Logger::writeToLog (juce::String ("Processor created. Host: ")
-        + juce::PluginHostType().getHostDescription());
-
-    engine.setOutputFolder (SettingsManager::getInstance().getPreviewsFolder());
+    engine.loadOutputFolderFromSettings (settingsReader);
 }
 
 void RememberProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    engine.prepare (sampleRate, samplesPerBlock);
-    engine.setOutputFolder (SettingsManager::getInstance().getPreviewsFolder());
-    juce::Logger::writeToLog ("Processor prepared at " + juce::String (sampleRate, 0) + " Hz.");
+    engine.prepareAsync (sampleRate, samplesPerBlock, settingsReader);
+    engine.logDiagnostic ("Processor prepared at " + juce::String (sampleRate, 0) + " Hz.");
 }
 
 void RememberProcessor::processBlock (juce::AudioBuffer<float>& buffer,
@@ -45,8 +38,6 @@ void RememberProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     juce::XmlElement xml ("RememberState");
     engine.saveState (xml);
-    xml.setAttribute ("previewsFolder", SettingsManager::getInstance()
-                                            .getPreviewsFolder().getFullPathName());
     copyXmlToBinary (xml, destData);
 }
 
@@ -57,9 +48,7 @@ void RememberProcessor::setStateInformation (const void* data, int sizeInBytes)
         return;
 
     // Shared current settings win over old folders embedded in DAW templates.
-    engine.setOutputFolder (SettingsManager::getInstance().getPreviewsFolder());
-    engine.restoreState (*xml);
-    juce::Logger::writeToLog ("Processor state restored.");
+    engine.restoreState (*xml, settingsReader);
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -67,11 +56,14 @@ void RememberProcessor::setStateInformation (const void* data, int sizeInBytes)
 juce::AudioProcessorEditor* RememberProcessor::createEditor()
 {
     auto* editor = new RememberEditor (*this);
-    juce::Logger::writeToLog ("Plugin editor created.");
+    engine.logDiagnostic ("Plugin editor created.");
     return editor;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
+    // Resolve/validate an explicitly requested validation profile before any
+    // processor worker can initialise settings or a logger in this DLL.
+    LibraryStore::dataDirectory();
     return new RememberProcessor();
 }

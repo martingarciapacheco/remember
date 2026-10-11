@@ -12,7 +12,7 @@ namespace
 RememberEditor::RememberEditor (RememberProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (320, 190);
+    setSize (360, 220);
 
     // ── Project name editor ──────────────────────────────────────────────────
     nameEditor.setFont (bodyFont());
@@ -44,6 +44,14 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (kSubtext));
     settingsButton.onClick = [this] { showSettingsPanel(); };
     addAndMakeVisible (settingsButton);
+    associationLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (11.0f)));
+    associationLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext));
+    addAndMakeVisible (associationLabel);
+    associationButton.setColour (juce::TextButton::buttonColourId, juce::Colour (kElevated));
+    associationButton.setColour (juce::TextButton::textColourOffId, juce::Colour (kText));
+    associationButton.setTooltip ("Select a DAW file, keep a recording without a file, or return to automatic association");
+    associationButton.onClick = [this] { showAssociationMenu(); };
+    addAndMakeVisible (associationButton);
 
     // ── Version footer ────────────────────────────────────────────────────────
     versionLabel.setText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
@@ -51,15 +59,15 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     versionLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (9.5f)));
     versionLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext).withAlpha (0.6f));
     versionLabel.setJustificationType (juce::Justification::centredRight);
-    versionLabel.setInterceptsMouseClicks (false, false);
     versionLabel.setTooltip (REMEMBER_VERSION_LINE);
     addAndMakeVisible (versionLabel);
 
-    if (! SettingsManager::getInstance().isConfigured())
-        juce::MessageManager::callAsync ([this] { showSettingsPanel(); });
+    settingsButton.setEnabled (false);
+    settingsRequest = SettingsManager::getInstance().readSnapshotAsync();
 
     startTimerHz (2);   // Idle rate; bumped to 10Hz while Recording
     refreshFromEngine();
+    editorReady = true;
 }
 
 RememberEditor::~RememberEditor() { stopTimer(); }
@@ -73,12 +81,19 @@ void RememberEditor::timerCallback()
 
 void RememberEditor::refreshFromEngine()
 {
+    refreshSettingsRequest();
     auto& eng   = processor.getEngine();
     auto  state = eng.getState();
     int   stInt = (int) state;
-    nameEditor.setReadOnly (eng.isProjectConfirmed());
-    nameEditor.setTooltip (eng.isProjectConfirmed() ? "Name follows the DAW project filename"
-                                                   : "Name this pending recording; save the DAW project to keep it");
+    const auto association = eng.getAssociationInfo();
+    const bool followsFile = association.confirmed && association.source != RecordingEngine::Association::ManualRecording;
+    nameEditor.setReadOnly (followsFile);
+    nameEditor.setTooltip (followsFile ? "Name follows the associated project filename"
+                                      : "Name this recording; Associate can keep it permanently without a project file");
+    associationLabel.setText (association.problem.isEmpty() ? association.description : "Project search unavailable", juce::dontSendNotification);
+    associationLabel.setTooltip (association.description + "\nEvidence: " + association.confidence
+        + (association.path.isNotEmpty() ? "\n" + association.path : juce::String{})
+        + (association.problem.isNotEmpty() ? "\n" + association.problem : juce::String{}));
 
     // Adapt poll rate: 10Hz only while Recording, 2Hz otherwise
     int desiredHz = (state == RecordingEngine::State::Recording
@@ -151,19 +166,48 @@ void RememberEditor::refreshFromEngine()
 
         case RecordingEngine::State::Pending:
             progress     = 1.0f;
-            statusText   = eng.getProjectName().isEmpty() ? "Audio pending - name or save the project"
-                                                        : "Named audio - save the DAW project to keep it";
+            statusText   = eng.getProjectName().isEmpty() ? "Audio pending - name or associate it"
+                                                        : "Pending audio - Associate to keep it";
             statusColour = kSubtext;
             break;
 
         case RecordingEngine::State::Error:
             progress     = 0.0f;
-            statusText   = "Error - check output folder in settings";
+            statusText   = eng.getLastError().isNotEmpty() ? eng.getLastError() : "Cannot save preview; see Remember log";
             statusColour = kError;
             break;
     }
 
     isRecording = recordingNow;
+    if (eng.isPreparingSettings())
+    {
+        statusText = recordingNow ? "Capturing audio; reading recording settings..." : "Reading recording settings...";
+        progress = 0.0f;
+        statusColour = kAccent;
+    }
+    const auto warning = eng.getTransportWarning();
+    if (warning.isNotEmpty() && ! recordingNow && state != RecordingEngine::State::Error)
+    {
+        statusText = warning;
+        statusColour = kSubtext;
+    }
+    if (settingsMessage.isNotEmpty() && ! recordingNow && state != RecordingEngine::State::Encoding
+        && state != RecordingEngine::State::Error)
+    {
+        statusText = settingsMessage;
+        statusColour = settingsFailed ? kError : kSubtext;
+    }
+    if (association.problem.isNotEmpty() && ! recordingNow && state != RecordingEngine::State::Encoding
+        && state != RecordingEngine::State::Error)
+    {
+        statusText = "Project search unavailable; check Settings or Associate a file";
+        statusColour = kError;
+    }
+    statusLabel.setTooltip (statusText + (settingsMessage.isNotEmpty() ? "\n" + settingsMessage : juce::String{})
+        + (association.problem.isNotEmpty() ? "\n" + association.problem : juce::String{})
+        + "\nSkipped captures: " + juce::String (eng.getDroppedCaptures())
+        + "; short captures: " + juce::String (eng.getShortCaptures())
+        + "; unknown positions: " + juce::String (eng.getUnknownPositions()));
 
     if (statusText != lastStatusText || stInt != lastStateInt)
     {
@@ -211,7 +255,7 @@ void RememberEditor::paint (juce::Graphics& g)
     // Progress bar
     if (recordProgress > 0.0f || isRecording)
     {
-        auto barBounds = juce::Rectangle<int> (14, 140, getWidth() - 28, 4);
+        auto barBounds = juce::Rectangle<int> (14, 163, getWidth() - 28, 4);
         paintProgressBar (g, barBounds, recordProgress);
     }
 }
@@ -244,10 +288,12 @@ void RememberEditor::resized()
     nameEditor.setBounds (14, 60, getWidth() - 28, 26);
 
     // BPM / Key — below editor
-    bpmKeyLabel.setBounds (14, 98, getWidth() - 28, 26);
+    associationLabel.setBounds (14, 92, getWidth() - 112, 20);
+    associationButton.setBounds (getWidth() - 92, 90, 78, 24);
+    bpmKeyLabel.setBounds (14, 121, getWidth() - 28, 26);
 
     // Status — below progress bar
-    statusLabel.setBounds (14, 150, getWidth() - 28, 24);
+    statusLabel.setBounds (14, 174, getWidth() - 28, 24);
 
     // Version footer — bottom-right corner, very small
     versionLabel.setBounds (getWidth() - 158, getHeight() - 14, 154, 12);
@@ -257,21 +303,79 @@ void RememberEditor::resized()
 
 void RememberEditor::showSettingsPanel()
 {
-    auto cur = SettingsManager::getInstance().getPreviewsFolder();
+    if (settingsRequest) return;
 
     fileChooser = std::make_unique<juce::FileChooser> (
         "Select previews output folder",
-        cur.exists() ? cur : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+        settingsFolder != juce::File{} ? settingsFolder : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
 
     fileChooser->launchAsync (
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-        [this] (const juce::FileChooser& fc)
+        [safe = juce::Component::SafePointer<RememberEditor> (this)] (const juce::FileChooser& fc)
         {
-            if (fc.getResults().isEmpty()) return;
-            auto sel = fc.getResult();
-            SettingsManager::getInstance().setPreviewsFolder (sel);
-            processor.getEngine().setOutputFolder (sel);
-            statusLabel.setText ("Output: " + sel.getFullPathName(),
-                                 juce::dontSendNotification);
+            if (safe == nullptr || fc.getResults().isEmpty()) return;
+            safe->applyOutputFolder (fc.getResult());
+        });
+}
+
+void RememberEditor::applyOutputFolder (const juce::File& folder)
+{
+    if (settingsRequest) return;
+    savingSettings = true; settingsFailed = false;
+    settingsMessage = "Saving output folder...";
+    settingsButton.setEnabled (false);
+    settingsRequest = SettingsManager::getInstance().setPreviewsFolderAsync (folder);
+    refreshFromEngine();
+}
+
+void RememberEditor::refreshSettingsRequest()
+{
+    if (! editorReady || ! settingsRequest || ! settingsRequest->complete.load (std::memory_order_acquire)) return;
+    const auto request = std::move (settingsRequest);
+    settingsButton.setEnabled (true);
+    const bool wasInitial = initialSettings; initialSettings = false;
+    settingsFailed = request->result.failed();
+    if (settingsFailed) settingsMessage = request->result.getErrorMessage();
+    else
+    {
+        settingsFolder = request->snapshot.previews;
+        if (savingSettings)
+        {
+            processor.getEngine().setOutputFolder (settingsFolder);
+            settingsMessage = "Output saved; reload plugin to apply";
+        }
+        else settingsMessage.clear();
+    }
+    savingSettings = false;
+    if (wasInitial && ! request->configured) showSettingsPanel();
+}
+
+void RememberEditor::showAssociationMenu()
+{
+    const auto info = processor.getEngine().getAssociationInfo();
+    juce::PopupMenu menu;
+    menu.addItem (1, "Select project file...");
+    menu.addItem (2, "Keep recording without a file", ! info.confirmed || info.source == RecordingEngine::Association::ManualRecording);
+    menu.addSeparator();
+    menu.addItem (3, "Use automatic association");
+    const auto name = nameEditor.getText();
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&associationButton),
+        [safe = juce::Component::SafePointer<RememberEditor> (this), id = info.id, name] (int result)
+        {
+            if (safe == nullptr) return;
+            if (result == 1) safe->chooseProjectFile (id);
+            else if (result == 2) safe->processor.getEngine().keepRecording (name, id);
+            else if (result == 3) safe->processor.getEngine().useAutomaticAssociation (id);
+        });
+}
+void RememberEditor::chooseProjectFile (const juce::String& expectedId)
+{
+    fileChooser = std::make_unique<juce::FileChooser> ("Associate this recording with a DAW project",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.flp;*.als;*.rpp;*.cpr;*.npr;*.song;*.ptx;*.bwproject;*.logicx");
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safe = juce::Component::SafePointer<RememberEditor> (this), expectedId] (const juce::FileChooser& chooser)
+        {
+            if (safe != nullptr && ! chooser.getResults().isEmpty())
+                safe->processor.getEngine().associateProjectFile (chooser.getResult(), expectedId);
         });
 }

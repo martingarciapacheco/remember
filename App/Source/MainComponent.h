@@ -15,6 +15,7 @@ public:
     void resized() override;
 
     bool keyPressed (const juce::KeyPress& key) override;
+    void setUiActive (bool active) { player.setUiActive (active); }
 
 private:
     void showSettingsDialog();

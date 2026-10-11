@@ -19,6 +19,7 @@ MainComponent::MainComponent()
     // Clicking a row loads AND auto-plays the preview
     list.onEntrySelected = [this] (const ProjectEntry& e) { player.loadEntry (e); player.play(); };
     list.onEntryPlay     = [this] (const ProjectEntry& e) { player.loadEntry (e); player.play(); };
+    list.onBeforeStorageChange = [this] (const ProjectEntry& e) { player.releaseEntry (e.metadataFile); };
 
     addAndMakeVisible (sidebar);
     addAndMakeVisible (list);
@@ -38,7 +39,13 @@ MainComponent::MainComponent()
         {
             if (e.metadataFile == metaFile)
             {
-                ProjectScanner::addEntryToFolder (e, folderPath);
+                auto safe = juce::Component::SafePointer<MainComponent> (this);
+                ProjectScanner::editAsync ([e, folderPath] { return ProjectScanner::addEntryToFolder (e, folderPath); },
+                    [safe] (juce::Result result)
+                    {
+                        if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
+                            juce::AlertWindow::WarningIcon, "Cannot assign folder", result.getErrorMessage());
+                    });
                 break;
             }
         }
@@ -55,10 +62,8 @@ MainComponent::MainComponent()
 
     checkFirstRun();
 
-    // After the UI is up, verify project paths in the background. If the user
-    // is going through first-run setup (no previews folder yet), this will be
-    // a no-op until they finish — the onCompleted callback re-triggers refresh.
-    juce::MessageManager::callAsync ([this] { list.verifyProjectPathsAsync(); });
+    // The index verifies/resolves paths before publishing. The list reports
+    // missing projects from that publication without a second scan or dialogs.
 }
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
@@ -99,16 +104,28 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
 
 void MainComponent::checkFirstRun()
 {
-    if (! ProjectScanner::getPreviewsFolder().isDirectory())
-        juce::MessageManager::callAsync ([this]
+    auto needsSetup = std::make_shared<bool> (false);
+    ProjectScanner::queryAsync ([needsSetup]
+    {
+        const auto settings = ProjectScanner::readSettings();
+        if (settings.result.failed()) return settings.result;
+        // A configured drive/folder can be temporarily unavailable. Its index
+        // error offers Settings/Refresh; it is not a new profile to initialise.
+        *needsSetup = settings.previews == juce::File{};
+        return juce::Result::ok();
+    },
+        [safe = juce::Component::SafePointer<MainComponent> (this), needsSetup] (juce::Result result)
         {
-            SettingsDialog::launch (true, [this] { list.refresh(); list.verifyProjectPathsAsync(); });
+            if (safe == nullptr || result.failed() || ! *needsSetup) return;
+            SettingsDialog::launch (true, [safe]
+            { if (safe != nullptr) safe->list.refresh(); });
         });
 }
 
 void MainComponent::showSettingsDialog()
 {
-    SettingsDialog::launch (false, [this] { list.refresh(); list.verifyProjectPathsAsync(); });
+    SettingsDialog::launch (false, [safe = juce::Component::SafePointer<MainComponent> (this)]
+    { if (safe != nullptr) safe->list.refresh(); });
 }
 
 void MainComponent::paint (juce::Graphics& g)

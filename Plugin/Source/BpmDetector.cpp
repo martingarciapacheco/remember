@@ -1,114 +1,161 @@
 #include "BpmDetector.h"
+#include "TempoPeriodicity.h"
 
-double BpmDetector::detectBpm (const juce::AudioBuffer<float>& buffer, double sampleRate)
+namespace
 {
-    const int numSamples = buffer.getNumSamples();
-    if (numSamples < (int) (sampleRate * 5.0) || sampleRate <= 0.0)
-        return 0.0;
-
-    // Mix down to mono
-    juce::AudioBuffer<float> mono (1, numSamples);
-    mono.clear();
-    const float invCh = 1.0f / (float) buffer.getNumChannels();
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-        mono.addFrom (0, 0, buffer, ch, 0, numSamples, invCh);
-
-    constexpr int fftOrder = 11;            // 2048
-    constexpr int fftSize  = 1 << fftOrder;
-    constexpr int hopSize  = 512;
-
-    juce::dsp::FFT fft (fftOrder);
-
-    // Hann window
-    std::array<float, fftSize> window;
-    for (int i = 0; i < fftSize; ++i)
-        window[(size_t) i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
-                                                        * (float) i / (float) (fftSize - 1)));
-
-    const int numFrames = (numSamples - fftSize) / hopSize;
-    if (numFrames < 16) return 0.0;
-
-    // Spectral-flux onset envelope
-    std::vector<float> onset ((size_t) numFrames, 0.0f);
-    std::vector<float> prevMag ((size_t) fftSize / 2, 0.0f);
-    std::vector<float> buf (2 * fftSize, 0.0f);
-
-    const float* samples = mono.getReadPointer (0);
-
-    for (int f = 0; f < numFrames; ++f)
+constexpr int fftOrder = 11, fftSize = 1 << fftOrder, hop = 256;
+const std::array<float, fftSize>& window()
+{
+    static const auto value = []
     {
-        const int start = f * hopSize;
+        std::array<float, fftSize> result {};
         for (int i = 0; i < fftSize; ++i)
-            buf[(size_t) i] = samples[start + i] * window[(size_t) i];
-        std::fill (buf.begin() + fftSize, buf.end(), 0.0f);
+            result[(size_t) i] = 0.5f * (1 - std::cos (juce::MathConstants<float>::twoPi * i / (fftSize - 1)));
+        return result;
+    }();
+    return value;
+}
+}
 
-        fft.performFrequencyOnlyForwardTransform (buf.data());
+double BpmDetector::detectBpm (const juce::AudioBuffer<float>& audio, double rate)
+{
+    return analyse (audio, rate).bpm;
+}
 
-        float flux = 0.0f;
-        for (int bin = 1; bin < fftSize / 2; ++bin)
-        {
-            const float diff = buf[(size_t) bin] - prevMag[(size_t) bin];
-            if (diff > 0.0f) flux += diff;
-            prevMag[(size_t) bin] = buf[(size_t) bin];
-        }
-        onset[(size_t) f] = flux;
-    }
-
-    // Subtract local mean, rectify, normalize
-    float mean = 0.0f;
-    for (auto v : onset) mean += v;
-    mean /= (float) onset.size();
-
-    float maxV = 0.0f;
-    for (auto& v : onset)
+BpmDetector::Estimate BpmDetector::analyse (const juce::AudioBuffer<float>& audio, double rate,
+                                           const AnalysisAudio::Cancellation& cancelled)
+{
+    Estimate result;
+    if (! std::isfinite (rate) || rate <= 0 || audio.getNumChannels() == 0 || audio.getNumSamples() / rate < 5
+        || (cancelled && cancelled())) return result;
+    juce::AudioBuffer<float> normalised;
+    const auto* input = &audio;
+    if (rate != AnalysisAudio::rate)
     {
-        v -= mean;
-        if (v < 0.0f) v = 0.0f;
-        if (v > maxV) maxV = v;
+        normalised = AnalysisAudio::normalise (audio, rate, cancelled);
+        input = &normalised;
     }
-    if (maxV <= 0.0f) return 0.0;
-    for (auto& v : onset) v /= maxV;
+    return estimate (extract (*input, input->getNumSamples(), nullptr, 0, cancelled), cancelled);
+}
 
-    // Autocorrelation in 60–200 BPM range
-    const double framesPerSec = sampleRate / (double) hopSize;
-    int minLag = (int) std::round (framesPerSec * 60.0 / 200.0);    // 200 BPM → shortest lag
-    int maxLag = (int) std::round (framesPerSec * 60.0 / 60.0);     // 60 BPM → longest lag
+int BpmDetector::requiredSamples (int totalSamples, int unchangedFrom, bool reuse)
+{
+    const auto limit = juce::jlimit (0, (int) (120 * AnalysisAudio::rate), totalSamples);
+    const auto frames = limit < 5 * AnalysisAudio::rate ? 0 : 1 + (limit - fftSize) / hop;
+    const auto boundary = juce::jlimit (0, limit, unchangedFrom);
+    const auto computed = reuse ? juce::jlimit (0, frames, (boundary + hop - 1) / hop + 1) : frames;
+    return computed == 0 ? 0 : (computed - 1) * hop + fftSize;
+}
 
-    if (maxLag >= numFrames) maxLag = numFrames - 1;
-    if (minLag < 1)          minLag = 1;
-    if (maxLag <= minLag)    return 0.0;
-
-    double bestScore = -1.0;
-    int    bestLag   = -1;
-
-    for (int lag = minLag; lag <= maxLag; ++lag)
+BpmDetector::Features BpmDetector::extract (const juce::AudioBuffer<float>& audio, int totalSamples,
+                                            const Features* previous, int unchangedFrom,
+                                            const AnalysisAudio::Cancellation& cancelled)
+{
+    Features result;
+    result.samples = juce::jlimit (0, (int) (120 * AnalysisAudio::rate), totalSamples);
+    result.channels = juce::jmin (2, audio.getNumChannels());
+    const auto frames = result.samples < 5 * AnalysisAudio::rate ? 0 : 1 + (result.samples - fftSize) / hop;
+    const auto reuse = previous && previous->valid && previous->samples == result.samples
+        && previous->channels == result.channels && (int) previous->frames.size() == frames;
+    if (result.channels == 0 || audio.getNumSamples() < requiredSamples (result.samples, unchangedFrom, reuse)
+        || (cancelled && cancelled())) return result;
+    result.frames.resize ((size_t) frames);
+    juce::dsp::FFT fft (fftOrder);
+    std::vector<float> scratch (2 * fftSize), previousSpectrum ((size_t) (result.channels * fftSize / 2));
+    for (int index = 0; index < frames; ++index)
     {
-        double sum   = 0.0;
-        int    count = 0;
-        for (int f = 0; f + lag < numFrames; ++f)
+        if (cancelled && cancelled()) return {};
+        const auto start = index * hop;
+        auto& frame = result.frames[(size_t) index];
+        if (reuse && start - hop >= unchangedFrom)
         {
-            sum += (double) onset[(size_t) f] * (double) onset[(size_t) (f + lag)];
-            ++count;
+            frame = previous->frames[(size_t) index]; ++result.reused; continue;
         }
-        if (count > 0)
+        ++result.computed;
+        for (int ch = 0; ch < result.channels; ++ch)
         {
-            const double score = sum / (double) count;
-            if (score > bestScore)
+            bool nonzero = false;
+            const auto* samples = audio.getReadPointer (ch, start);
+            for (int i = 0; i < fftSize; ++i)
             {
-                bestScore = score;
-                bestLag   = lag;
+                const auto value = std::isfinite (samples[i]) ? samples[i] : 0;
+                nonzero = nonzero || value != 0;
+                frame.energy += value * value;
+                scratch[(size_t) i] = value * window()[(size_t) i];
+            }
+            std::fill (scratch.begin() + fftSize, scratch.end(), 0.0f);
+            auto* last = previousSpectrum.data() + ch * fftSize / 2;
+            if (! nonzero)
+            {
+                // A zero window has no positive flux, even after a nonzero
+                // spectrum. Reset its history without visiting every bin.
+                std::fill (last, last + fftSize / 2, 0.0f);
+                continue;
+            }
+            fft.performFrequencyOnlyForwardTransform (scratch.data());
+            for (int bin = 3; bin < fftSize / 2; ++bin)
+            {
+                frame.flux += juce::jmax (0.0f, scratch[(size_t) bin] - last[bin]);
+                frame.magnitude += scratch[(size_t) bin];
+                last[bin] = scratch[(size_t) bin];
             }
         }
+        if (index == 0) frame.flux = 0;
     }
+    result.valid = true;
+    return result;
+}
 
-    if (bestLag <= 0) return 0.0;
-
-    double bpm = framesPerSec * 60.0 / (double) bestLag;
-
-    // If detected BPM is suspiciously low/high, try double/half
-    while (bpm < 70.0)  bpm *= 2.0;
-    while (bpm > 180.0) bpm *= 0.5;
-
-    // Round to one decimal place
-    return std::round (bpm * 10.0) / 10.0;
+BpmDetector::Estimate BpmDetector::estimate (const Features& features, const AnalysisAudio::Cancellation& cancelled)
+{
+    Estimate result;
+    const auto frames = (int) features.frames.size();
+    if (! features.valid || features.samples < 5 * AnalysisAudio::rate || features.samples > 120 * AnalysisAudio::rate
+        || features.channels < 1 || features.channels > 2 || frames != 1 + (features.samples - fftSize) / hop
+        || (cancelled && cancelled())) return result;
+    std::vector<double> onset ((size_t) frames), prefix ((size_t) frames + 1);
+    double energy = 0, magnitude = 0, flux = 0;
+    for (int i = 0; i < frames; ++i)
+    {
+        if (cancelled && cancelled()) return {};
+        const auto& frame = features.frames[(size_t) i];
+        if (! std::isfinite (frame.energy) || ! std::isfinite (frame.magnitude) || ! std::isfinite (frame.flux)
+            || frame.energy < 0 || frame.magnitude < 0 || frame.flux < 0) return result;
+        energy += frame.energy; magnitude += frame.magnitude; flux += frame.flux;
+        // Version 5 parameters frozen on development: sqrt flux, normalized
+        // lag/Fourier evidence, 40-240 BPM, local variation and regular pulses.
+        onset[(size_t) i] = std::sqrt (frame.flux);
+        prefix[(size_t) i + 1] = prefix[(size_t) i] + onset[(size_t) i];
+    }
+    if (energy / (frames * fftSize * features.channels) < 1.0e-9 || magnitude <= 0 || flux / magnitude < 0.002) return result;
+    const auto radius = (int) (rememberTempo::fps * 0.25);
+    for (int i = 0; i < frames; ++i)
+    {
+        const auto first = juce::jmax (0, i - radius), last = juce::jmin (frames, i + radius + 1);
+        onset[(size_t) i] = juce::jmax (0.0, onset[(size_t) i] - (prefix[(size_t) last] - prefix[(size_t) first]) / (last - first));
+    }
+    rememberTempo::Plans plans;
+    const auto global = rememberTempo::analyse (onset, cancelled, &plans);
+    if (! global.valid) return {};
+    const auto chosen = rememberTempo::select (global);
+    if (chosen.index < 0) return result;
+    const std::vector<double> first (onset.begin(), onset.begin() + frames / 2), last (onset.begin() + frames / 2, onset.end());
+    const auto start = rememberTempo::analyse (first, cancelled, &plans);
+    const auto end = rememberTempo::analyse (last, cancelled, &plans);
+    if (! start.valid || ! end.valid || (cancelled && cancelled())) return {};
+    result.startBpm = rememberTempo::select (start).bpm;
+    result.endBpm = rememberTempo::select (end).bpm;
+    result.possibleVariation = start.regular > 0 && end.regular > 0
+        && std::abs (start.regular - end.regular) / juce::jmax (start.regular, end.regular) > 0.05;
+    for (const auto* local : { &start, &end })
+    {
+        const auto maximum = *std::max_element (local->correlation.begin(), local->correlation.end());
+        if (maximum >= 0.65 && local->correlation[(size_t) chosen.index] < juce::jmax (0.25, maximum * 0.45))
+            result.possibleVariation = true;
+    }
+    if (result.possibleVariation) return result;
+    result.bpm = chosen.bpm;
+    result.confidence = chosen.score; // Evidence score, not a calibrated probability.
+    result.alternative = chosen.alternative;
+    return result;
 }

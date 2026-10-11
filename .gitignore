@@ -1,5 +1,6 @@
 # ──── Build artefacts ────────────────────────────────────────────────────────
 build/
+build-asan/
 out/
 Builds/
 dist/
@@ -14,6 +15,8 @@ dist/
 *.lib
 *.exp
 *.pdb
+__pycache__/
+*.pyc
 *.ilk
 *.idb
 *.tlog

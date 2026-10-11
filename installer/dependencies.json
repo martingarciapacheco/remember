@@ -1,0 +1,53 @@
+{
+  "juce": {
+    "version": "8.0.12",
+    "commit": "29396c22c93392d6738e021b83196283d6e4d850",
+    "repository": "https://github.com/juce-framework/JUCE.git"
+  },
+  "pluginval": {
+    "version": "1.0.4",
+    "url": "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip",
+    "archiveSha256": "c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab",
+    "executableSha256": "f4ac5c31c5544a434f73e686b816861d92c22ae849d69ad693681cbc9522fcd8"
+  },
+  "inno": {
+    "version": "6.7.3",
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
+    "archiveSha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
+    "files": {
+      "Compil32.exe": "f59e6adf0c2484e3c191a79d2ad02c7c5e4eb6a0e73763fc295f0c997a23ae73",
+      "Default.isl": "42a5f6f7dbbddf26cc278f67db5d894235ce1d126a6856702e31bd02023a1316",
+      "is7z.dll": "f97cda058bfe97a7e9ced5cde7018bbc26e35155c3c7405c6146808f8d06806d",
+      "is7zxa.dll": "e3cef67858843c554100126f04932be327097777865e4eb82951dd97cdb28942",
+      "is7zxr.dll": "728b368dc4f2831cc4d13291f46eeaf9f89b7e3a91356cf793c330e953b8e17b",
+      "isbunzip.dll": "31d04c1e4bfdfa34704c142fa98f80c0a3076e4b312d6ada57c4be9d9c7dcf26",
+      "isbzip.dll": "8072e83385afc4a84006271a87a11fc0a22b149cbd77322669ca56c470d28ced",
+      "ISCC.exe": "0a8757031b33777e4c9cbffee40f11a5062b36d25cbe144c1db73b6102b80ad7",
+      "ISCmplr.dll": "85a1e3090d3a5b85319f001b7c8f9ecfad45f37eff030a67bbe29ef58b7aa2c3",
+      "islzma.dll": "8af307ce3738ab1d37cc7e76b2f76615e2045597d4367c3e40d52b5f2fbd353d",
+      "islzma32.exe": "fd977c3ac44c56997d2b4fd6647e97e2457c43991a6ae26a4b2252c0eabdfebb",
+      "islzma64.exe": "87a50495aff580b78cad57906a765d3cf28ca508cfa95c24c1247c286ddf71b2",
+      "ISPP.dll": "bde04be7f4a55ca56afb6b06600d7cbe8326fac468ac3f2885b80eefb3ed2a7a",
+      "ISPPBuiltins.iss": "bc765e1121a95dc602ca1248b484418cecc6db9d4b6f4dae58e9a2c35262527c",
+      "isscint.dll": "ddd2748bc79122a67eed77f6039f6508245e0aa7f0fdbbfca99d1e922a1e8ce4",
+      "ISSigTool.exe": "aea490d45665a88c0c832d25647d21c1b87962efedb25668caec05678e0fd7c6",
+      "isunzlib.dll": "8287d0e287a66ee78537c8d1d98e426562b95c50f569b92cea9ce36a9fa57e64",
+      "iszlib.dll": "14c0d4a2a41572384f8309cdf03de5c6e7ed46bef64cce70d989b2665eff1a47",
+      "Setup.e32": "a80d75ba8d8c336050c37f7707de8bb017cc93597329e0ea18d474156b3e0da5",
+      "SetupClassicIcon.ico": "fa07ed17dff186a5b46c16861158bf3a36b67d84ff7a7bf9a58eaad28143d827",
+      "SetupCustomStyle.e32": "9675a2a5c78c66b691cc80270031da42bebad5725fbf60853cb4e5f90251bd5e",
+      "SetupLdr.e32": "5475964893adbb33ccc420ad4d88bbdff27dfaaca7580cd6058ea2798893490d",
+      "SetupLdr.e64": "e38f2140e6bfd86c6ddc69c98f46475080c75fd5ee4be701ceff9c842c6c5019",
+      "WizClassicImage-IS.bmp": "1b73df0b89a2943f34582cf81c2d8ed7b1ce4cfb54d86ce58ebd6dd0e1e05f5d",
+      "WizClassicImage.bmp": "d148dc2569e9abc4b4da650b1920ef1ffdc10bbd6bc2e20a97ce44b1f9f78aea",
+      "WizClassicSmallImage-IS.bmp": "ae94cd61179bc1869d0082b1fa8c189f8487d106712b48a2a6c6a035d370bfb4",
+      "WizClassicSmallImage.bmp": "a7e560d419e85daf80cce980baa124ef7c73197d0f51a59a19f1866ee8edfe8c"
+    }
+  },
+  "innounp": {
+    "version": "2.67.11",
+    "url": "https://raw.githubusercontent.com/jrathlev/InnoUnpacker-Windows-GUI/6fb49264aacf512a093e7b4fc6fb3dd266dad31a/innounp-2/bin/innounp-267.zip",
+    "archiveSha256": "ac1d98bba6588072ade06163781938df274f444bec7318069668608d1e5faae8",
+    "executableSha256": "1c8453c198dd3fe7947f3705e59d2294ddce3dfa9f96a737e94449b119f44181"
+  }
+}

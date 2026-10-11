@@ -16,7 +16,7 @@ public:
     void paint  (juce::Graphics& g) override;
     void resized() override;
 
-    // Re-reads folder list + entry counts from disk. Preserves the selected
+    // Rebuilds from one immutable index publication. Preserves the selected
     // folder if it still exists.
     void refresh();
 
@@ -55,6 +55,7 @@ private:
     class FolderItem;
 
     void rebuildTree();
+    void runFolderEdit (std::function<juce::Result()>);
     juce::String              selectedFolder;
     std::unique_ptr<TreeRootItem> rootItem;
 
@@ -65,5 +66,6 @@ private:
 
     static constexpr int kHeaderH = 30;
 
+    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FoldersSidebarComponent)
 };

@@ -1,19 +1,22 @@
 ; Remember — Inno Setup script
 ;
-; Builds Remember-<version>-setup.exe in ../dist/.
-;
-; Expects fresh Release builds at:
-;   ../App/build/RememberApp_artefacts/Release/Remember.exe
-;   ../Plugin/build/RememberPlugin_artefacts/Release/VST3/Remember.vst3/...
-;
-; Invoke directly with:
-;   ISCC.exe Remember.iss
-;
-; or use ../installer/build-release.bat which builds Release first and then
-; runs ISCC on this script.
+; build-release.ps1 supplies the central version, validated payload and an
+; explicit output directory. Compiling this script alone cannot select an old
+; build directory or silently reuse a hardcoded release version.
 
 #define MyAppName       "Remember"
-#define MyAppVersion    "1.0.0-beta3"
+#ifndef MyAppVersion
+  #error "Use build-release.ps1 to supply MyAppVersion from VERSION"
+#endif
+#ifndef MyNumericVersion
+  #error "MyNumericVersion is required"
+#endif
+#ifndef PayloadDir
+  #error "An explicitly validated PayloadDir is required"
+#endif
+#ifndef ReleaseOutputDir
+  #error "ReleaseOutputDir is required"
+#endif
 #define MyAppPublisher  "Martin Garcia Pacheco"
 #define MyAppURL        "https://github.com/martingarciapacheco/remember"
 #define MyAppExeName    "Remember.exe"
@@ -34,7 +37,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-OutputDir=..\dist
+OutputDir={#ReleaseOutputDir}
 OutputBaseFilename={#MyAppName}-{#MyAppVersion}-setup
 Compression=lzma
 SolidCompression=yes
@@ -45,10 +48,10 @@ UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; VersionInfoVersion / VersionInfoProductVersion must be pure numeric (a.b.c.d).
 ; The user-visible string {#MyAppVersion} (which contains "-beta3") is shown in
 ; the wizard caption via AppVersion above.
-VersionInfoVersion=1.0.0.3
+VersionInfoVersion={#MyNumericVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=1.0.0.3
+VersionInfoProductVersion={#MyNumericVersion}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -59,16 +62,17 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut for the browser ap
 
 [Files]
 ; ── Browser app ─────────────────────────────────────────────────────────────
-Source: "..\App\build\RememberApp_artefacts\Release\Remember.exe"; \
+Source: "{#PayloadDir}\Remember.exe"; \
     DestDir: "{app}"; Flags: ignoreversion
 
 ; ── VST3 bundle (entire directory tree, including moduleinfo.json) ──────────
-Source: "..\Plugin\build\RememberPlugin_artefacts\Release\VST3\Remember.vst3\*"; \
+Source: "{#PayloadDir}\Remember.vst3\*"; \
     DestDir: "{commoncf64}\VST3\Remember.vst3"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ── Release notes (so testers find them in the install dir) ─────────────────
-Source: "..\BETA_NOTES.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "{#PayloadDir}\BETA_NOTES.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "{#PayloadDir}\build-provenance.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

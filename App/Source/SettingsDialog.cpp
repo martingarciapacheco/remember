@@ -1,6 +1,7 @@
 #include "SettingsDialog.h"
 #include "ProjectScanner.h"
 #include "ProjectListComponent.h"   // for Pal::
+#include "../../Shared/LibraryStore.h"
 
 // ── ListBoxModel for the project folders list ────────────────────────────────
 class SettingsDialog::FoldersListModel : public juce::ListBoxModel
@@ -67,15 +68,9 @@ static const int kVorbisBitrate[11] = { 64, 80, 96, 112, 128, 160, 192, 224, 256
 // as the rule-of-thumb factor for the on-screen estimate.
 static constexpr double kMonoSizeFactor = 0.6;
 
-SettingsDialog::SettingsDialog (bool firstRunFlag) : firstRun (firstRunFlag)
+SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner::SettingsSnapshot()> reader) : firstRun (firstRunFlag)
 {
-    setSize (560, 560);
-
-    previewsFolder  = ProjectScanner::getPreviewsFolder();
-    projectsFolders = ProjectScanner::getProjectsRootFolders();
-    recordSeconds   = ProjectScanner::getRecordSeconds();
-    oggQuality      = ProjectScanner::getOggQuality();
-    recordMono      = ProjectScanner::getRecordMono();
+    setSize (680, 640);
 
     auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
     {
@@ -102,11 +97,15 @@ SettingsDialog::SettingsDialog (bool firstRunFlag) : firstRun (firstRunFlag)
     styleLabel (durationLbl,   12.0f, Pal::Subtext);
     styleLabel (qualityLbl,    12.0f, Pal::Subtext);
     styleLabel (sizeEstimate,  11.5f, Pal::Accent);
+    styleLabel (storageUsage,  11.0f, Pal::Subtext);
+    styleLabel (pcmPolicy, 11.0f, Pal::Subtext);
     addAndMakeVisible (recordCaption);
     addAndMakeVisible (recordHint);
     addAndMakeVisible (durationLbl);
     addAndMakeVisible (qualityLbl);
     addAndMakeVisible (sizeEstimate);
+    addAndMakeVisible (storageUsage);
+    addAndMakeVisible (pcmPolicy);
 
     // Duration presets
     durationCombo.addItem ("15 s",  15);
@@ -178,6 +177,13 @@ SettingsDialog::SettingsDialog (bool firstRunFlag) : firstRun (firstRunFlag)
     styleBtn (addProjectsBtn,  Pal::Elevated, Pal::Text);
     styleBtn (okBtn,           Pal::Accent,   0xffffffff);
     styleBtn (cancelBtn,       Pal::Elevated, Pal::Subtext);
+    styleBtn (retrySettings,   Pal::Elevated, Pal::Text);
+    styleLabel (settingsProblem, 12.0f, Pal::Subtext);
+    settingsProblem.setJustificationType (juce::Justification::topLeft);
+    settingsProblem.setMinimumHorizontalScale (1.0f);
+    addChildComponent (settingsProblem);
+    addChildComponent (retrySettings);
+    retrySettings.onClick = [this] { loadSettings ({}); };
 
     previewsBrowse.onClick = [this] { pickPreviews(); };
     addProjectsBtn.onClick = [this] { addProjectFolder(); };
@@ -196,7 +202,60 @@ SettingsDialog::SettingsDialog (bool firstRunFlag) : firstRun (firstRunFlag)
     else
         addAndMakeVisible (cancelBtn);
 
-    refreshLabels();
+    for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
+    previewsPath.setText ("Loading settings...", juce::dontSendNotification);
+    loadSettings (std::move (reader));
+}
+
+SettingsDialog::~SettingsDialog() { storageGeneration->fetch_add (1); validationGeneration->fetch_add (1); }
+
+void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapshot()> reader)
+{
+    settingsLoaded = false;
+    validationGeneration->fetch_add (1); storageGeneration->fetch_add (1); measuredFolder = {};
+    for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
+    previewsPath.setText ("Loading settings...", juce::dontSendNotification);
+    auto settings = std::make_shared<ProjectScanner::SettingsSnapshot>();
+    ProjectScanner::queryAsync ([settings, reader = std::move (reader)]
+    { *settings = reader ? reader() : ProjectScanner::readSettings(); return settings->result; },
+        [safe = juce::Component::SafePointer<SettingsDialog> (this), settings] (juce::Result result)
+        {
+            if (safe == nullptr) return;
+            safe->rebuildFingerprint = result.failed() && settings->canRebuild ? settings->fingerprint : juce::String{};
+            const auto problem = result.failed() ? result.getErrorMessage()
+                + (settings->canRebuild ? "\nReview the folders and recording options. Rebuild settings saves an original copy beside config.json."
+                                        : "\nRestore access, then Reload settings. The file will be preserved.") : juce::String{};
+            safe->settingsProblem.setText (problem, juce::dontSendNotification);
+            safe->settingsProblem.setTooltip (problem); safe->settingsProblem.setVisible (problem.isNotEmpty());
+            safe->settingsProblem.setEnabled (true);
+            safe->retrySettings.setVisible (result.failed()); safe->retrySettings.setEnabled (true);
+            safe->cancelBtn.setEnabled (true);
+            safe->okBtn.setButtonText (safe->rebuildFingerprint.isNotEmpty() ? "Rebuild settings" : "OK");
+            safe->resized();
+            if (result.failed() && ! settings->canRebuild)
+            { safe->previewsPath.setText ("Settings could not be read", juce::dontSendNotification); return; }
+            safe->previewsFolder = settings->previews;
+            safe->projectsFolders = settings->roots;
+            safe->recordSeconds = settings->seconds;
+            safe->oggQuality = settings->quality;
+            safe->recordMono = settings->mono;
+            // JUCE Button::setToggleState ignores changes while disabled.
+            for (auto* child : safe->getChildren()) child->setEnabled (true);
+            // Preserve all supported config values, rather than silently
+            // overwriting a non-preset value when saving an unrelated setting.
+            if (safe->durationCombo.indexOfItemId (settings->seconds) < 0)
+                safe->durationCombo.addItem (juce::String (settings->seconds) + " s", settings->seconds);
+            if (safe->qualityCombo.indexOfItemId (settings->quality + 1) < 0)
+                safe->qualityCombo.addItem ("Quality " + juce::String (settings->quality), settings->quality + 1);
+            safe->durationCombo.setSelectedId (settings->seconds, juce::dontSendNotification);
+            safe->qualityCombo.setSelectedId (settings->quality + 1, juce::dontSendNotification);
+            safe->monoToggle.setToggleState (settings->mono, juce::dontSendNotification);
+            safe->settingsLoaded = true;
+            safe->rebuildFoldersList();
+            safe->updateSizeEstimate();
+            safe->refreshLabels();
+            safe->updateStorageUsage();
+        });
 }
 
 void SettingsDialog::refreshLabels()
@@ -205,12 +264,26 @@ void SettingsDialog::refreshLabels()
                              ? "(not set)" : previewsFolder.getFullPathName(),
                           juce::dontSendNotification);
 
-    // OK is enabled when previews is valid AND at least one valid project folder
-    bool anyProjectsValid = false;
-    for (auto& f : projectsFolders)
-        if (f.isDirectory()) { anyProjectsValid = true; break; }
-
-    okBtn.setEnabled (previewsFolder.isDirectory() && anyProjectsValid);
+    okBtn.setEnabled (false);
+    if (! settingsLoaded) return;
+    const auto token = validationGeneration;
+    const auto generation = token->fetch_add (1) + 1;
+    auto valid = std::make_shared<bool> (false);
+    ProjectScanner::queryAsync ([previews = previewsFolder, roots = projectsFolders, token, generation, valid]
+    {
+        if (token->load() != generation) return juce::Result::ok();
+        bool anyProjectsValid = false;
+        for (const auto& root : roots)
+        {
+            if (token->load() != generation) return juce::Result::ok();
+            if (root.isDirectory()) { anyProjectsValid = true; break; }
+        }
+        *valid = anyProjectsValid && previews.isDirectory();
+        return juce::Result::ok();
+    }, [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation, valid] (juce::Result result)
+    {
+        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid);
+    });
 }
 
 void SettingsDialog::rebuildFoldersList()
@@ -225,20 +298,43 @@ void SettingsDialog::updateSizeEstimate()
     double bytes = (double) kVorbisBitrate[q] * 1000.0 * (double) recordSeconds
                    * (recordMono ? kMonoSizeFactor : 1.0) / 8.0;
 
-    juce::String s;
-    if (bytes < 1024.0 * 1024.0)
-        s = juce::String (bytes / 1024.0, 0) + " KB";
-    else
-        s = juce::String (bytes / (1024.0 * 1024.0), 2) + " MB";
+    const auto pcm = 48000.0 * recordSeconds * (recordMono ? 1 : 2) * sizeof (float);
+    sizeEstimate.setText ("At 48 kHz: float WAV " + juce::File::descriptionOfSizeInBytes ((juce::int64) pcm)
+        + " + OGG ~" + juce::File::descriptionOfSizeInBytes ((juce::int64) bytes)
+        + " per revision (WAV x4 at 192 kHz)", juce::dontSendNotification);
+    sizeEstimate.setTooltip ("Estimated OGG size varies with content. The previous revision uses additional disk space; temporary capture WAV also uses disk while saving.");
+}
 
-    sizeEstimate.setText ("Estimated size per preview: ~" + s, juce::dontSendNotification);
+void SettingsDialog::updateStorageUsage()
+{
+    if (previewsFolder == measuredFolder) return;
+    measuredFolder = previewsFolder;
+    storageUsage.setText ("Calculating library storage...", juce::dontSendNotification);
+    const auto generation = storageGeneration->fetch_add (1) + 1;
+    const auto token = storageGeneration;
+    const auto folder = previewsFolder;
+    auto usage = std::make_shared<LibraryStore::StorageUsage>();
+    ProjectScanner::queryAsync ([folder, token, generation, usage]
+    {
+        *usage = LibraryStore::measureStorage (folder, [token, generation] { return token->load() != generation; });
+        return juce::Result::ok();
+    }, [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation, usage] (juce::Result)
+    {
+        if (safe == nullptr || token->load() != generation || usage->cancelled) return;
+        const auto size = [] (juce::int64 bytes) { return juce::File::descriptionOfSizeInBytes (bytes); };
+        const auto text = "Library incl. history: " + size (usage->bytes) + " (PCM " + size (usage->pcmBytes)
+            + ", OGG " + size (usage->previewBytes) + ") | Free: "
+            + (usage->freeBytes >= 0 ? size (usage->freeBytes) : juce::String ("unavailable"));
+        safe->storageUsage.setText (text, juce::dontSendNotification);
+        safe->storageUsage.setTooltip (text);
+    });
 }
 
 void SettingsDialog::pickPreviews()
 {
     chooser = std::make_unique<juce::FileChooser> (
         "Select previews folder (where recordings are saved)",
-        previewsFolder.isDirectory()
+        previewsFolder.getFullPathName().isNotEmpty()
             ? previewsFolder
             : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
 
@@ -250,6 +346,7 @@ void SettingsDialog::pickPreviews()
             if (! fc.getResults().isEmpty())
                 safe->previewsFolder = fc.getResult();
             safe->refreshLabels();
+            safe->updateStorageUsage();
         });
 }
 
@@ -258,9 +355,6 @@ void SettingsDialog::addProjectFolder()
     auto start = projectsFolders.isEmpty()
                      ? juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
                      : projectsFolders.getReference (0);
-    if (! start.isDirectory())
-        start = juce::File::getSpecialLocation (juce::File::userDesktopDirectory);
-
     chooser = std::make_unique<juce::FileChooser> (
         "Add a folder to search for DAW projects",
         start);
@@ -283,24 +377,42 @@ void SettingsDialog::addProjectFolder()
 
 void SettingsDialog::commit()
 {
-    if (previewsFolder.isDirectory())
-        ProjectScanner::setPreviewsFolder (previewsFolder);
-
-    // Drop invalid entries before saving
-    juce::Array<juce::File> valid;
-    for (auto& f : projectsFolders)
-        if (f.isDirectory()) valid.add (f);
-    ProjectScanner::setProjectsRootFolders (valid);
-
-    // Recording parameters
-    ProjectScanner::setRecordSeconds (recordSeconds);
-    ProjectScanner::setOggQuality    (oggQuality);
-    ProjectScanner::setRecordMono    (recordMono);
-
-    if (onCompleted) onCompleted();
-
-    if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-        dw->exitModalState (1);
+    validationGeneration->fetch_add (1);
+    for (auto* child : getChildren()) child->setEnabled (false);
+    auto originalBackup = std::make_shared<juce::File>();
+    ProjectScanner::editAsync ([previews = previewsFolder, roots = projectsFolders, fingerprint = rebuildFingerprint, originalBackup,
+                               seconds = recordSeconds, quality = oggQuality, mono = recordMono]
+    {
+        bool validRoot = false;
+        for (const auto& root : roots) if (root.isDirectory()) { validRoot = true; break; }
+        if (! previews.isDirectory() || ! validRoot)
+            return juce::Result::fail ("Select an existing previews folder and at least one accessible project search folder");
+        return fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono)
+            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup);
+    }, [safe = juce::Component::SafePointer<SettingsDialog> (this), originalBackup] (juce::Result result)
+    {
+        if (safe == nullptr) return;
+        for (auto* child : safe->getChildren()) child->setEnabled (true);
+        if (result.failed())
+        {
+            safe->settingsProblem.setText (result.getErrorMessage(), juce::dontSendNotification);
+            safe->settingsProblem.setTooltip (result.getErrorMessage()); safe->settingsProblem.setVisible (true);
+            safe->retrySettings.setVisible (true); safe->resized();
+            safe->refreshLabels();
+            return;
+        }
+        if (*originalBackup != juce::File{})
+        {
+            const auto message = "Settings rebuilt. Original copy: " + originalBackup->getFullPathName();
+            safe->settingsProblem.setText (message, juce::dontSendNotification);
+            safe->settingsProblem.setTooltip (message); safe->settingsProblem.setVisible (true);
+            safe->rebuildFingerprint.clear(); safe->okBtn.setButtonText ("OK"); safe->resized();
+        }
+        auto completed = safe->onCompleted;
+        if (completed) completed();
+        if (safe != nullptr)
+            if (auto* window = safe->findParentComponentOfClass<juce::DialogWindow>()) window->exitModalState (1);
+    });
 }
 
 void SettingsDialog::paint (juce::Graphics& g)
@@ -353,10 +465,10 @@ void SettingsDialog::resized()
 
     area.removeFromTop (8);
 
-    // Row 2: mono toggle (left)  +  size estimate (right)
-    auto toggleRow = area.removeFromTop (22);
-    sizeEstimate.setBounds (toggleRow.removeFromRight (260));
-    monoToggle  .setBounds (toggleRow);
+    monoToggle.setBounds (area.removeFromTop (22));
+    sizeEstimate.setBounds (area.removeFromTop (24));
+    pcmPolicy.setBounds (area.removeFromTop (22));
+    storageUsage.setBounds (area.removeFromTop (24));
 
     area.removeFromTop (12);
 
@@ -365,20 +477,29 @@ void SettingsDialog::resized()
     projectsHint   .setBounds (area.removeFromTop (16));
     area.removeFromTop (4);
 
-    auto bottomFixed = 60;   // reserved for OK/Cancel
+    int problemHeight = 0;
+    if (settingsProblem.isVisible())
+    {
+        juce::AttributedString text (settingsProblem.getText());
+        text.setFont (settingsProblem.getFont());
+        juce::TextLayout layout; layout.createLayout (text, (float) getWidth() - 42.0f);
+        problemHeight = juce::jlimit (64, 128, (int) std::ceil (layout.getHeight()) + 12);
+    }
+    area = area.withTrimmedBottom (52 + problemHeight);
     auto addBtnRow   = area.removeFromBottom (32);
     addProjectsBtn.setBounds (addBtnRow.removeFromLeft (120));
 
-    auto listArea = area.withTrimmedBottom (bottomFixed - 32);
-    foldersList.setBounds (listArea);
+    foldersList.setBounds (area);
+    settingsProblem.setBounds (16, getHeight() - 52 - problemHeight, getWidth() - 32, problemHeight);
 
     auto bottom = getLocalBounds().removeFromBottom (52).reduced (16, 10);
-    okBtn.setBounds (bottom.removeFromRight (90));
+    okBtn.setBounds (bottom.removeFromRight (rebuildFingerprint.isNotEmpty() ? 144 : 90));
     if (cancelBtn.isVisible())
     {
         bottom.removeFromRight (8);
         cancelBtn.setBounds (bottom.removeFromRight (90));
     }
+    retrySettings.setBounds (bottom.removeFromLeft (128));
 }
 
 void SettingsDialog::launch (bool firstRun, std::function<void()> onDone)

@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "ProjectScanner.h"
 
 // Modal settings panel. Lets the user pick:
 //   - previewsFolder       (where the plugin writes recordings)
@@ -10,7 +11,9 @@
 class SettingsDialog : public juce::Component
 {
 public:
-    explicit SettingsDialog (bool firstRun);
+    explicit SettingsDialog (bool firstRun, std::function<ProjectScanner::SettingsSnapshot()> reader = {});
+    bool hasLoadedSettings() const { return settingsLoaded; }
+    ~SettingsDialog() override;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -28,6 +31,15 @@ private:
     void refreshLabels();
     void rebuildFoldersList();
     void updateSizeEstimate();
+    void updateStorageUsage();
+    void loadSettings (std::function<ProjectScanner::SettingsSnapshot()> reader);
+    std::shared_ptr<std::atomic<uint64_t>> storageGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
+    std::shared_ptr<std::atomic<uint64_t>> validationGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
+    juce::File measuredFolder;
+    bool settingsLoaded = false;
+    juce::String rebuildFingerprint;
+    juce::Label settingsProblem;
+    juce::TextButton retrySettings { "Reload settings" };
 
     bool firstRun { false };
 
@@ -39,13 +51,15 @@ private:
 
     // Recording settings block
     juce::Label       recordCaption { {}, "Recording" };
-    juce::Label       recordHint    { {}, "Applies on the next time the plugin is loaded in your DAW" };
+    juce::Label       recordHint    { {}, "Apply on preparation/reload; queued recordings keep their previous settings" };
     juce::Label       durationLbl   { {}, "Duration" };
     juce::Label       qualityLbl    { {}, "Quality" };
     juce::ComboBox    durationCombo;
     juce::ComboBox    qualityCombo;
     juce::ToggleButton monoToggle   { "Record in mono (smaller file)" };
     juce::Label       sizeEstimate;
+    juce::Label       storageUsage;
+    juce::Label       pcmPolicy { {}, "Float PCM + OGG: current and previous revisions kept; older revisions cleaned automatically" };
 
     juce::Label  projectsCaption { {}, "DAW project search folders" };
     juce::Label  projectsHint    { {}, "Add every folder where you keep your DAW project files" };
@@ -69,5 +83,6 @@ private:
 
     std::unique_ptr<juce::FileChooser> chooser;
 
+    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsDialog)
 };

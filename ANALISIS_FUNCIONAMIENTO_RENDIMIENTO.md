@@ -1,5 +1,34 @@
 **Análisis de funcionamiento y rendimiento de Remember — 6 de octubre de 2026**
 
+**Cambio de alcance del 11 de octubre de 2026:** el usuario solicita pausar y
+retomar con unas dos horas de correcciones y pruebas esenciales. Primero se
+intentará leer el BPM del DAW; si falta, se conserva la estimación existente
+como respaldo. Mejorarla no es prioritario; se aplaza la calibración musical.
+El punto de continuación y el estado real de la validación están en
+[PAUSA_Y_REANUDACION.md](PAUSA_Y_REANUDACION.md). El diagnóstico histórico que
+sigue no debe usarse como una orden de continuar las 22 mejoras exhaustivamente.
+
+Seguimiento del 9 de octubre: este informe conserva el diagnóstico y las
+mediciones anteriores a los cambios. El estado de cada mejora y su validación
+actual están en [IMPLEMENTACION_MEJORAS.md](<E:/JUCE PLUGINS/Remember/IMPLEMENTACION_MEJORAS.md>).
+La implementación sigue en curso; las cifras originales no describen el nuevo motor.
+La continuación musical utiliza analysisVersion=5: en el grupo reservado de
+GiantSteps, BPM correcto pasa de 16,12% a 62,09% y tonalidad exacta de 24,42% a
+48,18%, con los mismos originales y PCM. Métodos, auditoría y limitaciones están
+en [validación de calibración](out/validation-20261009-calibration/VALIDACION.md).
+Siguen pendientes calibración de confianza, otros datos/géneros y la aceptación
+de hardware, hosts, instalación y demás requisitos detallados en el seguimiento.
+La continuación de checksums comparte SHA-256 nativo entre app/plugin y hace
+pasar el estrés ASan combinado en 280,27 s, dentro de sus 300 s originales:
+[cambios, contratos y fases](out/validation-20261009-stress-phases/VALIDACION.md).
+La continuación de arranque reproduce y corrige la lista en blanco antes de la
+primera publicación, elimina la segunda verificación y los diálogos por ruta
+ausente, y distingue carga/vacía/error. Trece procesos nuevos por modo pasan en
+Release/ASan; fuentes, imágenes, JUnit separados y límites están en
+[validación de arranque](out/validation-20261009-startup/VALIDACION.md).
+Se mide el contenido principal y su índice, con caché de disco potencialmente
+caliente; siguen pendientes ventana/bandeja nativas, hardware y distribución.
+
 La mayor oportunidad de mejora está en la coordinación entre audio, trabajo en segundo plano, interfaz y almacenamiento. La copia de audio resulta barata en la prueba realizada; los problemas más relevantes son bloqueos de la interfaz, búsquedas repetidas en disco y escrituras que pueden perder cambios o mezclar versiones. Conviene resolver estos puntos antes de optimizar el dibujo de la interfaz o añadir funciones.
 
 La revisión corresponde al estado actual del directorio de trabajo, incluidos los cambios locales que ya existían al comenzar. HEAD: `9937341197af1ebdbd57a689f19d414d37a3fc1b`. Las conclusiones se refieren a esos archivos locales, no a una release etiquetada.

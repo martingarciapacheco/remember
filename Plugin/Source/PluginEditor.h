@@ -12,9 +12,15 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
+    // The native folder selector and other editor integrations use this same
+    // asynchronous edit path; preparation applies it to future capture banks.
+    void applyOutputFolder (const juce::File&);
 
 private:
     void showSettingsPanel();
+    void showAssociationMenu();
+    void chooseProjectFile (const juce::String& expectedId);
+    void refreshSettingsRequest();
     void refreshFromEngine();
     void paintProgressBar (juce::Graphics& g, juce::Rectangle<int> bounds, float progress);
 
@@ -25,8 +31,14 @@ private:
     juce::Label       statusLabel;
     juce::Label       versionLabel;  // "v1.0.0-beta1 a1b2c3d" in the bottom-right
     juce::TextButton  settingsButton { "..." };
+    juce::Label       associationLabel;
+    juce::TextButton  associationButton { "Associate" };
 
     std::unique_ptr<juce::FileChooser> fileChooser;
+    std::shared_ptr<SettingsManager::Request> settingsRequest;
+    juce::File settingsFolder;
+    juce::String settingsMessage;
+    bool initialSettings = true, savingSettings = false, settingsFailed = false, editorReady = false;
     float  recordProgress { 0.0f };
     bool   isRecording    { false };
 
@@ -47,5 +59,6 @@ private:
     static constexpr uint32_t kSuccess  = 0xff34d399;
     static constexpr uint32_t kError    = 0xffef4444;
 
+    juce::TooltipWindow tooltips { this }; // parented to the editor for host scaling/lifetime
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RememberEditor)
 };

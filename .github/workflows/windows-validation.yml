@@ -1,0 +1,156 @@
+name: Windows validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Build an installer after all validation gates
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  release:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: juce-framework/JUCE
+          ref: 29396c22c93392d6738e021b83196283d6e4d850 # 8.0.12
+          path: out/tools/JUCE
+          persist-credentials: false
+      - name: Verify release script contracts
+        run: ./Tests/ReleasePipelineTests.ps1
+      - name: Download pinned validator
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lock = Get-Content installer/dependencies.json -Raw | ConvertFrom-Json
+          New-Item -ItemType Directory out/tools/pluginval | Out-Null
+          $archive = Join-Path $PWD 'out/tools/pluginval/pluginval.zip'
+          Invoke-WebRequest $lock.pluginval.url -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ine $lock.pluginval.archiveSha256) { throw 'pluginval download checksum mismatch' }
+          Expand-Archive $archive out/tools/pluginval
+      - name: Obtain pinned portable packaging tools
+        if: github.event_name == 'workflow_dispatch' && inputs.package
+        run: |
+          $tools = ./installer/get-packaging-tools.ps1 -OutputDirectory out/tools/packaging
+          "REMEMBER_ISCC=$($tools.iscc)" >> $env:GITHUB_ENV
+          "REMEMBER_UNPACKER=$($tools.unpacker)" >> $env:GITHUB_ENV
+      - name: Build app and VST3, run CTest and native VST3 validation
+        env:
+          PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.package }}
+        run: |
+          ./installer/build-release.ps1 -JucePath out/tools/JUCE -PluginvalPath out/tools/pluginval/pluginval.exe `
+            -Generator 'Visual Studio 17 2022' -BuildRoot out/ci-release -SkipPackage:($env:PACKAGE -ne 'true') `
+            -IsccPath $env:REMEMBER_ISCC -UnpackerPath $env:REMEMBER_UNPACKER
+      - name: Retain binary, manifest and complete diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: windows-release-validation
+          path: |
+            out/ci-release/logs/
+            out/ci-release/artifacts/
+          retention-days: 14
+          if-no-files-found: warn
+  app-asan:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: juce-framework/JUCE
+          ref: 29396c22c93392d6738e021b83196283d6e4d850 # 8.0.12
+          path: out/tools/JUCE
+          persist-credentials: false
+      - name: AddressSanitizer app tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S App -B out/app-asan -G 'Visual Studio 17 2022' -A x64 -DJUCE_PATH="$PWD/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_ENABLE_ASAN=ON
+          if ($LASTEXITCODE) { throw 'ASan configure failed' }
+          cmake --build out/app-asan --config Release --target RememberAppTests -- /nr:false /m:2
+          if ($LASTEXITCODE) { throw 'ASan build failed' }
+          ctest --test-dir out/app-asan -C Release --output-on-failure --no-tests=error --output-junit "$PWD/out/app-asan/tests.xml"
+          if ($LASTEXITCODE) { throw 'ASan tests failed' }
+          Import-Module ./installer/ReleaseTools.psm1
+          $null = Get-RememberTestEvidence "$PWD/out/app-asan/tests.xml" app
+      - if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: windows-app-asan
+          path: |
+            out/app-asan/Testing/
+            out/app-asan/tests.xml
+          retention-days: 14
+          if-no-files-found: warn
+  plugin-asan:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: juce-framework/JUCE
+          ref: 29396c22c93392d6738e021b83196283d6e4d850 # 8.0.12
+          path: out/tools/JUCE
+          persist-credentials: false
+      - name: AddressSanitizer plugin lifetime, settings, capture and analysis tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S Plugin -B out/plugin-asan -G 'Visual Studio 17 2022' -A x64 -DJUCE_PATH="$PWD/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_ENABLE_ASAN=ON -DREMEMBER_COPY_PLUGIN_AFTER_BUILD=OFF
+          if ($LASTEXITCODE) { throw 'Plugin ASan configure failed' }
+          cmake --build out/plugin-asan --config Release --target RememberTests -- /nr:false /m:2
+          if ($LASTEXITCODE) { throw 'Plugin ASan build failed' }
+          $required = @('RememberResampling', 'RememberFeatureCache', 'RememberAssociation', 'RememberRegression', 'RememberConfiguration', 'RememberStorageRecovery', 'RememberAnalysis', 'RememberCaptureMatrix', 'RememberHostLoading')
+          $selection = '^(' + ($required -join '|') + ')$'
+          ctest --test-dir out/plugin-asan -C Release -R $selection --verbose --no-tests=error --output-junit "$PWD/out/plugin-asan/tests.xml" --output-log "$PWD/out/plugin-asan/tests.log"
+          if ($LASTEXITCODE) { throw 'Plugin ASan tests failed' }
+          $junit = [xml](Get-Content -LiteralPath out/plugin-asan/tests.xml -Raw)
+          $actual = @($junit.testsuite.testcase | ForEach-Object { $_.name })
+          if ($actual.Count -ne $required.Count -or (Compare-Object ($required | Sort-Object) ($actual | Sort-Object)) -or [int]$junit.testsuite.failures -ne 0 -or [int]$junit.testsuite.skipped -ne 0) {
+              throw 'Plugin ASan report is incomplete or failed'
+          }
+      - name: AddressSanitizer reconfiguration and closure during long captures
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $captureExecutable = (Resolve-Path -LiteralPath out/plugin-asan/RememberTests_artefacts/Release/RememberTests.exe).Path
+          $captureWorkspace = Get-Content -LiteralPath out/plugin-asan/generated/test-workspace.txt -Raw
+          $captureLog = Join-Path $PWD 'out/plugin-asan/capture-lifecycle.log'
+          Push-Location -LiteralPath $captureWorkspace
+          try {
+              & $captureExecutable --capture-lifecycle 2>&1 | Tee-Object -FilePath $captureLog
+              if ($LASTEXITCODE) { throw 'Plugin ASan long capture lifecycle failed' }
+          } finally { Pop-Location }
+      - if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: windows-plugin-asan
+          path: |
+            out/plugin-asan/Testing/
+            out/plugin-asan/tests.xml
+            out/plugin-asan/tests.log
+            out/plugin-asan/capture-lifecycle.log
+          retention-days: 14
+          if-no-files-found: warn

@@ -5,13 +5,20 @@
 class RememberProcessor : public juce::AudioProcessor
 {
 public:
-    explicit RememberProcessor (RecordingEngine::ProjectDetector = ProjectIdentity::detectHostProject);
+    explicit RememberProcessor (RecordingEngine::ProjectDetector = ProjectIdentity::detectHostProject,
+                                SettingsManager::Reader = {});
     ~RememberProcessor() override = default;
 
     // ── AudioProcessor interface ─────────────────────────────────────────────
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override { engine.finishCapture(); }
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    bool isBusesLayoutSupported (const BusesLayout& layout) const override
+    {
+        const auto input = layout.getMainInputChannelSet();
+        return input == layout.getMainOutputChannelSet()
+            && (input == juce::AudioChannelSet::mono() || input == juce::AudioChannelSet::stereo());
+    }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -38,6 +45,7 @@ public:
     void             setProjectName (const juce::String& name);
 
 private:
+    SettingsManager::Reader settingsReader;
     RecordingEngine engine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RememberProcessor)

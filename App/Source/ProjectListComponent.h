@@ -19,7 +19,7 @@ namespace Pal
 class ProjectListComponent;
 
 // ── Single row component — reused by ListBox via refreshComponentForRow ───────
-class ProjectRowComponent : public juce::Component
+class ProjectRowComponent : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     ProjectRowComponent();
@@ -36,14 +36,17 @@ public:
     std::function<void()>                 onPlay;
     std::function<void(bool)>             onFavoriteToggle;
     std::function<void(juce::String)>     onRenameCommitted;
+    std::function<void()>                 onRenameRequested;
     std::function<void()>                 onEditTags;
     std::function<void()>                 onOpenInDaw;
     std::function<void()>                 onDelete;
+    std::function<void(bool)>             onRecover; // true: keep pending as a permanent recording
 
 private:
     ProjectEntry entry;
     bool         selected { false };
     bool         renaming { false };
+    std::function<void(juce::String)> renameCommit;
 
     juce::TextButton favBtn   { "" };
     juce::TextButton playBtn  { ">" };
@@ -53,10 +56,12 @@ private:
 // ── Searchable / filterable list ──────────────────────────────────────────────
 class ProjectListComponent : public juce::Component,
                              public juce::ListBoxModel,
+                             private juce::ChangeListener,
                              public juce::Timer
 {
 public:
     ProjectListComponent();
+    ~ProjectListComponent() override;
 
     void refresh();
 
@@ -72,14 +77,9 @@ public:
     void toggleFavoriteForSelected();
     void deleteSelected();
 
-    // Runs in a background thread: checks every entry's projectPath for
-    // existence, then on the message thread shows a dialog for each missing
-    // one (Delete / Add search folder). Safe to call multiple times; a second
-    // call is ignored if a verification is already in flight.
-    void verifyProjectPathsAsync();
-
     std::function<void (const ProjectEntry&)> onEntrySelected;
     std::function<void (const ProjectEntry&)> onEntryPlay;
+    std::function<void (const ProjectEntry&)> onBeforeStorageChange;
 
     // Fired after refresh() reloads from disk. Used by the host to refresh
     // the folder sidebar's counts.
@@ -98,30 +98,26 @@ public:
     void              returnKeyPressed (int row) override;
 
 private:
+    void recoverRecording (ProjectEntry, bool keep, bool confirmed,
+                           std::shared_ptr<LibraryStore::RecoveryChoice> selection = {}, juce::String token = {});
     void applyFilter();
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void publishLibrary();
     void scheduleSearchDebounce();
 
     juce::TextEditor  searchBox;
     juce::TextButton  favFilterBtn { "* Favorites" };
     juce::TextButton  refreshBtn   { "Refresh" };
     juce::ListBox     listBox;
+    juce::Label       libraryStatus;
+    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
+    juce::Component::SafePointer<juce::DialogWindow> recoveryWindow;
 
     juce::Array<ProjectEntry> allEntries;
     juce::Array<ProjectEntry> filtered;
 
     bool         showFavOnly       { false };
-    juce::int64  lastFolderMod     { 0 };
     juce::String folderFilter;            // empty = no filter
-
-    // Search debounce + folder poll counters
-    int searchDebounceCounter { -1 };   // -1 = inactive; counts timer ticks
-    int folderCheckCounter    { 0 };
-
-    // Sequential dialog flow for missing-project verification
-    void processNextMissing();
-    juce::Array<juce::File> pendingMissingMetaFiles;   // metadataFile per missing entry
-    std::atomic<bool>       verifyInFlight { false };
-    std::unique_ptr<juce::FileChooser> verifyChooser;
 
     static constexpr int kToolbarH = 42;
     static constexpr int kRowH     = 52;

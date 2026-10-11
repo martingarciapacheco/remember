@@ -1,6 +1,8 @@
 #include "TagsEditorDialog.h"
 #include "ProjectScanner.h"
 #include "ProjectListComponent.h"   // for Pal::
+#include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
@@ -37,17 +39,181 @@ namespace
         juce::GlyphArrangement ga;
         ga.addLineOfText (juce::Font (juce::FontOptions{}.withHeight (fontHeight)),
                           text, 0.0f, 0.0f);
-        return juce::roundToInt (ga.getBoundingBox (0, -1, true).getWidth());
+        // Curtailed shaping compares fractional glyph advances with the
+        // available width. Rounding down can ellipsise a fitting short tag.
+        return (int) std::ceil (ga.getBoundingBox (0, -1, true).getRight()) + 1;
     }
+
+    class TagButton final : public juce::TextButton
+    {
+    public:
+        TagButton (const juce::String& value, bool canRemove, int width)
+            : juce::TextButton ("#" + value + (canRemove ? "  x" : "")), tag (value), removable (canRemove),
+              fontHeight (canRemove ? 12.0f : 11.5f),
+              preferredWidth (width) {}
+        const juce::String tag;
+        const bool removable;
+        const float fontHeight;
+        const int preferredWidth;
+    private:
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            getLookAndFeel().drawButtonBackground (g, *this, findColour (buttonColourId), over, down);
+            g.setColour (findColour (textColourOffId));
+            g.setFont (juce::Font (juce::FontOptions{}.withHeight (fontHeight)));
+            auto label = getLocalBounds().reduced (8, 0);
+            if (removable)
+                g.drawText ("x", label.removeFromRight (10), juce::Justification::centred, false);
+            // Keep a readable font for long names. Ellipsis affects only the
+            // painted label; tooltip, accessibility and callbacks retain ID.
+            g.drawText ("#" + tag, label, juce::Justification::centredLeft, true);
+        }
+    };
 }
 
 // ── TagsEditorDialog ─────────────────────────────────────────────────────────
+
+class TagsEditorDialog::TagFlow final : public juce::Component
+{
+public:
+    TagFlow (TagsEditorDialog& dialog, juce::Viewport& view, bool canRemove)
+        : owner (dialog), viewport (view), removable (canRemove) {}
+    ~TagFlow() override { generation->fetch_add (1); }
+
+    void setTags (const juce::StringArray& tags)
+    {
+        const auto version = generation->fetch_add (1) + 1;
+        auto wanted = std::make_shared<std::vector<Item>>(); wanted->reserve ((size_t) tags.size());
+        size_t missing = 0;
+        for (const auto& tag : tags)
+        {
+            const auto key = tag.toStdString();
+            const auto found = widths.find (key);
+            const auto width = found != widths.end() ? found->second : 0;
+            if (width == 0) ++missing;
+            wanted->push_back ({ tag, width, {} });
+        }
+        const auto measure = [wanted, token = generation, version, remove = removable]
+        {
+            for (auto& item : *wanted)
+            {
+                if (token->load() != version) return juce::Result::ok();
+                if (item.width == 0)
+                    item.width = measureTextWidth ("#" + item.tag + (remove ? "  x" : ""), remove ? 12.0f : 11.5f) + (remove ? 22 : 16);
+            }
+            return juce::Result::ok();
+        };
+        if (missing <= 128)
+        {
+            measure(); publish (std::move (*wanted)); return;
+        }
+        auto& status = removable ? owner.currentEmpty : owner.suggestEmpty;
+        status.setText ("Loading tags...", juce::dontSendNotification); status.setVisible (true);
+        ProjectScanner::queryAsync (measure,
+            [safe = juce::Component::SafePointer<TagFlow> (this), wanted, version] (juce::Result result)
+            {
+                if (safe == nullptr || safe->generation->load() != version) return;
+                if (result.wasOk()) safe->publish (std::move (*wanted));
+                else
+                {
+                    auto& message = safe->removable ? safe->owner.currentEmpty : safe->owner.suggestEmpty;
+                    message.setText ("Tags could not be loaded. Close and reopen this editor.", juce::dontSendNotification);
+                    message.setTooltip (result.getErrorMessage()); message.setVisible (true);
+                }
+            });
+    }
+
+    void layout()
+    {
+        const auto width = juce::jmax (1, viewport.getWidth() - viewport.getScrollBarThickness());
+        const auto height = removable ? 26 : 24;
+        int x = 0, y = 0;
+        for (auto& item : items)
+        {
+            const auto itemWidth = juce::jmin (width, item.width);
+            if (x + itemWidth > width && x > 0) { x = 0; y += height + 6; }
+            item.bounds = { x, y, itemWidth, height }; x += itemWidth + 6;
+        }
+        changingSize = true;
+        setSize (width, juce::jmax (viewport.getHeight(), items.empty() ? 0 : y + height));
+        changingSize = false;
+        refreshVisible (viewport.getViewArea());
+    }
+
+    void refreshVisible (const juce::Rectangle<int>& area)
+    {
+        if (changingSize) return;
+        // Row bounds are monotonic: scrolling skips all offscreen controls.
+        const auto first = std::lower_bound (items.begin(), items.end(), area.getY(),
+            [] (const Item& item, int top) { return item.bounds.getBottom() <= top; });
+        std::unordered_multimap<std::string, std::unique_ptr<TagButton>> retained;
+        for (auto& button : buttons) retained.emplace (button->tag.toStdString(), std::move (button));
+        buttons.clear();
+        for (auto item = first; item != items.end() && item->bounds.getY() < area.getBottom(); ++item)
+        {
+            const auto found = retained.find (item->tag.toStdString());
+            std::unique_ptr<TagButton> button;
+            if (found != retained.end()) { button = std::move (found->second); retained.erase (found); }
+            else
+            {
+                button = std::make_unique<TagButton> (item->tag, removable, item->width);
+                button->setColour (juce::TextButton::buttonColourId, removable ? juce::Colour (Pal::Accent).withAlpha (0.25f) : juce::Colour (Pal::Elevated));
+                button->setColour (juce::TextButton::textColourOffId, juce::Colour (removable ? Pal::Text : Pal::Subtext));
+                button->setWantsKeyboardFocus (false);
+                button->setMouseCursor (juce::MouseCursor::PointingHandCursor);
+                button->setTooltip (button->getButtonText());
+                button->onClick = [safe = juce::Component::SafePointer<TagsEditorDialog> (&owner), tag = item->tag, remove = removable]
+                {
+                    juce::MessageManager::callAsync ([safe, tag, remove]
+                    {
+                        if (safe == nullptr) return;
+                        if (remove) safe->removeTag (tag); else safe->addTag (tag);
+                    });
+                };
+                addAndMakeVisible (*button);
+            }
+            button->setBounds (item->bounds); buttons.push_back (std::move (button));
+        }
+    }
+
+private:
+    struct Item { juce::String tag; int width; juce::Rectangle<int> bounds; };
+    void publish (std::vector<Item> next)
+    {
+        widths.clear();
+        for (const auto& item : next) widths.emplace (item.tag.toStdString(), item.width);
+        items = std::move (next);
+        auto& status = removable ? owner.currentEmpty : owner.suggestEmpty;
+        status.setText (removable ? "(no tags yet)" : "(no other tags in your library)", juce::dontSendNotification);
+        status.setTooltip ({}); status.setVisible (items.empty());
+        layout();
+    }
+    TagsEditorDialog& owner;
+    juce::Viewport& viewport;
+    bool removable, changingSize = false;
+    std::unordered_map<std::string, int> widths;
+    std::vector<Item> items;
+    std::vector<std::unique_ptr<TagButton>> buttons;
+    std::shared_ptr<std::atomic<uint64_t>> generation { std::make_shared<std::atomic<uint64_t>> (0) };
+};
+
+TagsEditorDialog::~TagsEditorDialog() = default;
 
 TagsEditorDialog::TagsEditorDialog (const juce::String& en,
                                     const juce::StringArray& initial,
                                     std::function<void (juce::StringArray)> commit)
     : entryName (en), currentTags (initial), onCommit (std::move (commit))
 {
+    chipsContent = std::make_unique<TagFlow> (*this, chipsViewport, true);
+    suggestionsContent = std::make_unique<TagFlow> (*this, suggestionsViewport, false);
+    chipsViewport.setViewedComponent (chipsContent.get(), false);
+    suggestionsViewport.setViewedComponent (suggestionsContent.get(), false);
+    chipsViewport.onAreaChanged = [this] (const juce::Rectangle<int>& area) { chipsContent->refreshVisible (area); };
+    suggestionsViewport.onAreaChanged = [this] (const juce::Rectangle<int>& area) { suggestionsContent->refreshVisible (area); };
+    chipsViewport.setScrollBarsShown (true, false);
+    suggestionsViewport.setScrollBarsShown (true, false);
+    addAndMakeVisible (chipsViewport);
+    addAndMakeVisible (suggestionsViewport);
     setSize (560, 460);
 
     allKnownTags = ProjectScanner::getAllUniqueTags();
@@ -117,6 +283,7 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
 
     rebuildChips();
     rebuildSuggestions();
+    resized();
 }
 
 void TagsEditorDialog::addTag (const juce::String& tag)
@@ -144,47 +311,18 @@ void TagsEditorDialog::removeTag (const juce::String& tag)
 
 void TagsEditorDialog::rebuildChips()
 {
-    chipButtons.clear();
-    for (auto& t : currentTags)
-    {
-        auto* b = new juce::TextButton ("#" + t + "  x");
-        b->setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Accent).withAlpha (0.25f));
-        b->setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Text));
-        b->setWantsKeyboardFocus (false);
-        b->setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        juce::String capture = t;
-        b->onClick = [this, capture] { removeTag (capture); };
-        addAndMakeVisible (b);
-        chipButtons.add (b);
-    }
-    currentEmpty.setVisible (chipButtons.isEmpty());
+    chipsContent->setTags (currentTags);
 }
 
 void TagsEditorDialog::rebuildSuggestions()
 {
-    suggestionButtons.clear();
     juce::StringArray remaining;
+    std::unordered_set<std::string> current;
+    for (const auto& tag : currentTags) current.insert (tag.toUpperCase().toStdString());
     for (auto& t : allKnownTags)
-    {
-        bool already = false;
-        for (auto& c : currentTags)
-            if (c.equalsIgnoreCase (t)) { already = true; break; }
-        if (! already) remaining.add (t);
-    }
+        if (current.find (t.toUpperCase().toStdString()) == current.end()) remaining.add (t);
 
-    for (auto& t : remaining)
-    {
-        auto* b = new juce::TextButton ("#" + t);
-        b->setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Elevated));
-        b->setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
-        b->setWantsKeyboardFocus (false);
-        b->setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        juce::String capture = t;
-        b->onClick = [this, capture] { addTag (capture); };
-        addAndMakeVisible (b);
-        suggestionButtons.add (b);
-    }
-    suggestEmpty.setVisible (suggestionButtons.isEmpty());
+    suggestionsContent->setTags (remaining);
 }
 
 void TagsEditorDialog::paint (juce::Graphics& g)
@@ -201,7 +339,7 @@ void TagsEditorDialog::paint (juce::Graphics& g)
     if (! suggestArea.isEmpty())
     {
         g.setColour (juce::Colour (Pal::Border));
-        g.fillRect (suggestArea.getX(), suggestArea.getY() - 14, suggestArea.getWidth(), 1);
+        g.fillRect (suggestArea.getX(), suggestCaption.getY() - 7, suggestArea.getWidth(), 1);
     }
 }
 
@@ -247,49 +385,32 @@ void TagsEditorDialog::resized()
     suggestArea = suggestBlock;
     suggestEmpty.setBounds (suggestArea.withHeight (20));
 
-    // ── Flow-layout the chip buttons inside chipsArea ─────────────────────
-    auto flowLayout = [] (juce::OwnedArray<juce::TextButton>& btns,
-                          juce::Rectangle<int> bounds, int chipH, float fontH,
-                          int extraPad)
-    {
-        if (btns.isEmpty()) return;
-
-        int x = bounds.getX();
-        int y = bounds.getY();
-        const int gap = 6;
-
-        for (auto* b : btns)
-        {
-            int textW = measureTextWidth (b->getButtonText(), fontH);
-            int w = textW + extraPad;
-            if (x + w > bounds.getRight() && x > bounds.getX())
-            {
-                x = bounds.getX();
-                y += chipH + gap;
-            }
-            b->setBounds (x, y, w, chipH);
-            x += w + gap;
-        }
-    };
-
-    // chips: bigger pad (room for the X)
-    flowLayout (chipButtons,       chipsArea,   26, 12.0f, 22);
-    flowLayout (suggestionButtons, suggestArea, 24, 11.5f, 16);
+    chipsViewport.setBounds (chipsArea);
+    suggestionsViewport.setBounds (suggestArea);
+    chipsContent->layout();
+    suggestionsContent->layout();
 }
 
 void TagsEditorDialog::launch (const juce::String& entryName,
                                const juce::StringArray& initialTags,
                                std::function<void (juce::StringArray)> onCommit)
 {
-    auto* dialog = new TagsEditorDialog (entryName, initialTags, std::move (onCommit));
+    auto dialog = create (entryName, initialTags, std::move (onCommit));
 
     juce::DialogWindow::LaunchOptions opts;
     opts.dialogTitle               = "Edit tags";
-    opts.content.setOwned          (dialog);
+    opts.content.setOwned          (dialog.release());
     opts.componentToCentreAround   = nullptr;
     opts.escapeKeyTriggersCloseButton = true;
     opts.useNativeTitleBar         = true;
     opts.resizable                 = false;
     opts.dialogBackgroundColour    = juce::Colour (Pal::BgDeep);
     opts.launchAsync();
+}
+
+std::unique_ptr<TagsEditorDialog> TagsEditorDialog::create (const juce::String& entryName,
+                                                          const juce::StringArray& initialTags,
+                                                          std::function<void (juce::StringArray)> onCommit)
+{
+    return std::unique_ptr<TagsEditorDialog> (new TagsEditorDialog (entryName, initialTags, std::move (onCommit)));
 }

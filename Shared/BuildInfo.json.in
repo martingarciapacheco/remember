@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "productVersion": "@REMEMBER_VERSION@",
+  "numericVersion": "@REMEMBER_NUMERIC_VERSION@",
+  "windowsVersion": "@REMEMBER_WINDOWS_VERSION@",
+  "commit": "@REMEMBER_GIT_COMMIT@",
+  "sourceState": "@REMEMBER_SOURCE_STATE@",
+  "sourceFingerprint": "@REMEMBER_SOURCE_FINGERPRINT@",
+  "buildId": "@REMEMBER_BUILD_ID@",
+  "buildDateUtc": "@REMEMBER_BUILD_DATE@",
+  "compiler": "@CMAKE_CXX_COMPILER_ID@",
+  "compilerVersion": "@CMAKE_CXX_COMPILER_VERSION@",
+  "cmakeVersion": "@CMAKE_VERSION@"
+}

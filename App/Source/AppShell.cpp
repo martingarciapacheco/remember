@@ -1,0 +1,205 @@
+#include "AppShell.h"
+#include "MainComponent.h"
+#include "ProjectScanner.h"
+#include "../../Shared/LibraryStore.h"
+#include "../../Shared/BackgroundRetirement.h"
+
+class AppShell::MainWindow : public juce::DocumentWindow, private juce::Timer
+{
+public:
+    explicit MainWindow (const juce::String& name)
+        : DocumentWindow (name,
+                          juce::Colour (0xff1a1a2e),
+                          DocumentWindow::allButtons)
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new MainComponent(), true);
+        setResizable (true, false);
+        setResizeLimits (640, 480, 4096, 4096);
+        centreWithSize (820, 620);
+    }
+
+    void activate()
+    {
+        const bool firstShow = ! boundsReady;
+        // Native frame adjustments during the first show are initialisation,
+        // not a user move. Read saved bounds against the final shown geometry.
+        setVisible (true);
+        if (auto* content = dynamic_cast<MainComponent*> (getContentComponent())) content->setUiActive (true);
+        setMinimised (false);
+        toFront (true);
+        if (! firstShow) return;
+        boundsReady = true;
+        lastObservedBounds = getBounds();
+        auto savedBounds = std::make_shared<juce::String>();
+        const auto initialBounds = getBounds();
+        ProjectScanner::queryAsync ([savedBounds]
+        {
+            return ProjectScanner::readWindowState (*savedBounds);
+        }, [safe = juce::Component::SafePointer<MainWindow> (this), savedBounds, initialBounds] (juce::Result result)
+        {
+            if (safe == nullptr) return;
+            safe->boundsReadSucceeded = result.wasOk();
+            // A late disk read must not undo a move/resize by the user.
+            if (result.wasOk() && ! safe->boundsEdited && safe->getBounds() == initialBounds
+                && savedBounds->isNotEmpty())
+            {
+                safe->boundsReady = false;
+                safe->restoreWindowStateFromString (*savedBounds);
+                safe->lastObservedBounds = safe->getBounds();
+                safe->boundsReady = true;
+            }
+        });
+    }
+
+    ~MainWindow() override { stopTimer(); persistBounds(); }
+    void moved() override
+    {
+        DocumentWindow::moved(); // retain the latest visible position before hiding
+        boundsChanged();
+    }
+    void resized() override
+    {
+        DocumentWindow::resized();
+        boundsChanged();
+    }
+
+    void closeButtonPressed() override
+    {
+        ProjectScanner::setLibraryVisible (false);
+        if (auto* content = dynamic_cast<MainComponent*> (getContentComponent())) content->setUiActive (false);
+        setVisible (false);
+    }
+private:
+    void boundsChanged()
+    {
+        if (! boundsReady || isMinimised() || lastObservedBounds == getBounds()) return;
+        lastObservedBounds = getBounds();
+        boundsEdited = true;
+        startTimer (600);
+    }
+    void timerCallback() override { stopTimer(); persistBounds(); }
+    void persistBounds()
+    {
+        // Untouched startup geometry is provisional until a successful
+        // read. A deliberate move/resize remains authoritative even if
+        // the old settings read is still pending or failed.
+        if (! boundsReady || (! boundsReadSucceeded && ! boundsEdited) || isMinimised()) return;
+        const auto bounds = getWindowStateAsString();
+        ProjectScanner::editAsync ([bounds]
+        {
+            juce::var patch (new juce::DynamicObject());
+            patch.getDynamicObject()->setProperty ("windowState", bounds);
+            return LibraryStore::patchJson (LibraryStore::configFile(), patch, true);
+        });
+    }
+    bool boundsReady = false;
+    bool boundsEdited = false;
+    bool boundsReadSucceeded = false;
+    juce::Rectangle<int> lastObservedBounds;
+};
+
+
+class AppShell::TrayIcon final : public juce::SystemTrayIconComponent
+{
+public:
+    TrayIcon (std::function<void()> open, std::function<void()> exit)
+        : onOpen (std::move (open)), onExit (std::move (exit))
+    {
+        setIconImage (createIcon(), {});
+        setIconTooltip ("Remember - click to open");
+    }
+
+    void mouseDown (const juce::MouseEvent& event) override
+    {
+        if (event.mods.isPopupMenu())
+        {
+            juce::PopupMenu menu;
+            menu.addItem (1, "Open Remember");
+            menu.addSeparator();
+            menu.addItem (2, "Exit");
+            menu.showMenuAsync (juce::PopupMenu::Options(),
+                [safe = juce::Component::SafePointer<TrayIcon> (this)] (int result)
+                {
+                    if (safe == nullptr)
+                        return;
+
+                    if (result == 1)
+                        safe->onOpen();
+                    else if (result == 2)
+                        safe->onExit();
+                });
+        }
+        else if (event.mods.isLeftButtonDown())
+        {
+            onOpen();
+        }
+    }
+
+    void mouseDoubleClick (const juce::MouseEvent& event) override
+    {
+        if (event.mods.isLeftButtonDown())
+            onOpen();
+    }
+
+private:
+    static juce::Image createIcon()
+    {
+        juce::Image icon (juce::Image::ARGB, 32, 32, true);
+        juce::Graphics graphics (icon);
+        graphics.setColour (juce::Colour (0xff8b5cf6));
+        graphics.fillRoundedRectangle (1.0f, 1.0f, 30.0f, 30.0f, 7.0f);
+        graphics.setColour (juce::Colours::white);
+
+        juce::Path waveform;
+        waveform.startNewSubPath (6.0f, 16.0f);
+        waveform.lineTo (10.0f, 16.0f);
+        waveform.lineTo (13.0f, 8.0f);
+        waveform.lineTo (18.0f, 24.0f);
+        waveform.lineTo (22.0f, 16.0f);
+        waveform.lineTo (26.0f, 16.0f);
+        graphics.strokePath (waveform, juce::PathStrokeType (2.5f,
+            juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        return icon;
+    }
+
+    std::function<void()> onOpen;
+    std::function<void()> onExit;
+};
+
+AppShell::AppShell (std::function<void()> onReadyToQuit) : readyToQuit (std::move (onReadyToQuit))
+{
+    trayIcon = std::make_unique<TrayIcon> ([this] { open(); }, [this] { requestQuit(); });
+    open();
+}
+AppShell::~AppShell()
+{
+    stopTimer();
+    juce::PopupMenu::dismissAllActiveMenus();
+    trayIcon.reset();
+    mainWindow.reset();
+}
+void AppShell::open()
+{
+    if (closing) return;
+    if (mainWindow == nullptr) mainWindow = std::make_unique<MainWindow> ("Remember");
+    ProjectScanner::setLibraryVisible (true);
+    ProjectScanner::refreshAsync();
+    mainWindow->activate();
+}
+void AppShell::requestQuit()
+{
+    if (closing) return;
+    closing = true;
+    juce::PopupMenu::dismissAllActiveMenus();
+    mainWindow.reset();
+    ProjectScanner::beginShutdown();
+    trayIcon->setIconTooltip ("Remember - finishing background work");
+    startTimer (50);
+}
+void AppShell::timerCallback()
+{
+    if (ProjectScanner::shutdownReady() && WaveformPlayerComponent::pendingLoads() == 0
+        && BackgroundRetirement::pending() == 0)
+    { stopTimer(); if (readyToQuit) readyToQuit(); }
+}

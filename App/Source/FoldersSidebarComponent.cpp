@@ -29,6 +29,12 @@ public:
         return fullPath.isEmpty() ? juce::String ("__ALL__") : fullPath;
     }
 
+    juce::String getTooltip() override
+    {
+        return (fullPath.isEmpty() ? "All" : fullPath) + " (" + juce::String (entryCount)
+            + (entryCount == 1 ? " entry)" : " entries)");
+    }
+
     void paintItem (juce::Graphics& g, int w, int h) override
     {
         bool sel = isSelected();
@@ -70,13 +76,15 @@ public:
             m.addSeparator();
             m.addItem (10, "Sort by...");
 
+            auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (&owner);
             m.showMenuAsync (juce::PopupMenu::Options(),
-                [&owner = owner, isRoot, path = fullPath] (int r)
+                [safe, isRoot, path = fullPath] (int r)
                 {
-                    if      (r == 1)  owner.promptNewSubfolder (isRoot ? juce::String() : path);
-                    else if (r == 2)  owner.promptRename (path);
-                    else if (r == 3)  owner.confirmDelete (path);
-                    else if (r == 10) owner.chooseSortMode();
+                    if (safe == nullptr) return;
+                    if      (r == 1)  safe->promptNewSubfolder (isRoot ? juce::String() : path);
+                    else if (r == 2)  safe->promptRename (path);
+                    else if (r == 3)  safe->confirmDelete (path);
+                    else if (r == 10) safe->chooseSortMode();
                 });
             return;
         }
@@ -267,6 +275,7 @@ namespace
         for (auto& e : entries)
         {
             auto ms = juce::Time::fromISO8601 (e.recordedAt).toMilliseconds();
+            juce::StringArray contributed;
             for (auto& folder : e.folders)
             {
                 auto it = recs.find (folder);
@@ -278,8 +287,9 @@ namespace
                 while (! cur.isEmpty())
                 {
                     auto r = recs.find (cur);
-                    if (r != recs.end())
+                    if (r != recs.end() && ! contributed.contains (cur))
                     {
+                        contributed.add (cur);
                         r->second.recursiveCount += 1;
                         if (ms > r->second.newestEntryMs)
                             r->second.newestEntryMs = ms;
@@ -322,10 +332,11 @@ void FoldersSidebarComponent::rebuildTree()
     juce::String selBackup = selectedFolder;
     auto opennessXml = std::unique_ptr<juce::XmlElement> (tree.getOpennessState (true));
 
-    auto allEntries = ProjectScanner::scan();
-    auto allPaths   = ProjectScanner::getAllFolderPaths();
+    const auto publication = ProjectScanner::librarySnapshot();
+    const auto& allEntries = publication->entries;
+    const auto& allPaths = publication->folders;
     auto records    = buildFolderRecords (allEntries, allPaths);
-    auto mode       = ProjectScanner::getSidebarSort();
+    auto mode = publication->sort;
 
     rootItem->clearSubItems();
 
@@ -335,17 +346,17 @@ void FoldersSidebarComponent::rebuildTree()
 
     // 2) Build the folder tree under root from sorted records
     //    Group paths by parent, sort siblings together, recurse.
+    std::map<juce::String, std::vector<FolderRecord*>> children;
+    for (auto& pair : records)
+    {
+        auto& record = pair.second;
+        const auto slash = record.fullPath.lastIndexOfChar ('/');
+        children[slash >= 0 ? record.fullPath.substring (0, slash) : juce::String{}].push_back (&record);
+    }
     std::function<void (juce::TreeViewItem*, const juce::String&)> addChildren =
         [&] (juce::TreeViewItem* parent, const juce::String& parentPath)
     {
-        std::vector<FolderRecord*> kids;
-        for (auto& kv : records)
-        {
-            auto& rec = kv.second;
-            int slash = rec.fullPath.lastIndexOfChar ('/');
-            juce::String myParent = (slash >= 0) ? rec.fullPath.substring (0, slash) : juce::String();
-            if (myParent == parentPath) kids.push_back (&rec);
-        }
+        auto& kids = children[parentPath];
 
         std::sort (kids.begin(), kids.end(),
                    [&] (FolderRecord* a, FolderRecord* b)
@@ -422,9 +433,7 @@ void FoldersSidebarComponent::promptNewSubfolder (const juce::String& parentPath
                     auto fullPath = parentPath.isEmpty()
                                         ? name
                                         : (parentPath + "/" + name);
-                    ProjectScanner::createFolder (fullPath);
-                    safe->refresh();
-                    if (safe->onFoldersChanged) safe->onFoldersChanged();
+                    safe->runFolderEdit ([fullPath] { return ProjectScanner::createFolder (fullPath); });
                 }
             }
             delete aw;
@@ -464,9 +473,7 @@ void FoldersSidebarComponent::promptRename (const juce::String& path)
                         {
                             safe->selectedFolder = newPath + safe->selectedFolder.substring (path.length());
                         }
-                        ProjectScanner::renameFolder (path, newPath);
-                        safe->refresh();
-                        if (safe->onFoldersChanged) safe->onFoldersChanged();
+                        safe->runFolderEdit ([path, newPath] { return ProjectScanner::renameFolder (path, newPath); });
                         if (safe->onFolderSelected) safe->onFolderSelected (safe->selectedFolder);
                     }
                 }
@@ -492,15 +499,13 @@ void FoldersSidebarComponent::confirmDelete (const juce::String& path)
         [path, safe] (int result)
         {
             if (result != 1 || safe == nullptr) return;
-            ProjectScanner::deleteFolder (path);
+            safe->runFolderEdit ([path] { return ProjectScanner::deleteFolder (path); });
             if (safe->selectedFolder == path
                 || safe->selectedFolder.startsWith (path + "/"))
             {
                 safe->selectedFolder.clear();
                 if (safe->onFolderSelected) safe->onFolderSelected ({});
             }
-            safe->refresh();
-            if (safe->onFoldersChanged) safe->onFoldersChanged();
         });
 }
 
@@ -539,9 +544,7 @@ void FoldersSidebarComponent::moveFolderUnder (const juce::String& srcPath,
     if (selectedFolder == srcPath || selectedFolder.startsWith (srcPath + "/"))
         selectedFolder = newPath + selectedFolder.substring (srcPath.length());
 
-    ProjectScanner::renameFolder (srcPath, newPath);
-    refresh();
-    if (onFoldersChanged) onFoldersChanged();
+    runFolderEdit ([srcPath, newPath] { return ProjectScanner::renameFolder (srcPath, newPath); });
     if (onFolderSelected) onFolderSelected (selectedFolder);
 }
 
@@ -572,4 +575,16 @@ void FoldersSidebarComponent::chooseSortMode()
             ProjectScanner::setSidebarSort (choice);
             safe->refresh();
         });
+}
+
+void FoldersSidebarComponent::runFolderEdit (std::function<juce::Result()> work)
+{
+    auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (this);
+    ProjectScanner::editAsync (std::move (work), [safe] (juce::Result result)
+    {
+        if (safe == nullptr) return;
+        if (result.failed()) juce::AlertWindow::showMessageBoxAsync (
+            juce::AlertWindow::WarningIcon, "Cannot update folder", result.getErrorMessage());
+        if (safe->onFoldersChanged) safe->onFoldersChanged();
+    });
 }
