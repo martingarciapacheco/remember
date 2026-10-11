@@ -3,3 +3,4 @@
 void testSidebarUi (const juce::File& root);
 void testLibraryScene (const juce::File& root);
 void testRowInteractions (const juce::File& root);
+void testFrontendDesign (const juce::File& root);

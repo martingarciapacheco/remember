@@ -7,13 +7,15 @@
 
 MainComponent::MainComponent()
 {
-    setSize (860, 640);
+    setSize (960, 680);
     setWantsKeyboardFocus (true);
 
     settingsButton.setTooltip ("Open settings (previews & projects folders)");
     settingsButton.setColour (juce::TextButton::buttonColourId,  juce::Colour (Pal::Elevated));
     settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
     settingsButton.onClick = [this] { showSettingsDialog(); };
+    settingsButton.setTitle ("Settings");
+    settingsButton.setTooltip (juce::String ("Open settings (previews and project folders)\n") + REMEMBER_VERSION_LINE);
     addAndMakeVisible (settingsButton);
 
     // Clicking a row loads AND auto-plays the preview
@@ -131,43 +133,29 @@ void MainComponent::showSettingsDialog()
 void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (Pal::BgDeep));
-
-    // Header bar
     g.setColour (juce::Colour (Pal::Surface));
-    g.fillRect (0, 0, getWidth(), 44);
-
-    // Header bottom border
-    g.setColour (juce::Colour (Pal::Border));
-    g.fillRect (0, 44, getWidth(), 1);
-
-    // Logo / title
-    g.setFont (juce::Font (juce::FontOptions{}.withHeight (17.0f).withStyle ("Bold")));
-    g.setColour (juce::Colour (Pal::Accent));
-    g.drawText ("REMEMBER", 16, 0, 160, 44, juce::Justification::centredLeft);
-
-    // Build version (next to logo, small + muted)
-    g.setFont (juce::Font (juce::FontOptions{}.withHeight (10.5f)));
-    g.setColour (juce::Colour (Pal::Subtext).withAlpha (0.7f));
-    g.drawText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
-                140, 0, 200, 44, juce::Justification::centredLeft);
-
-    // Separator between list and player
-    g.setColour (juce::Colour (Pal::Border));
-    g.fillRect (0, getHeight() - kPlayerHeight, getWidth(), 1);
+    g.fillRect (0, 0, kSidebarWidth, getHeight() - kPlayerHeight);
+    g.setFont (RememberUI::font (22, true));
+    g.setColour (juce::Colour (Pal::Text));
+    g.drawText ("Remember", 20, 14, kSidebarWidth - 32, 28, juce::Justification::centredLeft);
+    g.setFont (RememberUI::font (12));
+    g.setColour (juce::Colour (Pal::Subtext));
+    g.drawText ("Your music, remembered.", 20, 42, kSidebarWidth - 32, 22, juce::Justification::centredLeft);
+    g.setFont (RememberUI::font (22, true));
+    g.setColour (juce::Colour (Pal::Text));
+    g.drawText ("Library", kSidebarWidth + 24, 14, 180, 28, juce::Justification::centredLeft);
+    g.setFont (RememberUI::font (12));
+    g.setColour (juce::Colour (Pal::Subtext));
+    g.drawText ("Browse projects and listen to previews", kSidebarWidth + 24, 42,
+                getWidth() - kSidebarWidth - 120, 22, juce::Justification::centredLeft);
 }
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
-
-    // Header
-    auto header = area.removeFromTop (44);
-    settingsButton.setBounds (header.removeFromRight (90).reduced (8, 8));
-
-    // Player panel at the bottom (full width)
+    auto header = area.removeFromTop (80);
+    settingsButton.setBounds (header.removeFromRight (104).reduced (12, 23));
     player.setBounds (area.removeFromBottom (kPlayerHeight));
-
-    // Sidebar on the left, list in the rest
     sidebar.setBounds (area.removeFromLeft (kSidebarWidth));
-    list   .setBounds (area);
+    list.setBounds (area);
 }

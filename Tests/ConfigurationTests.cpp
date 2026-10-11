@@ -10,6 +10,62 @@
  #include <windows.h>
 #endif
 
+void testPluginFrontend (const juce::File& root)
+{
+    auto* originalLookAndFeel = &juce::LookAndFeel::getDefaultLookAndFeel();
+    const auto library = root.getChildFile ("design-library");
+    if (library.createDirectory().failed()) throw std::runtime_error ("Cannot create plugin design library");
+    juce::var config (new juce::DynamicObject());
+    config.getDynamicObject()->setProperty ("previewsFolder", library.getFullPathName());
+    if (LibraryStore::writeJsonAtomically (LibraryStore::configFile(), config).failed())
+        throw std::runtime_error ("Cannot configure plugin design library");
+    {
+        RememberProcessor processor ([] { return HostProject{}; });
+        processor.setProjectName ("Midnight sketches - long project name");
+        std::unique_ptr<RememberEditor> editor (static_cast<RememberEditor*> (processor.createEditor()));
+        const auto ready = [&]
+        {
+            const auto deadline = juce::Time::getMillisecondCounter() + 7000;
+            for (;;)
+            {
+                editor->timerCallback();
+                for (auto* child : editor->getChildren())
+                    if (auto* button = dynamic_cast<juce::TextButton*> (child);
+                        button && button->getProperties()["rememberIcon"].toString() == "settings" && button->isEnabled()) return;
+                if (juce::Time::getMillisecondCounter() >= deadline) throw std::runtime_error ("Plugin design settings timed out");
+                juce::Thread::sleep (2);
+            }
+        };
+        ready();
+        if (&juce::LookAndFeel::getDefaultLookAndFeel() != originalLookAndFeel)
+            throw std::runtime_error ("Plugin changed the host global LookAndFeel");
+        for (auto* child : editor->getChildren())
+            if (! editor->getLocalBounds().contains (child->getBounds()))
+                throw std::runtime_error ("Plugin layout clipped a control");
+        const auto artifacts = juce::File::getCurrentWorkingDirectory().getChildFile ("artifacts");
+        if (artifacts.createDirectory().failed()) throw std::runtime_error ("Cannot create plugin artifacts");
+        const auto save = [&] (const char* name, float scale)
+        {
+            const auto snapshot = editor->createComponentSnapshot (editor->getLocalBounds(), true, scale, juce::SoftwareImageType{});
+            juce::FileOutputStream output (artifacts.getChildFile (name));
+            juce::PNGImageFormat png;
+            if (! output.openedOk() || ! output.setPosition (0) || output.truncate().failed() || ! png.writeImageToStream (snapshot, output))
+                throw std::runtime_error ("Cannot render plugin frontend");
+        };
+        save ("apple-plugin.png", 1); save ("apple-plugin-2x.png", 2);
+        editor->applyOutputFolder (root.getChildFile ("unavailable-design-folder"));
+        ready();
+        bool errorVisible = false;
+        for (auto* child : editor->getChildren())
+            if (auto* label = dynamic_cast<juce::Label*> (child)) errorVisible |= label->getText().contains ("Output folder is unavailable");
+        if (! errorVisible) throw std::runtime_error ("Plugin frontend lost actionable error text");
+        save ("apple-plugin-error.png", 1);
+    }
+    if (&juce::LookAndFeel::getDefaultLookAndFeel() != originalLookAndFeel)
+        throw std::runtime_error ("Plugin closure changed the host theme");
+    std::cout << "PASS: plugin frontend bounds, 1x/2x snapshots and host LookAndFeel isolation\n";
+}
+
 namespace
 {
 void check (bool value, const char* reason) { if (! value) throw std::runtime_error (reason); }

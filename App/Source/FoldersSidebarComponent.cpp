@@ -22,7 +22,7 @@ public:
 
     bool mightContainSubItems() override { return getNumSubItems() > 0; }
 
-    int  getItemHeight() const override { return 24; }
+    int  getItemHeight() const override { return 34; }
 
     juce::String getUniqueName() const override
     {
@@ -40,21 +40,19 @@ public:
         bool sel = isSelected();
         if (sel)
         {
-            g.setColour (juce::Colour (Pal::Accent).withAlpha (0.35f));
-            g.fillRect (0, 0, w, h);
-            g.setColour (juce::Colour (Pal::Accent));
-            g.fillRect (0, 0, 3, h);
+            g.setColour (juce::Colour (Pal::Selected));
+            g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 6, (float) h - 4), 7);
         }
 
-        g.setColour (juce::Colour (sel ? Pal::Text : Pal::Subtext));
-        g.setFont (juce::Font (juce::FontOptions{}.withHeight (12.0f)
-                               .withStyle (fullPath.isEmpty() ? "Bold" : "Regular")));
-        g.drawText (displayName, 6, 0, w - 50, h, juce::Justification::centredLeft, true);
+        g.setColour (juce::Colour (sel ? Pal::Accent : Pal::Text));
+        g.setFont (RememberUI::font (13.0f, fullPath.isEmpty()));
+        RememberUI::icon (g, "folder", juce::Rectangle<float> (6, 0, 20, (float) h));
+        g.drawText (displayName, 32, 0, w - 76, h, juce::Justification::centredLeft, true);
 
         if (entryCount > 0)
         {
-            g.setColour (juce::Colour (Pal::Subtext).withAlpha (0.7f));
-            g.setFont (juce::Font (juce::FontOptions{}.withHeight (10.5f)));
+            g.setColour (juce::Colour (Pal::Subtext).withAlpha (1.0f));
+            g.setFont (RememberUI::font (10.5f));
             g.drawText (juce::String (entryCount), w - 40, 0, 34, h,
                         juce::Justification::centredRight, false);
         }
@@ -77,7 +75,7 @@ public:
             m.addItem (10, "Sort by...");
 
             auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (&owner);
-            m.showMenuAsync (juce::PopupMenu::Options(),
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&owner),
                 [safe, isRoot, path = fullPath] (int r)
                 {
                     if (safe == nullptr) return;
@@ -177,7 +175,7 @@ private:
 
 FoldersSidebarComponent::FoldersSidebarComponent()
 {
-    header.setFont (juce::Font (juce::FontOptions{}.withHeight (13.0f).withStyle ("Bold")));
+    header.setFont (RememberUI::font (13.0f, true));
     header.setColour (juce::Label::textColourId, juce::Colour (Pal::Text));
     addAndMakeVisible (header);
 
@@ -188,6 +186,7 @@ FoldersSidebarComponent::FoldersSidebarComponent()
     };
     styleBtn (newRootBtn);
     styleBtn (sortBtn);
+    RememberUI::iconButton (newRootBtn, "plus", "New folder");
     newRootBtn.setTooltip ("New top-level folder");
     sortBtn   .setTooltip ("Sort folders");
     newRootBtn.onClick = [this] { promptNewSubfolder ({}); };
@@ -215,19 +214,19 @@ void FoldersSidebarComponent::paint (juce::Graphics& g)
     g.fillAll (juce::Colour (Pal::Surface));
     g.setColour (juce::Colour (Pal::Border));
     g.fillRect (getWidth() - 1, 0, 1, getHeight());
-    g.fillRect (0, kHeaderH, getWidth() - 1, 1);
+
 }
 
 void FoldersSidebarComponent::resized()
 {
-    auto h = getLocalBounds().removeFromTop (kHeaderH).reduced (8, 4);
+    auto h = getLocalBounds().removeFromTop (kHeaderH).reduced (12, 8);
     sortBtn   .setBounds (h.removeFromRight (44));
     h.removeFromRight (4);
-    newRootBtn.setBounds (h.removeFromRight (24));
+    newRootBtn.setBounds (h.removeFromRight (32));
     h.removeFromRight (6);
     header    .setBounds (h);
 
-    tree.setBounds (getLocalBounds().withTrimmedTop (kHeaderH).withTrimmedRight (1));
+    tree.setBounds (getLocalBounds().withTrimmedTop (kHeaderH).withTrimmedRight (8).withTrimmedLeft (8));
 }
 
 void FoldersSidebarComponent::refresh()

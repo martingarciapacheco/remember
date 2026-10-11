@@ -4,30 +4,31 @@
 
 namespace
 {
-    juce::Font bodyFont()  { return juce::Font (juce::FontOptions{}.withHeight (12.5f)); }
-    juce::Font titleFont() { return juce::Font (juce::FontOptions{}.withHeight (15.0f).withStyle ("Bold")); }
-    juce::Font monoFont()  { return juce::Font (juce::FontOptions{}.withHeight (13.0f).withStyle ("Bold")); }
+    juce::Font bodyFont()  { return RememberUI::font (13.0f); }
+    juce::Font titleFont() { return RememberUI::font (22.0f, true); }
 }
 
 RememberEditor::RememberEditor (RememberProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (360, 220);
+    setSize (440, 360);
 
     // ── Project name editor ──────────────────────────────────────────────────
-    nameEditor.setFont (bodyFont());
-    nameEditor.setText (processor.getProjectName(), false);
+    nameEditor.setFont (RememberUI::font (16.0f, true));
+    nameEditor.setIndents (10, 9);
+    nameEditor.setTitle ("Project name");
     nameEditor.setJustification (juce::Justification::centredLeft);
     nameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (kElevated));
     nameEditor.setColour (juce::TextEditor::textColourId,       juce::Colour (kText));
     nameEditor.setColour (juce::TextEditor::outlineColourId,    juce::Colours::transparentBlack);
     nameEditor.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (kAccent));
+    nameEditor.setText (processor.getProjectName(), false);
     nameEditor.onReturnKey  = [this] { processor.setProjectName (nameEditor.getText()); nameEditor.unfocusAllComponents(); };
     nameEditor.onFocusLost  = [this] { processor.setProjectName (nameEditor.getText()); };
     addAndMakeVisible (nameEditor);
 
     // ── BPM / Key combined label ─────────────────────────────────────────────
-    bpmKeyLabel.setFont (monoFont());
+    bpmKeyLabel.setFont (RememberUI::font (14.0f, true));
     bpmKeyLabel.setColour (juce::Label::textColourId, juce::Colour (kAccent));
     bpmKeyLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (bpmKeyLabel);
@@ -39,12 +40,13 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     addAndMakeVisible (statusLabel);
 
     // ── Settings button ───────────────────────────────────────────────────────
+    RememberUI::iconButton (settingsButton, "settings", "Recording settings");
     settingsButton.setTooltip ("Change output folder");
     settingsButton.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
     settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (kSubtext));
     settingsButton.onClick = [this] { showSettingsPanel(); };
     addAndMakeVisible (settingsButton);
-    associationLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (11.0f)));
+    associationLabel.setFont (RememberUI::font (12.0f));
     associationLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext));
     addAndMakeVisible (associationLabel);
     associationButton.setColour (juce::TextButton::buttonColourId, juce::Colour (kElevated));
@@ -56,8 +58,8 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     // ── Version footer ────────────────────────────────────────────────────────
     versionLabel.setText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
                           juce::dontSendNotification);
-    versionLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (9.5f)));
-    versionLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext).withAlpha (0.6f));
+    versionLabel.setFont (RememberUI::font (11.0f));
+    versionLabel.setColour (juce::Label::textColourId, juce::Colour (kSubtext).withAlpha (1.0f));
     versionLabel.setJustificationType (juce::Justification::centredRight);
     versionLabel.setTooltip (REMEMBER_VERSION_LINE);
     addAndMakeVisible (versionLabel);
@@ -121,7 +123,7 @@ void RememberEditor::refreshFromEngine()
         if (meta.isNotEmpty()) meta += "  |  ";
         meta += key;
     }
-    juce::String bpmKeyText = meta.isEmpty() ? "-" : meta;
+    juce::String bpmKeyText = meta.isEmpty() ? "Tempo and key appear after recording" : meta;
     if (bpmKeyText != lastBpmKeyText)
     {
         bpmKeyLabel.setText (bpmKeyText, juce::dontSendNotification);
@@ -231,33 +233,23 @@ void RememberEditor::refreshFromEngine()
 
 void RememberEditor::paint (juce::Graphics& g)
 {
-    // Background
     g.fillAll (juce::Colour (kBgDeep));
-
-    // Header strip
-    g.setColour (juce::Colour (kSurface));
-    g.fillRect (0, 0, getWidth(), 36);
-
-    // Title
     g.setFont (titleFont());
-    g.setColour (juce::Colour (kAccent));
-    g.drawText ("REMEMBER", 14, 0, 140, 36, juce::Justification::centredLeft);
-
-    // Separator below header
-    g.setColour (juce::Colour (kBorder));
-    g.fillRect (0, 36, getWidth(), 1);
-
-    // "Project" label above editor
+    g.setColour (juce::Colour (kText));
+    g.drawText ("Remember", 24, 16, 210, 28, juce::Justification::centredLeft);
     g.setFont (bodyFont());
     g.setColour (juce::Colour (kSubtext));
-    g.drawText ("Project", 14, 44, 80, 14, juce::Justification::centredLeft);
-
-    // Progress bar
-    if (recordProgress > 0.0f || isRecording)
-    {
-        auto barBounds = juce::Rectangle<int> (14, 163, getWidth() - 28, 4);
-        paintProgressBar (g, barBounds, recordProgress);
-    }
+    g.drawText ("Capture the idea. Keep the moment.", 24, 46, getWidth() - 48, 22, juce::Justification::centredLeft);
+    RememberUI::panel (g, juce::Rectangle<float> (16, 84, (float) getWidth() - 32, 140));
+    g.setFont (bodyFont());
+    g.setColour (juce::Colour (kSubtext));
+    g.drawText ("Project", 28, 96, 160, 18, juce::Justification::centredLeft);
+    g.setColour (juce::Colour (kBorder));
+    g.drawHorizontalLine (228, 28, (float) getWidth() - 28);
+    paintProgressBar (g, { 28, 304, getWidth() - 56, 5 }, recordProgress);
+    g.setFont (RememberUI::font (12));
+    g.setColour (juce::Colour (kSubtext));
+    g.drawText ("Automatic preview", 28, 326, 160, 22, juce::Justification::centredLeft);
 }
 
 void RememberEditor::paintProgressBar (juce::Graphics& g,
@@ -281,22 +273,13 @@ void RememberEditor::paintProgressBar (juce::Graphics& g,
 
 void RememberEditor::resized()
 {
-    // Settings gear — top-right of header
-    settingsButton.setBounds (getWidth() - 36, 0, 36, 36);
-
-    // Project name editor — below "Project" label
-    nameEditor.setBounds (14, 60, getWidth() - 28, 26);
-
-    // BPM / Key — below editor
-    associationLabel.setBounds (14, 92, getWidth() - 112, 20);
-    associationButton.setBounds (getWidth() - 92, 90, 78, 24);
-    bpmKeyLabel.setBounds (14, 121, getWidth() - 28, 26);
-
-    // Status — below progress bar
-    statusLabel.setBounds (14, 174, getWidth() - 28, 24);
-
-    // Version footer — bottom-right corner, very small
-    versionLabel.setBounds (getWidth() - 158, getHeight() - 14, 154, 12);
+    settingsButton.setBounds (getWidth() - 60, 16, 36, 36);
+    nameEditor.setBounds (28, 120, getWidth() - 56, 38);
+    associationLabel.setBounds (28, 171, getWidth() - 152, 36);
+    associationButton.setBounds (getWidth() - 116, 173, 88, 32);
+    bpmKeyLabel.setBounds (28, 239, getWidth() - 56, 24);
+    statusLabel.setBounds (28, 264, getWidth() - 56, 32);
+    versionLabel.setBounds (getWidth() - 200, 328, 172, 18);
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

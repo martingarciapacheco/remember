@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "PluginProcessor.h"
 
 class RememberEditor : public juce::AudioProcessorEditor,
@@ -17,6 +18,7 @@ public:
     void applyOutputFolder (const juce::File&);
 
 private:
+    RememberUI::Style uiStyle { *this };
     void showSettingsPanel();
     void showAssociationMenu();
     void chooseProjectFile (const juce::String& expectedId);
@@ -48,16 +50,9 @@ private:
     juce::String lastBpmKeyText;
     juce::String lastStatusText;
 
-    // Palette — pure black/dark gray with purple accent
-    static constexpr uint32_t kBgDeep   = 0xff0a0a0a;
-    static constexpr uint32_t kSurface  = 0xff141414;
-    static constexpr uint32_t kElevated = 0xff222222;
-    static constexpr uint32_t kBorder   = 0xff2a2a2a;
-    static constexpr uint32_t kAccent   = 0xff8b5cf6;
-    static constexpr uint32_t kText     = 0xfff5f5f5;
-    static constexpr uint32_t kSubtext  = 0xff8a8a8a;
-    static constexpr uint32_t kSuccess  = 0xff34d399;
-    static constexpr uint32_t kError    = 0xffef4444;
+    static constexpr uint32_t kBgDeep = Pal::BgDeep, kSurface = Pal::Surface,
+        kElevated = Pal::Elevated, kBorder = Pal::Border, kAccent = Pal::Accent,
+        kText = Pal::Text, kSubtext = Pal::Subtext, kSuccess = Pal::Success, kError = Pal::Error;
 
     juce::TooltipWindow tooltips { this }; // parented to the editor for host scaling/lifetime
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RememberEditor)

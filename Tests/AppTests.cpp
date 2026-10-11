@@ -57,6 +57,13 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+        if (argc == 2 && juce::String (argv[1]) == "--frontend")
+        {
+            testFrontendDesign (root);
+            ProjectScanner::beginShutdown();
+            awaitUi ([] { return ProjectScanner::shutdownReady(); });
+            return 0;
+        }
         if (argc == 2 && juce::String (argv[1]) == "--shell")
         {
             testShellLifecycle (root);

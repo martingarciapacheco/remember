@@ -37,7 +37,7 @@ namespace
     int measureTextWidth (const juce::String& text, float fontHeight)
     {
         juce::GlyphArrangement ga;
-        ga.addLineOfText (juce::Font (juce::FontOptions{}.withHeight (fontHeight)),
+        ga.addLineOfText (RememberUI::font (fontHeight),
                           text, 0.0f, 0.0f);
         // Curtailed shaping compares fractional glyph advances with the
         // available width. Rounding down can ellipsise a fitting short tag.
@@ -60,7 +60,7 @@ namespace
         {
             getLookAndFeel().drawButtonBackground (g, *this, findColour (buttonColourId), over, down);
             g.setColour (findColour (textColourOffId));
-            g.setFont (juce::Font (juce::FontOptions{}.withHeight (fontHeight)));
+            g.setFont (RememberUI::font (fontHeight));
             auto label = getLocalBounds().reduced (8, 0);
             if (removable)
                 g.drawText ("x", label.removeFromRight (10), juce::Justification::centred, false);
@@ -220,13 +220,12 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
 
     auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
     {
-        l.setFont (juce::Font (juce::FontOptions{}.withHeight (h)
-                               .withStyle (bold ? "Bold" : "Regular")));
+        l.setFont (RememberUI::font (h, bold));
         l.setColour (juce::Label::textColourId, juce::Colour (col));
     };
 
     header.setText ("Edit tags - \"" + entryName + "\"", juce::dontSendNotification);
-    styleLabel (header, 16.0f, Pal::Text, true);
+    styleLabel (header, 20.0f, Pal::Text, true);
     addAndMakeVisible (header);
 
     styleLabel (inputCaption,   12.0f, Pal::Subtext);
@@ -240,7 +239,7 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
     addAndMakeVisible (currentEmpty);
     addAndMakeVisible (suggestEmpty);
 
-    input.setFont (juce::Font (juce::FontOptions{}.withHeight (14.0f)));
+    input.setFont (RememberUI::font (14.0f));
     input.setColour (juce::TextEditor::backgroundColourId,     juce::Colour (Pal::Elevated));
     input.setColour (juce::TextEditor::textColourId,           juce::Colour (Pal::Text));
     input.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);

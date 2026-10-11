@@ -2,6 +2,22 @@
 
 Two-piece JUCE 8 project for Windows that auto-captures 60-second audio previews from a DAW master bus and organises them in a standalone browser app.
 
+## Interface design
+
+The app, plugin and dialogs use a shared Apple-inspired light interface: system
+typography, a neutral sidebar, white content surfaces, blue selection and primary
+actions, vector icons, rounded controls and visible keyboard focus. All future UI
+changes must follow [DESIGN.md](DESIGN.md) and [AGENTS.md](AGENTS.md), using the
+tokens and controls in `Shared/RememberLookAndFeel.h` and the `apple-design` skill.
+The standalone app owns its theme; the VST3 leaves its host's global theme intact.
+
+With regression tests enabled, `RememberAppTests --frontend` and
+`RememberTests --frontend` generate JUCE software-rendered PNGs in the working
+directory's `artifacts/` folder. These cover the app at minimum/large window sizes,
+waveform and no-results states, settings/tags/recovery dialogs, and the plugin at
+1x/2x scale with inline error feedback. Software snapshots validate component
+painting; visual acceptance inside a real DAW remains a separate check.
+
 ## Components
 
 ### Plugin (`Plugin/`)

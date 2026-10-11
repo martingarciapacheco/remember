@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "ProjectScanner.h"
 #include "ReadAheadSource.h"
 #include "WaveformEnvelope.h"
@@ -34,6 +35,7 @@ public:
     void timerCallback() override;
 
 private:
+    RememberUI::Style uiStyle { *this };
     void   seekTo (double normalizedPos);
     double getPositionNormalized() const;
     void   updateTimeLabel();

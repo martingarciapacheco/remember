@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "../../Shared/LibraryStore.h"
 
 class RecoveryChoiceDialog final : public juce::Component
@@ -11,6 +12,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
+    RememberUI::Style uiStyle { *this };
     RecoveryChoiceDialog (juce::Array<LibraryStore::RecoveryChoice>, Action, Action, bool);
     void updateSelection();
     void close();

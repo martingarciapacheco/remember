@@ -225,6 +225,12 @@ int main (int argc, char** argv)
     int status = 0;
     try
     {
+        if (argc > 1 && juce::String (argv[1]) == "--frontend")
+        {
+            testPluginFrontend (root);
+            await ([] { return BackgroundRetirement::pending() == 0; }, "Design editor workers did not retire");
+            root.deleteRecursively(); return 0;
+        }
         if (argc > 1 && juce::String (argv[1]) == "--association")
         {
             testAssociation (root); root.deleteRecursively(); return 0;

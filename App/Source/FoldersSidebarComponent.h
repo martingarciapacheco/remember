@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "ProjectScanner.h"
 
 // Left-hand sidebar showing a TreeView of folders. The root pseudo-folder
@@ -51,6 +52,7 @@ public:
                           const juce::String& newParentPath);
 
 private:
+    RememberUI::Style uiStyle { *this };
     class TreeRootItem;
     class FolderItem;
 
@@ -64,7 +66,7 @@ private:
     juce::TextButton sortBtn    { "Sort" };
     juce::TreeView   tree;
 
-    static constexpr int kHeaderH = 30;
+    static constexpr int kHeaderH = 48;
 
     juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FoldersSidebarComponent)

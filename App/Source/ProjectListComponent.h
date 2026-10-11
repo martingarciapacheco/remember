@@ -1,20 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "ProjectScanner.h"
-
-// ── Palette (shared across app components) ────────────────────────────────────
-namespace Pal
-{
-    static constexpr uint32_t BgDeep   = 0xff0a0a0a;   // near-black background
-    static constexpr uint32_t Surface  = 0xff141414;   // dark gray panels (header, toolbar)
-    static constexpr uint32_t Elevated = 0xff222222;   // elevated controls
-    static constexpr uint32_t Border   = 0xff2a2a2a;   // subtle separators
-    static constexpr uint32_t Accent   = 0xff8b5cf6;   // purple accent
-    static constexpr uint32_t Text     = 0xfff5f5f5;   // primary text
-    static constexpr uint32_t Subtext  = 0xff8a8a8a;   // muted gray text
-    static constexpr uint32_t Star     = 0xfffbbf24;   // favorite gold
-    static constexpr uint32_t Success  = 0xff34d399;   // status green
-}
 
 class ProjectListComponent;
 
@@ -43,6 +30,7 @@ public:
     std::function<void(bool)>             onRecover; // true: keep pending as a permanent recording
 
 private:
+    RememberUI::Style uiStyle { *this };
     ProjectEntry entry;
     bool         selected { false };
     bool         renaming { false };
@@ -98,6 +86,7 @@ public:
     void              returnKeyPressed (int row) override;
 
 private:
+    RememberUI::Style uiStyle { *this };
     void recoverRecording (ProjectEntry, bool keep, bool confirmed,
                            std::shared_ptr<LibraryStore::RecoveryChoice> selection = {}, juce::String token = {});
     void applyFilter();
@@ -106,7 +95,7 @@ private:
     void scheduleSearchDebounce();
 
     juce::TextEditor  searchBox;
-    juce::TextButton  favFilterBtn { "* Favorites" };
+    juce::TextButton  favFilterBtn { "Favorites" };
     juce::TextButton  refreshBtn   { "Refresh" };
     juce::ListBox     listBox;
     juce::Label       libraryStatus;
@@ -119,6 +108,6 @@ private:
     bool         showFavOnly       { false };
     juce::String folderFilter;            // empty = no filter
 
-    static constexpr int kToolbarH = 42;
-    static constexpr int kRowH     = 52;
+    static constexpr int kToolbarH = 102;
+    static constexpr int kRowH     = 64;
 };

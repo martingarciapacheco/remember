@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "ProjectListComponent.h"
 #include "WaveformPlayerComponent.h"
 #include "FoldersSidebarComponent.h"
@@ -18,6 +19,7 @@ public:
     void setUiActive (bool active) { player.setUiActive (active); }
 
 private:
+    RememberUI::Style uiStyle { *this };
     void showSettingsDialog();
     void checkFirstRun();
 
@@ -27,8 +29,8 @@ private:
 
     juce::TextButton settingsButton { "Settings" };
 
-    static constexpr int kPlayerHeight  = 170;
-    static constexpr int kSidebarWidth  = 200;
+    static constexpr int kPlayerHeight  = 184;
+    static constexpr int kSidebarWidth  = 216;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

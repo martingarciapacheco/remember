@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 #include "ProjectScanner.h"
 
 // Modal settings panel. Lets the user pick:
@@ -25,6 +26,7 @@ public:
     static void launch (bool firstRun, std::function<void()> onDone);
 
 private:
+    RememberUI::Style uiStyle { *this };
     void pickPreviews();
     void addProjectFolder();
     void commit();

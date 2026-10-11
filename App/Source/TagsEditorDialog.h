@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 
 // Modal dialog for editing the tags of a single ProjectEntry.
 //
@@ -26,6 +27,7 @@ public:
     ~TagsEditorDialog() override;
 
 private:
+    RememberUI::Style uiStyle { *this };
     TagsEditorDialog (const juce::String& entryName,
                       const juce::StringArray& initialTags,
                       std::function<void (juce::StringArray)> onCommit);

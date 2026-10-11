@@ -7,6 +7,23 @@
 class SettingsDialog::FoldersListModel : public juce::ListBoxModel
 {
 public:
+    class FolderRow final : public juce::Component
+    {
+    public:
+        FolderRow()
+        {
+            setInterceptsMouseClicks (false, true);
+            remove.setTitle ("Remove search folder");
+            remove.setTooltip ("Remove search folder");
+            remove.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            remove.setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
+            remove.setWantsKeyboardFocus (false);
+            addAndMakeVisible (remove);
+        }
+        void resized() override { remove.setBounds (getLocalBounds().removeFromRight (32)); }
+        juce::TextButton remove { "X" };
+    };
+
     explicit FoldersListModel (SettingsDialog& o) : owner (o) {}
 
     int getNumRows() override { return owner.projectsFolders.size(); }
@@ -19,7 +36,7 @@ public:
         g.drawHorizontalLine (h - 1, 0.0f, (float) w);
 
         g.setColour (juce::Colour (Pal::Text));
-        g.setFont (juce::Font (juce::FontOptions{}.withHeight (12.0f)));
+        g.setFont (RememberUI::font (12.0f));
         // Leave room on the right for the per-row remove button (32px)
         g.drawText (owner.projectsFolders.getReference (row).getFullPathName(),
                     8, 0, w - 40, h, juce::Justification::centredLeft, true);
@@ -28,20 +45,17 @@ public:
     juce::Component* refreshComponentForRow (int row, bool /*sel*/,
                                              juce::Component* existing) override
     {
-        auto* btn = dynamic_cast<juce::TextButton*> (existing);
-        if (btn == nullptr) btn = new juce::TextButton ("X");
+        auto* component = dynamic_cast<FolderRow*> (existing);
+        if (component == nullptr) component = new FolderRow();
 
         if (row < 0 || row >= owner.projectsFolders.size())
         {
-            btn->setVisible (false);
-            return btn;
+            component->setVisible (false);
+            return component;
         }
 
-        btn->setVisible (true);
-        btn->setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
-        btn->setColour (juce::TextButton::textColourOffId, juce::Colour (Pal::Subtext));
-        btn->setWantsKeyboardFocus (false);
-        btn->onClick = [this, row]
+        component->setVisible (true);
+        component->remove.onClick = [this, row]
         {
             if (row >= 0 && row < owner.projectsFolders.size())
             {
@@ -50,7 +64,7 @@ public:
                 owner.refreshLabels();
             }
         };
-        return btn;
+        return component;
     }
 
 private:
@@ -74,14 +88,13 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
     auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
     {
-        l.setFont (juce::Font (juce::FontOptions{}.withHeight (h)
-                               .withStyle (bold ? "Bold" : "Regular")));
+        l.setFont (RememberUI::font (h, bold));
         l.setColour (juce::Label::textColourId, juce::Colour (col));
     };
 
     header.setText (firstRun ? "Welcome to Remember" : "Settings",
                     juce::dontSendNotification);
-    styleLabel (header, 18.0f, Pal::Text, true);
+    styleLabel (header, 22.0f, Pal::Text, true);
     addAndMakeVisible (header);
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
@@ -162,7 +175,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
     foldersModel = std::make_unique<FoldersListModel> (*this);
     foldersList.setModel (foldersModel.get());
-    foldersList.setRowHeight (26);
+    foldersList.setRowHeight (32);
     foldersList.setColour (juce::ListBox::backgroundColourId, juce::Colour (Pal::Elevated));
     foldersList.setOutlineThickness (0);
     addAndMakeVisible (foldersList);

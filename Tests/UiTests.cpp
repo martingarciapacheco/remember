@@ -2,6 +2,8 @@
 #include "../App/Source/FoldersSidebarComponent.h"
 #include "../App/Source/TagsEditorDialog.h"
 #include "../App/Source/MainComponent.h"
+#include "../App/Source/SettingsDialog.h"
+#include "../App/Source/RecoveryChoiceDialog.h"
 #include "../Shared/LibraryStore.h"
 #include <iostream>
 #include <stdexcept>
@@ -48,6 +50,103 @@ void saveImage (juce::Component& component, const char* name, bool software = fa
         && format.writeImageToStream (snapshot, stream),
            "Cannot write UI snapshot");
 }
+}
+
+void testFrontendDesign (const juce::File& root)
+{
+    SavedConfig restoreConfig;
+    const auto library = root.getChildFile ("design-library");
+    const auto projects = root.getChildFile ("projects");
+    check (projects.createDirectory().wasOk(), "Cannot create design project folder");
+    const auto project = projects.getChildFile ("Midnight sketches - a long project name for layout review.als");
+    check (project.replaceWithText ("design project fixture"), "Cannot create design project");
+    check (library.createDirectory().wasOk(), "Cannot create design library");
+    check (ProjectScanner::saveSettings (library, { projects }, 60, 4, false).wasOk(), "Cannot configure design fixture");
+    const auto directory = library.getChildFile ("recording");
+    check (directory.createDirectory().wasOk(), "Cannot create design recording");
+    juce::var metadata (new juce::DynamicObject());
+    auto* data = metadata.getDynamicObject();
+    data->setProperty ("projectId", juce::Uuid().toString());
+    data->setProperty ("projectName", "Midnight sketches - a long project name for layout review");
+    data->setProperty ("daw", "Ableton Live");
+    data->setProperty ("projectPath", project.getFullPathName());
+    data->setProperty ("bpm", 124.0); data->setProperty ("key", "A minor");
+    data->setProperty ("recordedAt", "2026-10-11T12:00:00Z");
+    data->setProperty ("favorite", true);
+    data->setProperty ("tags", juce::Array<juce::var> { "Ambient", "Work in progress" });
+    data->setProperty ("folders", juce::Array<juce::var> { "Sketches" });
+    check (LibraryStore::writeJsonAtomically (directory.getChildFile ("metadata.json"), metadata).wasOk(), "Cannot write design metadata");
+    {
+        juce::OggVorbisAudioFormat ogg;
+        std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (directory.getChildFile ("preview.ogg"));
+        auto writer = ogg.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (48000).withNumChannels (2).withBitsPerSample (16));
+        check (writer != nullptr, "Cannot create design audio");
+        juce::AudioBuffer<float> audio (2, 96000);
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < audio.getNumSamples(); ++i)
+                audio.setSample (ch, i, (float) (0.4 * std::sin (i * 0.0288) * (0.6 + 0.4 * std::sin (i * 0.00011))));
+        check (writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples()), "Cannot write design audio");
+    }
+    ProjectScanner::refreshAsync();
+    awaitUi ([&] { return ProjectScanner::scan().size() == 1; });
+    auto scene = std::make_unique<MainComponent>();
+    auto* list = childOf<ProjectListComponent> (*scene);
+    auto* player = childOf<WaveformPlayerComponent> (*scene);
+    check (list && player, "Design scene lacks list or player");
+    auto* search = childOf<juce::TextEditor> (*list);
+    auto* rows = childOf<juce::ListBox> (*list);
+    check (search && rows, "Design scene lacks search or rows");
+    // Loading the real OGG renders a waveform without opening a physical device.
+    list->onEntrySelected = [] (const ProjectEntry&) {};
+    list->onEntryPlay = list->onEntrySelected;
+    for (auto size : { juce::Point<int> (640, 480), juce::Point<int> (1024, 768) })
+    {
+        scene->setSize (size.x, size.y);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
+        check (search->getWidth() >= 160 && search->getHeight() >= 32, "Minimum window clipped the search target");
+        for (auto* component : scene->getChildren())
+            check (scene->getLocalBounds().contains (component->getBounds()), "Main layout places a component outside its bounds");
+        rows->selectRow (0);
+        saveImage (*scene, size.x == 640 ? "apple-app-minimum.png" : "apple-app.png", true);
+    }
+    player->loadEntry (ProjectScanner::scan()[0]);
+    awaitUi ([&] { return player->hasLoadedEntry(); });
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (40);
+    check (! player->isAudioDeviceOpen(), "Design snapshot opened an audio device");
+    saveImage (*scene, "apple-app-waveform.png", true);
+    search->setText ("no matching project", true);
+    awaitUi ([&] { return list->getNumRows() == 0; });
+    check (! rows->isVisible(), "An empty list hides the no-results message");
+    saveImage (*scene, "apple-app-search-empty.png", true);
+    search->setText ({}, true);
+    awaitUi ([&] { return list->getNumRows() == 1; });
+    check (rows->isVisible(), "Clearing search did not restore the list");
+    {
+        SettingsDialog settings (false);
+        awaitUi ([&] { return settings.hasLoadedSettings(); });
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
+        auto* folders = childOf<juce::ListBox> (settings);
+        check (folders != nullptr, "Settings has no folder list");
+        auto* row = folders->getComponentForRowNumber (0);
+        check (row != nullptr, "Settings folder row is missing");
+        auto* remove = childOf<juce::TextButton> (*row);
+        check (remove && remove->getWidth() == 32 && remove->getRight() == row->getWidth(), "Folder remove action spans or clips its row");
+        saveImage (settings, "apple-settings.png", true);
+    }
+    {
+        auto tags = TagsEditorDialog::create ("Midnight sketches", { "Ambient", "Work in progress" }, [] (juce::StringArray) {});
+        saveImage (*tags, "apple-tags.png", true);
+    }
+    {
+        LibraryStore::RecoveryChoice choice;
+        choice.revision = "revision-for-layout-review"; choice.recordedAt = "2026-10-11T12:00:00Z";
+        choice.durationSeconds = 60; choice.channels = 2; choice.bpm = 124; choice.key = "A minor";
+        auto recovery = RecoveryChoiceDialog::create ({ choice }, [] (auto) {}, [] (auto) {}, false);
+        saveImage (*recovery, "apple-recovery.png", true);
+    }
+    scene.reset();
+    awaitUi ([] { return ProjectScanner::pendingJobs() == 0 && WaveformPlayerComponent::pendingLoads() == 0; });
+    std::cout << "PASS: frontend minimum/large layout, waveform without device, no-results and restored search, settings/tags/recovery snapshots\n";
 }
 
 void testSidebarUi (const juce::File& root)

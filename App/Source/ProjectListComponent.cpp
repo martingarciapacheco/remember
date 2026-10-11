@@ -12,6 +12,8 @@ ProjectRowComponent::ProjectRowComponent()
     favBtn .setWantsKeyboardFocus (false);
     playBtn.setWantsKeyboardFocus (false);
 
+    RememberUI::iconButton (favBtn, "star", "Toggle favorite");
+    RememberUI::iconButton (playBtn, "play", "Play preview");
     favBtn.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
     favBtn.onClick = [this]
     {
@@ -29,7 +31,7 @@ ProjectRowComponent::ProjectRowComponent()
     playBtn.onClick = [this] { if (onPlay) onPlay(); };
     addAndMakeVisible (playBtn);
 
-    renameEditor.setFont (juce::Font (juce::FontOptions{}.withHeight (13.0f).withStyle ("Bold")));
+    renameEditor.setFont (RememberUI::font (13.0f, true));
     renameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (Pal::Elevated));
     renameEditor.setColour (juce::TextEditor::textColourId,       juce::Colour (Pal::Text));
     renameEditor.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (Pal::Accent));
@@ -94,7 +96,7 @@ void ProjectRowComponent::startInlineRename()
     renaming = true;
     renameCommit = onRenameCommitted;
     renameEditor.setText (entry.name, false);
-    auto bounds = getLocalBounds().withTrimmedLeft (36).withTrimmedRight (46).reduced (0, 14);
+    auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 14);
     renameEditor.setBounds (bounds.removeFromTop (22));
     renameEditor.setVisible (true);
     renameEditor.grabKeyboardFocus();
@@ -173,26 +175,26 @@ void ProjectRowComponent::mouseDrag (const juce::MouseEvent& e)
 
 void ProjectRowComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (selected ? Pal::Elevated : Pal::BgDeep));
+    g.fillAll (juce::Colour (Pal::Content));
 
     if (selected)
     {
-        g.setColour (juce::Colour (Pal::Accent));
-        g.fillRect (0, 0, 3, getHeight());
+        g.setColour (juce::Colour (Pal::Selected));
+        g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2, 2), 8);
     }
 
     g.setColour (juce::Colour (Pal::Border));
-    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+    g.drawHorizontalLine (getHeight() - 1, 44.0f, (float) getWidth() - 12);
 
-    auto area = getLocalBounds().withTrimmedLeft (36).withTrimmedRight (46).reduced (0, 6);
+    auto area = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 10);
 
     // ── Top row: project name + inline tag chips ─────────────────────────────
     auto nameRow = area.removeFromTop (20);
 
     if (! renaming)
     {
-        juce::Font nameFont (juce::FontOptions{}.withHeight (13.0f).withStyle ("Bold"));
-        juce::Font tagFont  (juce::FontOptions{}.withHeight (10.5f));
+        auto nameFont = RememberUI::font (14.0f, true);
+        auto tagFont = RememberUI::font (12.0f);
 
         // Measure name width so we can lay tags right after it
         juce::GlyphArrangement ga;
@@ -247,19 +249,19 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     if (entry.key.isNotEmpty())         { sep(); meta += entry.key; }
     if (entry.recordedAt.isNotEmpty())  { sep(); meta += entry.recordedAt.substring (0, 10); }
 
-    g.setFont (juce::Font (juce::FontOptions{}.withHeight (11.0f)));
+    g.setFont (RememberUI::font (12.0f));
     g.setColour (juce::Colour (Pal::Subtext));
     g.drawText (meta, area, juce::Justification::centredLeft, true);
 }
 
 void ProjectRowComponent::resized()
 {
-    favBtn.setBounds  (getLocalBounds().removeFromLeft  (36).reduced (6, 10));
-    playBtn.setBounds (getLocalBounds().removeFromRight (46).reduced (8, 10));
+    favBtn.setBounds  (getLocalBounds().removeFromLeft (40).reduced (4, 14));
+    playBtn.setBounds (getLocalBounds().removeFromRight (44).reduced (4, 14));
 
     if (renaming)
     {
-        auto bounds = getLocalBounds().withTrimmedLeft (36).withTrimmedRight (46).reduced (0, 14);
+        auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 14);
         renameEditor.setBounds (bounds.removeFromTop (22));
     }
 }
@@ -268,13 +270,15 @@ void ProjectRowComponent::resized()
 
 ProjectListComponent::ProjectListComponent()
 {
-    searchBox.setTextToShowWhenEmpty ("  Search projects (name, DAW, key, tags)...",
+    searchBox.setTextToShowWhenEmpty ("Search projects, tags, key...",
                                       juce::Colour (Pal::Subtext));
-    searchBox.setFont (juce::Font (juce::FontOptions{}.withHeight (13.0f)));
+    searchBox.setFont (RememberUI::font (13.0f));
     searchBox.setColour (juce::TextEditor::backgroundColourId,     juce::Colour (Pal::Elevated));
     searchBox.setColour (juce::TextEditor::textColourId,           juce::Colour (Pal::Text));
     searchBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
     searchBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (Pal::Accent));
+    searchBox.setTitle ("Search library");
+    searchBox.setIndents (10, 7);
     searchBox.onTextChange = [this] { scheduleSearchDebounce(); };
     addAndMakeVisible (searchBox);
 
@@ -293,11 +297,11 @@ ProjectListComponent::ProjectListComponent()
 
     listBox.setModel (this);
     listBox.setRowHeight (kRowH);
-    listBox.setColour (juce::ListBox::backgroundColourId, juce::Colour (Pal::BgDeep));
+    listBox.setColour (juce::ListBox::backgroundColourId, juce::Colour (Pal::Content));
     listBox.setOutlineThickness (0);
     addAndMakeVisible (listBox);
 
-    libraryStatus.setFont (juce::Font (juce::FontOptions{}.withHeight (12.0f)));
+    libraryStatus.setFont (RememberUI::font (12.0f));
     libraryStatus.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
     libraryStatus.setColour (juce::Label::backgroundColourId, juce::Colour (Pal::Elevated));
     addChildComponent (libraryStatus);
@@ -394,6 +398,7 @@ void ProjectListComponent::applyFilter()
 
         filtered.add (e);
     }
+    listBox.setVisible (! filtered.isEmpty());
     listBox.updateContent();
     listBox.deselectAllRows();
     for (int i = 0; i < filtered.size(); ++i)
@@ -401,6 +406,7 @@ void ProjectListComponent::applyFilter()
                                    : filtered.getReference (i).metadataFile == selected)
         { listBox.selectRow (i); break; }
     listBox.repaint();
+    repaint();
 }
 
 void ProjectListComponent::setFolderFilter (const juce::String& path)
@@ -419,26 +425,39 @@ void ProjectListComponent::timerCallback()
 void ProjectListComponent::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour (Pal::BgDeep));
-
-    g.setColour (juce::Colour (Pal::Surface));
-    g.fillRect (0, 0, getWidth(), kToolbarH);
-
-    g.setColour (juce::Colour (Pal::Border));
-    g.fillRect (0, kToolbarH, getWidth(), 1);
+    g.setFont (RememberUI::font (13, true));
+    g.setColour (juce::Colour (Pal::Text));
+    const auto title = folderFilter.isEmpty() ? juce::String ("All recordings") : folderFilter.fromLastOccurrenceOf ("/", false, false);
+    g.drawText (title, 16, 66, getWidth() - 112, 28, juce::Justification::centredLeft);
+    g.setFont (RememberUI::font (12));
+    g.setColour (juce::Colour (Pal::Subtext));
+    g.drawText (juce::String (filtered.size()) + (filtered.size() == 1 ? " item" : " items"),
+                getWidth() - 100, 66, 84, 28, juce::Justification::centredRight);
+    if (filtered.isEmpty() && ! allEntries.isEmpty())
+    {
+        auto empty = getLocalBounds().withTrimmedTop (kToolbarH).reduced (24);
+        if (libraryStatus.isVisible()) empty.removeFromTop (48);
+        g.setFont (RememberUI::font (16, true));
+        g.setColour (juce::Colour (Pal::Text));
+        g.drawText ("No matching recordings", empty.withHeight (28).withY (empty.getCentreY() - 28), juce::Justification::centred);
+        g.setFont (RememberUI::font (13));
+        g.setColour (juce::Colour (Pal::Subtext));
+        g.drawText ("Try another search or change your filters.", empty.withHeight (28).withY (empty.getCentreY()), juce::Justification::centred);
+    }
 }
 
 void ProjectListComponent::resized()
 {
-    auto toolbar = getLocalBounds().removeFromTop (kToolbarH).reduced (8, 6);
-    refreshBtn  .setBounds (toolbar.removeFromRight (100));
-    toolbar.removeFromRight (6);
-    favFilterBtn.setBounds (toolbar.removeFromRight (110));
-    toolbar.removeFromRight (6);
-    searchBox   .setBounds (toolbar);
-
-    auto listArea = getLocalBounds().withTrimmedTop (kToolbarH + 1);
-    if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (34).reduced (4, 2));
+    auto toolbar = getLocalBounds().removeFromTop (60).reduced (16, 12);
+    refreshBtn.setBounds (toolbar.removeFromRight (76));
+    toolbar.removeFromRight (8);
+    favFilterBtn.setBounds (toolbar.removeFromRight (86));
+    toolbar.removeFromRight (8);
+    searchBox.setBounds (toolbar);
+    auto listArea = getLocalBounds().withTrimmedTop (kToolbarH).reduced (12, 0);
+    if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (48).reduced (4, 2));
     listBox.setBounds (listArea);
+    listBox.setVisible (! filtered.isEmpty());
 }
 
 // ── ListBoxModel ────────────────────────────────────────────────────────────

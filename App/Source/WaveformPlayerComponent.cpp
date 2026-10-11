@@ -46,6 +46,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
         b.setColour (juce::TextButton::textColourOffId, juce::Colour (fg));
     };
 
+    RememberUI::iconButton (playBtn, "play", "Play or pause preview (Space)");
     btnSetup (playBtn,   Pal::Accent,   0xffffffff);
     btnSetup (openBtn,   Pal::Elevated, Pal::Text);
     btnSetup (assignBtn, Pal::Elevated, Pal::Subtext);
@@ -121,13 +122,13 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
             });
     };
 
-    nameLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (14.0f).withStyle ("Bold")));
+    nameLabel.setFont (RememberUI::font (14.0f, true));
     nameLabel.setColour (juce::Label::textColourId, juce::Colour (Pal::Text));
 
-    pathLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (10.5f)));
+    pathLabel.setFont (RememberUI::font (12.0f));
     pathLabel.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
 
-    timeLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (11.0f)));
+    timeLabel.setFont (RememberUI::font (12.0f));
     timeLabel.setColour (juce::Label::textColourId, juce::Colour (Pal::Subtext));
     timeLabel.setJustificationType (juce::Justification::centredRight);
 
@@ -328,6 +329,8 @@ void WaveformPlayerComponent::showAudioSettings()
     ensureAudioDevice();
     juce::DialogWindow::LaunchOptions options;
     auto* selector = new juce::AudioDeviceSelectorComponent (outputManager, 0, 0, 2, 2, false, false, true, false);
+    // The player owns this dialog and clears it before its style reference dies.
+    selector->setLookAndFeel (&getLookAndFeel());
     selector->setSize (500, 340);
     options.content.setOwned (selector);
     options.dialogTitle = "Audio output";
@@ -540,13 +543,20 @@ void WaveformPlayerComponent::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformPlayerComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (Pal::Surface));
-
-    if (! isLoaded) return;
+    g.fillAll (juce::Colour (Pal::BgDeep));
+    RememberUI::panel (g, getLocalBounds().toFloat().reduced (12, 6));
+    if (! isLoaded)
+    {
+        g.setColour (juce::Colour (Pal::Subtext));
+        g.setFont (RememberUI::font (13));
+        g.drawText (isLoading ? "Loading preview..." : "Select a recording to listen to its preview",
+                    waveArea, juce::Justification::centred);
+        return;
+    }
 
     // Waveform background
     g.setColour (juce::Colour (Pal::BgDeep));
-    g.fillRoundedRectangle (waveArea.toFloat(), 4.0f);
+    g.fillRoundedRectangle (waveArea.toFloat(), 8.0f);
 
     if (waveform && ! waveform->channels[0].empty())
     {
@@ -571,7 +581,7 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
     }
     // The cursor is usable while the background waveform is still loading.
     float posX = waveArea.getX() + (float) getPositionNormalized() * waveArea.getWidth();
-    g.setColour (juce::Colours::white.withAlpha (0.75f));
+    g.setColour (juce::Colour (Pal::Text).withAlpha (0.8f));
     g.drawLine (posX, (float) waveArea.getY(), posX, (float) waveArea.getBottom(), 1.5f);
 }
 
@@ -579,11 +589,11 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
 
 void WaveformPlayerComponent::resized()
 {
-    auto area = getLocalBounds().reduced (12, 8);
+    auto area = getLocalBounds().reduced (26, 16);
 
     // Top row: play + name + time
-    auto topRow = area.removeFromTop (26);
-    playBtn.setBounds   (topRow.removeFromLeft (34).reduced (0, 2));
+    auto topRow = area.removeFromTop (34);
+    playBtn.setBounds   (topRow.removeFromLeft (36).reduced (0, 2));
     topRow.removeFromLeft (8);
     audioBtn.setBounds (topRow.removeFromRight (64).reduced (2, 2));
     timeLabel.setBounds (topRow.removeFromRight (80));
@@ -592,7 +602,7 @@ void WaveformPlayerComponent::resized()
     area.removeFromTop (6);
 
     // Bottom row: open + assign + path
-    auto btmRow = area.removeFromBottom (26);
+    auto btmRow = area.removeFromBottom (32);
     openBtn.setBounds   (btmRow.removeFromRight (110).reduced (2, 0));
     btmRow.removeFromRight (6);
     assignBtn.setBounds (btmRow.removeFromRight (130).reduced (2, 0));
