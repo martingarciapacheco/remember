@@ -246,7 +246,7 @@ void testAssociation (const juce::File& fixtureRoot)
         sourceIs (engine, Association::ManualRecording);
         std::unique_ptr<RememberEditor> editor (static_cast<RememberEditor*> (processor.createEditor())); editor->timerCallback();
         const auto snapshot = editor->createComponentSnapshot (editor->getLocalBounds());
-        check (snapshot.isValid() && snapshot.getWidth() == 360 && snapshot.getHeight() == 220, "Association editor has invalid bounds");
+        check (snapshot.isValid() && snapshot.getWidth() == 440 && snapshot.getHeight() == 360, "Association editor has invalid bounds");
         const auto artifact = juce::File::getCurrentWorkingDirectory().getChildFile ("artifacts/association-editor.png");
         check (LibraryStore::ensureDirectory (artifact.getParentDirectory()).wasOk(), "Cannot create editor artifact directory");
         juce::FileOutputStream stream (artifact);
