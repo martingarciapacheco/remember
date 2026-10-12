@@ -2,6 +2,8 @@
 
 Two-piece JUCE 8 project for Windows that auto-captures 60-second audio previews from a DAW master bus and organises them in a standalone browser app.
 
+The selected workflow improvements are documented in [FUNCIONALIDADES.md](FUNCIONALIDADES.md): shared manual capture, preview locking and replacement options; filters and smart collections; bulk organisation, notes and musical corrections; playback queue, shuffle and loudness normalization; and a recoverable 30-day trash.
+
 ## Interface design
 
 The app, plugin and dialogs use a shared Apple-inspired interface with Light and

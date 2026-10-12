@@ -7,6 +7,12 @@ void RecordingEngine::prepare (double rate, int block, const SettingsManager::Sn
 void RecordingEngine::prepareAsync (double rate, int block, SettingsManager::Reader reader) { core->prepareAsync (rate, block, std::move (reader)); }
 bool RecordingEngine::isPreparingSettings() const { return core->isPreparingSettings(); }
 void RecordingEngine::finishCapture() { core->finishCapture(); }
+void RecordingEngine::setCaptureOptions (CaptureOptions value) { core->setCaptureOptions (value); }
+void RecordingEngine::applySharedCaptureOptions (CaptureOptions value) { core->applySharedCaptureOptions (value); }
+CaptureOptions RecordingEngine::getCaptureOptions() const { return core->getCaptureOptions(); }
+void RecordingEngine::armCapture() { core->armCapture(); }
+bool RecordingEngine::isCaptureArmed() const { return core->isCaptureArmed(); }
+bool RecordingEngine::isPreviewLocked() const { return core->isPreviewLocked(); }
 void RecordingEngine::processBlock (const juce::AudioBuffer<float>& audio, juce::AudioPlayHead* head, bool offline) { core->processBlock (audio, head, offline); }
 void RecordingEngine::setOutputFolder (const juce::File& folder) { core->setOutputFolder (folder); }
 void RecordingEngine::loadOutputFolderFromSettings (SettingsManager::Reader reader) { core->loadOutputFolderFromSettings (std::move (reader)); }

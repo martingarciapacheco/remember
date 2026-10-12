@@ -36,6 +36,9 @@ private:
     juce::Label       versionLabel;  // "v1.0.0-beta1 a1b2c3d" in the bottom-right
     juce::TextButton  settingsButton { "..." };
     juce::Label       associationLabel;
+    juce::ToggleButton manualToggle { "Capture from any position" }, lockToggle { "Lock preview updates" }, replaceToggle { "Replace the whole preview" };
+    juce::TextButton captureButton { "Capture next play" };
+    void saveCaptureOptions();
     juce::TextButton  associationButton { "Associate" };
 
     std::unique_ptr<juce::FileChooser> fileChooser;

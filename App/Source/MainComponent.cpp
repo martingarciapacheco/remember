@@ -19,8 +19,11 @@ MainComponent::MainComponent()
     addAndMakeVisible (settingsButton);
 
     // Clicking a row loads AND auto-plays the preview
-    list.onEntrySelected = [this] (const ProjectEntry& e) { player.loadEntry (e); player.play(); };
+    list.onEntrySelected = [this] (const ProjectEntry& e) { player.loadEntry (e); if (player.autoplaySelection()) player.play(); };
     list.onEntryPlay     = [this] (const ProjectEntry& e) { player.loadEntry (e); player.play(); };
+    list.onVisibleEntriesChanged = [this] (const juce::Array<ProjectEntry>& entries) { player.setQueue (entries); };
+    player.onEntryLoaded = [this] (const ProjectEntry& entry) { list.selectEntry (entry); };
+    player.setQueue (list.visibleEntries());
     list.onBeforeStorageChange = [this] (const ProjectEntry& e) { player.releaseEntry (e.metadataFile); };
 
     addAndMakeVisible (sidebar);
@@ -70,12 +73,21 @@ MainComponent::MainComponent()
 
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
+    if (key.getModifiers().isCtrlDown() && key.getKeyCode() == 'Z')
+    {
+        ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); },
+            [safe = juce::Component::SafePointer<MainComponent> (this)] (juce::Result result)
+            { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Cannot undo organization", result.getErrorMessage()); });
+        return true;
+    }
     // Space: play/pause currently loaded preview
     if (key == juce::KeyPress::spaceKey)
     {
         player.togglePlay();
         return true;
     }
+    if (key.getModifiers().isCtrlDown() && key.getKeyCode() == juce::KeyPress::rightKey) { player.next(); return true; }
+    if (key.getModifiers().isCtrlDown() && key.getKeyCode() == juce::KeyPress::leftKey) { player.previous(); return true; }
     // Enter is handled inside ProjectListComponent::returnKeyPressed (plays the row)
     // R: rename selected (no modifier — search box catches it when typing)
     if (key.getKeyCode() == 'R' && ! key.getModifiers().isAnyModifierKeyDown())

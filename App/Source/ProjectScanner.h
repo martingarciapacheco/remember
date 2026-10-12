@@ -4,6 +4,7 @@
 #include "../../Shared/LibraryStore.h"
 #include <functional>
 #include <memory>
+#include "../../Shared/CaptureOptions.h"
 
 struct ProjectEntry
 {
@@ -18,9 +19,15 @@ struct ProjectEntry
     juce::String      projectPath;        // path to the .als / .flp / .cpr / .rpp / ... file
     juce::String      projectFileId, projectFingerprint;
     bool              projectAvailable { false }; // verified by the index worker, never statted by paint/menu
+    juce::String      projectProblem; // unlinked, unavailable drive, missing/replaced file
     juce::String      metadataStamp; // disk identity/mtime/size used for publication invalidation
     juce::String      storageError; // unreadable/incomplete entries remain visible for repair/discard
     juce::String      recordedAt;
+    juce::String      status { "Idea" }, notes, bpmSource;
+    double bpmOverride = 0, keyConfidence = 0;
+    juce::String keyOverride;
+    bool previewLocked = false, trashed = false;
+    juce::String deletedAt;
     juce::StringArray tags;
     juce::StringArray folders;     // each item is a path like "Hip-Hop/Trap"
     juce::File        previewOgg;
@@ -54,11 +61,13 @@ public:
         juce::String fingerprint;
         bool canRebuild = false;
         bool darkAppearance = false;
+        CaptureOptions capture;
     };
     enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc };
     struct LibrarySnapshot
     {
-        juce::Array<ProjectEntry> entries;
+        juce::Array<ProjectEntry> entries, trash;
+        juce::var smartCollections;
         juce::StringArray folders, tags;
         SidebarSort sort = SidebarSort::NameAsc;
         juce::File sourceRoot;
@@ -103,10 +112,10 @@ public:
     static juce::File getPreviewsFolder();
     static void       setPreviewsFolder (const juce::File& folder);
     static juce::Result saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                      int seconds, int quality, bool mono);
+                                      int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr);
     static juce::Result rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                          int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                         juce::File& originalBackup);
+                                         juce::File& originalBackup, const CaptureOptions* capture = nullptr);
 
     // Multiple folders where the user keeps DAW projects. Defaults to a single
     // entry pointing at the user's Desktop if nothing has been configured.
@@ -127,6 +136,10 @@ public:
     // Removes everything associated with this entry from disk (the project
     // folder containing preview.ogg + metadata.json). Returns true on success.
     static bool deleteEntry (const ProjectEntry& entry);
+    static juce::Array<ProjectEntry> scanTrash (const juce::File& root);
+    static juce::Result restoreEntry (const ProjectEntry& entry);
+    static bool canUndoOrganization();
+    static juce::Result undoOrganization();
 
     // Returns every unique tag string that appears across all entries,
     // sorted alphabetically (case-insensitive). Cheap: uses the same cache

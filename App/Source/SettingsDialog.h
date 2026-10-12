@@ -58,12 +58,13 @@ private:
 
     // Recording settings block
     juce::Label       recordCaption { {}, "Recording" };
-    juce::Label       recordHint    { {}, "Apply on preparation/reload; queued recordings keep their previous settings" };
+    juce::Label       recordHint    { {}, "Manual mode defaults to new instances; lock/replacement apply live" };
     juce::Label       durationLbl   { {}, "Duration" };
     juce::Label       qualityLbl    { {}, "Quality" };
     juce::ComboBox    durationCombo;
     juce::ComboBox    qualityCombo;
     juce::ToggleButton monoToggle   { "Record in mono (smaller file)" };
+    juce::ToggleButton manualToggle { "Capture from any position by default in new plugins" }, lockToggle { "Lock preview updates in all plugins" }, replaceToggle { "Replace whole previews instead of keeping the old tail" };
     juce::Label       sizeEstimate;
     juce::Label       storageUsage;
     juce::Label       pcmPolicy { {}, "Float PCM + OGG: current and previous revisions kept; older revisions cleaned automatically" };

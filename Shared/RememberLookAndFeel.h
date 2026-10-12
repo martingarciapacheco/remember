@@ -82,6 +82,38 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
         g.fillRoundedRectangle (x + 3, y + 2, 3, 12, 1);
         g.fillRoundedRectangle (x + 10, y + 2, 3, 12, 1);
     }
+    else if (kind == "previous" || kind == "next")
+    {
+        if (kind == "next") { p.addTriangle (x + 2, y + 2, x + 2, y + 14, x + 12, y + 8); g.fillRect (x + 12, y + 2, 2.0f, 12.0f); }
+        else { p.addTriangle (x + 14, y + 2, x + 14, y + 14, x + 4, y + 8); g.fillRect (x + 2, y + 2, 2.0f, 12.0f); }
+        g.fillPath (p);
+    }
+    else if (kind == "shuffle")
+    {
+        p.startNewSubPath (x + 1, y + 3); p.lineTo (x + 5, y + 3); p.lineTo (x + 11, y + 13); p.lineTo (x + 15, y + 13);
+        p.startNewSubPath (x + 1, y + 13); p.lineTo (x + 5, y + 13); p.lineTo (x + 11, y + 3); p.lineTo (x + 15, y + 3);
+        g.strokePath (p, juce::PathStrokeType (1.5f));
+        p.clear(); p.addTriangle (x + 12, y, x + 12, y + 6, x + 16, y + 3);
+        p.addTriangle (x + 12, y + 10, x + 12, y + 16, x + 16, y + 13); g.fillPath (p);
+    }
+    else if (kind == "repeat")
+    {
+        g.drawRoundedRectangle (b.reduced (1, 3), 3, 1.5f);
+        p.addTriangle (x + 9, y, x + 9, y + 6, x + 14, y + 3); g.fillPath (p);
+        if (filled) { g.setFont (font (10, true)); g.drawText ("1", b.reduced (5, 3), juce::Justification::centred); }
+    }
+    else if (kind == "volume" || kind == "mute")
+    {
+        p.startNewSubPath (x + 1, y + 5); p.lineTo (x + 5, y + 5); p.lineTo (x + 9, y + 2); p.lineTo (x + 9, y + 14);
+        p.lineTo (x + 5, y + 11); p.lineTo (x + 1, y + 11); p.closeSubPath(); g.fillPath (p);
+        if (kind == "mute") { g.drawLine (x + 12, y + 5, x + 16, y + 11, 1.5f); g.drawLine (x + 16, y + 5, x + 12, y + 11, 1.5f); }
+        else { p.clear(); p.addCentredArc (x + 8, y + 8, 7, 7, 0, 0.7f, 2.4f, true); g.strokePath (p, juce::PathStrokeType (1.5f)); }
+    }
+    else if (kind == "normalize")
+    {
+        for (int i = 0; i < 3; ++i) g.drawLine (x + 3 + i * 5.0f, y + 2, x + 3 + i * 5.0f, y + 14, 1.5f);
+        g.fillEllipse (x + 1, y + 4, 4, 4); g.fillEllipse (x + 6, y + 9, 4, 4); g.fillEllipse (x + 11, y + 2, 4, 4);
+    }
     else if (kind == "star")
     {
         p.addStar (b.getCentre(), 5, 3.7f, 7.5f);
@@ -257,7 +289,9 @@ public:
         if (down) colour = base.isTransparent() ? RememberUI::colour (Pal::Border) : base.darker (0.12f);
         else if (over) colour = base.isTransparent() ? RememberUI::colour (Pal::Elevated) : base.darker (0.04f);
         if (! b.isEnabled()) colour = colour.withMultipliedAlpha (0.45f);
-        g.setColour (colour); g.fillRoundedRectangle (bounds, 7);
+        g.setColour (colour);
+        if ((bool) b.getProperties()["rememberTransportPrimary"]) g.fillEllipse (bounds);
+        else g.fillRoundedRectangle (bounds, 7);
         if (b.hasKeyboardFocus (false))
         {
             g.setColour (RememberUI::colour (Pal::Accent));
@@ -273,7 +307,7 @@ public:
         else if (kind == "play" && b.getButtonText() == "...") kind = "loading";
         auto colour = b.findColour (b.getToggleState() ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId);
         g.setColour (colour.withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.4f));
-        icon (g, kind, b.getLocalBounds().toFloat(), b.getButtonText() == "*");
+        icon (g, kind, b.getLocalBounds().toFloat(), b.getButtonText() == "*" || b.getProperties()["rememberRepeatOne"] == juce::var (true));
     }
 
     void fillTextEditorBackground (juce::Graphics& g, int w, int h, juce::TextEditor& e) override

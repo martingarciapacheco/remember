@@ -1,6 +1,8 @@
 #include "ProjectListComponent.h"
 #include "TagsEditorDialog.h"
 #include "RecoveryChoiceDialog.h"
+#include "WorkflowForm.h"
+#include <unordered_set>
 
 // ─── ProjectRowComponent ──────────────────────────────────────────────────────
 
@@ -78,9 +80,9 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
 
     entry    = e;
     selected = isSelected;
-    favBtn.setEnabled (e.storageError.isEmpty());
-    playBtn.setEnabled (e.storageError.isEmpty());
-    setTooltip (e.storageError.isNotEmpty() ? e.storageError : e.name);
+    favBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
+    playBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
+    setTooltip (e.storageError.isNotEmpty() ? e.storageError : e.name + (e.projectProblem.isNotEmpty() ? "\n" + e.projectProblem : juce::String{}));
 
     favBtn.setButtonText (e.favorite ? "*" : ".");
     RememberUI::bindColour (favBtn, juce::TextButton::textColourOffId, e.favorite ? Pal::Star : Pal::Subtext);
@@ -107,6 +109,13 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
     if (e.mods.isRightButtonDown())
     {
         juce::PopupMenu m;
+        if (entry.trashed)
+        {
+            m.addItem (1, "Restore recording");
+            const auto action = onRestore;
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [action] (int r) { if (r == 1 && action) action(); });
+            return;
+        }
         bool canRename = entry.storageError.isEmpty() && (entry.projectPath.isEmpty() || entry.pending);
         m.addItem (1, canRename ? "Rename  (R)" : "Name follows DAW file", canRename);
         m.addItem (2, "Edit tags  (T)", entry.storageError.isEmpty());
@@ -119,6 +128,8 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
         if (entry.pending) m.addItem (7, "Keep recording", canRecover && entry.storageError.isEmpty());
         m.addSeparator();
         m.addItem (4, "Delete entry", canRecover);
+        m.addSeparator(); m.addItem (8, "Project details and musical metadata", entry.storageError.isEmpty());
+        const auto detailsAction = onDetails;
         const auto recoverAction = onRecover;
         const auto tagsAction = onEditTags;
         const auto openAction = onOpenInDaw;
@@ -126,7 +137,7 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
         const auto renameAction = onRenameRequested;
         const auto clickedIdentity = entry.metadataFile;
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-                         [safe = juce::Component::SafePointer<ProjectRowComponent> (this), clickedEntry, tagsAction, openAction, deleteAction, renameAction, recoverAction, clickedIdentity] (int r)
+                         [safe = juce::Component::SafePointer<ProjectRowComponent> (this), clickedEntry, tagsAction, openAction, deleteAction, renameAction, recoverAction, detailsAction, clickedIdentity] (int r)
                          {
                              // Keep the clicked file even if this row is rebound
                              // by a background refresh while the menu is open.
@@ -145,6 +156,7 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
                                      && safe->entry.projectId == clickedEntry.projectId) safe->startInlineRename();
                                  else if (renameAction) renameAction();
                              }
+                             else if (r == 8 && detailsAction) detailsAction();
                              else if (r == 2 && tagsAction) tagsAction();
                              else if (r == 3 && openAction) openAction();
                              else if (r == 4 && deleteAction) deleteAction();
@@ -152,14 +164,15 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
                          });
         return;
     }
-    if (onSelect) onSelect();
+    if (onSelectionGesture) onSelectionGesture (e.mods);
+    else if (onSelect) onSelect();
 }
 
 void ProjectRowComponent::mouseDrag (const juce::MouseEvent& e)
 {
     // Start a drag once the user has moved past the system threshold. The
     // payload is just "entry:<full metadata path>" — the sidebar parses it.
-    if (renaming) return;
+    if (renaming || entry.trashed) return;
     if (! e.mods.isLeftButtonDown()) return;
     if (e.getDistanceFromDragStart() < 6) return;
 
@@ -246,6 +259,9 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     if (entry.bpm > 0.0)                { sep(); meta += juce::String ((int) entry.bpm) + " BPM"; }
     if (entry.key.isNotEmpty())         { sep(); meta += entry.key; }
     if (entry.recordedAt.isNotEmpty())  { sep(); meta += entry.recordedAt.substring (0, 10); }
+    if (entry.trashed) { sep(); meta += "Trash - retained for 30 days"; }
+    else { sep(); meta += entry.status; if (entry.previewLocked) meta += " | Locked"; }
+    if (! entry.pending && ! entry.projectAvailable && ! entry.trashed) { sep(); meta += "Project not located"; }
 
     g.setFont (RememberUI::font (12.0f));
     g.setColour (RememberUI::colour (Pal::Subtext));
@@ -293,6 +309,7 @@ ProjectListComponent::ProjectListComponent()
     addAndMakeVisible (refreshBtn);
 
     listBox.setModel (this);
+    listBox.setMultipleSelectionEnabled (true);
     listBox.setRowHeight (kRowH);
     RememberUI::bindColour (listBox, juce::ListBox::backgroundColourId, Pal::Content);
     listBox.setOutlineThickness (0);
@@ -303,6 +320,7 @@ ProjectListComponent::ProjectListComponent()
     RememberUI::bindColour (libraryStatus, juce::Label::backgroundColourId, Pal::Elevated);
     addChildComponent (libraryStatus);
 
+    configureWorkflow();
     ProjectScanner::addLibraryListener (this);
     publishLibrary();
 }
@@ -320,6 +338,13 @@ void ProjectListComponent::publishLibrary()
 {
     const auto snapshot = ProjectScanner::librarySnapshot();
     allEntries = snapshot->entries;
+    const auto selectedCollection = collectionCombo.getSelectedId();
+    collections = snapshot->smartCollections;
+    collectionCombo.clear (juce::dontSendNotification);
+    collectionCombo.addItem ("Custom filters", 1);
+    if (const auto* array = collections.getArray())
+        for (int i = 0; i < array->size(); ++i) collectionCombo.addItem ((*array)[i].getProperty ("name", "Collection").toString(), i + 2);
+    collectionCombo.setSelectedId (juce::jlimit (1, juce::jmax (1, collectionCombo.getNumItems()), selectedCollection), juce::dontSendNotification);
     juce::String text, tooltip;
     if (snapshot->error.isNotEmpty())
     {
@@ -354,8 +379,10 @@ void ProjectListComponent::publishLibrary()
         tooltip = details.joinIntoString ("\n");
     }
     libraryStatus.setText (text, juce::dontSendNotification);
+    if (view == 3 && snapshot->error.isEmpty())
+        libraryStatus.setText ("Deleted recordings are kept for 30 days. Restore to keep them.", juce::dontSendNotification);
     libraryStatus.setTooltip (tooltip);
-    libraryStatus.setVisible (text.isNotEmpty());
+    libraryStatus.setVisible (text.isNotEmpty() || view == 3);
     resized();
     applyFilter();
     if (onRefreshed) onRefreshed();
@@ -368,42 +395,30 @@ void ProjectListComponent::scheduleSearchDebounce()
 
 void ProjectListComponent::applyFilter()
 {
-    juce::File selected;
-    juce::String selectedId;
-    const auto oldRow = listBox.getSelectedRow();
-    if (oldRow >= 0 && oldRow < filtered.size())
+    std::unordered_set<std::string> selectedIds;
+    const auto selectedRows = listBox.getSelectedRows();
+    for (int i = 0; i < selectedRows.size(); ++i)
     {
-        selected = filtered.getReference (oldRow).metadataFile;
-        selectedId = filtered.getReference (oldRow).projectId;
+        const auto row = selectedRows[i];
+        if (row >= 0 && row < filtered.size()) selectedIds.insert ((filtered[row].projectId.isEmpty() ? filtered[row].metadataFile.getFullPathName() : filtered[row].projectId).toStdString());
     }
-    auto term = searchBox.getText();
+    filter.query = searchBox.getText(); filter.folder = folderFilter; filter.favorites = showFavOnly;
+    auto active = filter; if (view == 2) active.missing = true;
+    const auto snapshot = ProjectScanner::librarySnapshot();
+    const auto& candidates = view == 3 ? snapshot->trash : allEntries;
     filtered.clearQuick();
-    for (auto& e : allEntries)
-    {
-        if (showFavOnly && ! e.favorite) continue;
-        if (! e.matches (term)) continue;
-
-        // Folder filter: selecting "A" includes entries in "A" or "A/..."
-        if (folderFilter.isNotEmpty())
-        {
-            bool inFolder = false;
-            for (auto& f : e.folders)
-                if (f == folderFilter || f.startsWith (folderFilter + "/"))
-                { inFolder = true; break; }
-            if (! inFolder) continue;
-        }
-
-        filtered.add (e);
-    }
-    listBox.setVisible (! filtered.isEmpty());
+    for (const auto& entry : candidates)
+        if (view == 3 ? entry.matches (filter.query) : active.matches (entry)) filtered.add (entry);
+    // Normal publications already arrive newest first; preserve that order
+    // instead of sorting the whole library again on every search/favorite edit.
+    if (view == 3 || filter.sort != LibraryFilter::Latest) filter.order (filtered);
     listBox.updateContent();
-    listBox.deselectAllRows();
+    juce::SparseSet<int> selection;
     for (int i = 0; i < filtered.size(); ++i)
-        if (selectedId.isNotEmpty() ? filtered.getReference (i).projectId == selectedId
-                                   : filtered.getReference (i).metadataFile == selected)
-        { listBox.selectRow (i); break; }
-    listBox.repaint();
-    repaint();
+        if (selectedIds.count ((filtered[i].projectId.isEmpty() ? filtered[i].metadataFile.getFullPathName() : filtered[i].projectId).toStdString()) != 0) selection.addRange ({ i, i + 1 });
+    listBox.setSelectedRows (selection, juce::dontSendNotification);
+    listBox.setVisible (! filtered.isEmpty()); listBox.repaint(); repaint();
+    if (onVisibleEntriesChanged) onVisibleEntriesChanged (filtered);
 }
 
 void ProjectListComponent::setFolderFilter (const juce::String& path)
@@ -425,18 +440,18 @@ void ProjectListComponent::paint (juce::Graphics& g)
     g.setFont (RememberUI::font (13, true));
     g.setColour (RememberUI::colour (Pal::Text));
     const auto title = folderFilter.isEmpty() ? juce::String ("All recordings") : folderFilter.fromLastOccurrenceOf ("/", false, false);
-    g.drawText (title, 16, 66, getWidth() - 112, 28, juce::Justification::centredLeft);
+    juce::ignoreUnused (title);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (Pal::Subtext));
     g.drawText (juce::String (filtered.size()) + (filtered.size() == 1 ? " item" : " items"),
-                getWidth() - 100, 66, 84, 28, juce::Justification::centredRight);
+                getWidth() - 100, 94, 84, 28, juce::Justification::centredRight);
     if (filtered.isEmpty() && ! allEntries.isEmpty())
     {
         auto empty = getLocalBounds().withTrimmedTop (kToolbarH).reduced (24);
         if (libraryStatus.isVisible()) empty.removeFromTop (48);
         g.setFont (RememberUI::font (16, true));
         g.setColour (RememberUI::colour (Pal::Text));
-        g.drawText ("No matching recordings", empty.withHeight (28).withY (empty.getCentreY() - 28), juce::Justification::centred);
+        g.drawText (view == 3 ? "Trash is empty" : view == 2 ? "No missing projects match" : "No matching recordings", empty.withHeight (28).withY (empty.getCentreY() - 28), juce::Justification::centred);
         g.setFont (RememberUI::font (13));
         g.setColour (RememberUI::colour (Pal::Subtext));
         g.drawText ("Try another search or change your filters.", empty.withHeight (28).withY (empty.getCentreY()), juce::Justification::centred);
@@ -451,8 +466,16 @@ void ProjectListComponent::resized()
     favFilterBtn.setBounds (toolbar.removeFromRight (86));
     toolbar.removeFromRight (8);
     searchBox.setBounds (toolbar);
+    auto workflow = juce::Rectangle<int> (16, 54, getWidth() - 32, 32);
+    actionsBtn.setBounds (workflow.removeFromRight (84)); workflow.removeFromRight (8);
+    filtersBtn.setBounds (workflow.removeFromLeft (70)); workflow.removeFromLeft (6);
+    collectionCombo.setBounds (workflow.removeFromLeft (juce::jmin (180, juce::jmax (80, workflow.getWidth() - 38)))); workflow.removeFromLeft (6);
+    collectionBtn.setBounds (workflow.removeFromLeft (32)); workflow.removeFromLeft (6);
+    auto views = juce::Rectangle<int> (16, 94, getWidth() - 136, 30);
+    viewCombo.setBounds (views.removeFromLeft (juce::jmin (145, views.getWidth() / 2))); views.removeFromLeft (6);
+    sortCombo.setBounds (views.removeFromLeft (juce::jmin (220, views.getWidth())));
     auto listArea = getLocalBounds().withTrimmedTop (kToolbarH).reduced (12, 0);
-    if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (48).reduced (4, 2));
+    if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (32).reduced (4, 2));
     listBox.setBounds (listArea);
     listBox.setVisible (! filtered.isEmpty());
 }
@@ -484,10 +507,15 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         if (onEntrySelected && row >= 0 && row < filtered.size())
             onEntrySelected (filtered.getReference (row));
     };
+    comp->onSelectionGesture = [this, row] (juce::ModifierKeys modifiers)
+    {
+        listBox.selectRowsBasedOnModifierKeys (row, modifiers, false);
+        if (! modifiers.isCtrlDown() && ! modifiers.isShiftDown() && view != 3 && onEntrySelected && row < filtered.size()) onEntrySelected (filtered[row]);
+    };
     comp->onPlay = [this, row]
     {
         listBox.selectRow (row);
-        if (onEntryPlay && row >= 0 && row < filtered.size())
+        if (view != 3 && onEntryPlay && row >= 0 && row < filtered.size())
             onEntryPlay (filtered.getReference (row));
     };
 
@@ -503,6 +531,8 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
                                                                         "Cannot edit entry", result.getErrorMessage());
         });
     };
+    comp->onDetails = [safe, entry] { if (safe != nullptr) safe->editDetails (entry); };
+    comp->onRestore = [safe, entry] { if (safe != nullptr) safe->restoreRecording (entry); };
     comp->onFavoriteToggle = [safe, entry, persist] (bool fav) mutable
     {
         if (safe == nullptr) return;
@@ -562,6 +592,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
     };
     comp->onDelete = [safe, entry]
     {
+        if (entry.trashed) { if (safe != nullptr) safe->restoreRecording (entry); return; }
         if (safe == nullptr) return;
         juce::AlertWindow::showAsync (
             juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
@@ -665,7 +696,7 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
 void ProjectListComponent::listBoxItemClicked (int row, const juce::MouseEvent&)
 {
     if (row < 0 || row >= filtered.size()) return;
-    if (onEntrySelected) onEntrySelected (filtered.getReference (row));
+    if (view != 3 && onEntrySelected) onEntrySelected (filtered.getReference (row));
 }
 
 void ProjectListComponent::selectedRowsChanged (int /*lastRowSelected*/) {}
@@ -674,7 +705,7 @@ void ProjectListComponent::returnKeyPressed (int row)
 {
     // Enter on a row plays its preview (matches mouse-click behaviour)
     if (row < 0 || row >= filtered.size()) return;
-    if (onEntryPlay) onEntryPlay (filtered.getReference (row));
+    if (view != 3 && onEntryPlay) onEntryPlay (filtered.getReference (row));
 }
 
 // ── Public actions for keyboard shortcuts ─────────────────────────────────────
@@ -709,6 +740,7 @@ void ProjectListComponent::renameSelected()
 
 void ProjectListComponent::editTagsForSelected()
 {
+    if (listBox.getNumSelectedRows() > 1) { bulkEdit (selectedEntries(), "addTags"); return; }
     int row = listBox.getSelectedRow();
     if (row < 0 || row >= filtered.size()) return;
     // Trigger the same flow as the row's context menu
@@ -718,6 +750,7 @@ void ProjectListComponent::editTagsForSelected()
 
 void ProjectListComponent::deleteSelected()
 {
+    if (listBox.getNumSelectedRows() > 1) { bulkEdit (selectedEntries(), "trash"); return; }
     int row = listBox.getSelectedRow();
     if (row < 0 || row >= filtered.size()) return;
     if (auto* comp = dynamic_cast<ProjectRowComponent*> (listBox.getComponentForRowNumber (row)))
@@ -726,6 +759,7 @@ void ProjectListComponent::deleteSelected()
 
 void ProjectListComponent::toggleFavoriteForSelected()
 {
+    if (listBox.getNumSelectedRows() > 1) { bulkEdit (selectedEntries(), "favorite"); return; }
     const auto row = listBox.getSelectedRow();
     if (row < 0 || row >= filtered.size()) return;
     auto entry = filtered.getReference (row);

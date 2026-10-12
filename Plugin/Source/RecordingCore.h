@@ -29,6 +29,11 @@ public:
     void prepareAsync (double sampleRate, int maxBlockSize, SettingsManager::Reader);
     bool isPreparingSettings() const;
     void finishCapture();
+    void setCaptureOptions (CaptureOptions);
+    void applySharedCaptureOptions (CaptureOptions);
+    CaptureOptions getCaptureOptions() const;
+    void armCapture();
+    bool isCaptureArmed() const;
     void processBlock (const juce::AudioBuffer<float>&, juce::AudioPlayHead*, bool offline = false);
     void setOutputFolder (const juce::File&);
     void loadOutputFolderFromSettings (SettingsManager::Reader);
@@ -45,7 +50,8 @@ public:
     State getState() const noexcept;
     float getProgress() const noexcept;
     juce::String getDetectedKey() const;
-    double getDetectedBpm() const noexcept { return capturedBpm.load(); }
+    double getDetectedBpm() const noexcept { const auto manual = manualDetectedBpm.load(); return manual > 0 ? manual : capturedBpm.load(); }
+    bool isPreviewLocked() const { return previewsLocked.load() || entryPreviewLocked.load(); }
     juce::String getLastSavedTime() const;
     juce::String getLastError() const;
     uint64_t getDroppedCaptures() const noexcept { return droppedCaptures.load(); }
@@ -73,7 +79,7 @@ private:
         uint64_t generation = 0, sequence = 0;
         double rate = 44100;
         int quality = 4;
-        bool mono = false, captureMono = false;
+        bool mono = false, captureMono = false, replace = false;
         std::shared_ptr<SettingsManager::Request> settings;
         juce::File outputRoot;
         juce::int64 settingsRevision = 0;
@@ -158,6 +164,7 @@ private:
     void applyRestoration();
     juce::File requestedDestination() const; // projectLock held; no I/O.
     void publishProject();
+    void refreshEntryPreferences();
     void fail (const juce::String& phase, const juce::File&, const juce::String& reason);
     void startCapture (double bpm);
     void refreshHostProject (const HostObservation&);
@@ -190,6 +197,15 @@ private:
     juce::File captureCache;
     std::shared_ptr<std::atomic<size_t>> memoryBudget { std::make_shared<std::atomic<size_t>> (0) };
     std::atomic<bool> captureDisabled { false };
+    // -1 awaits the creation default; 0/1 belongs to this DAW instance's state.
+    std::atomic<int> manualCapture { -1 };
+    std::atomic<bool> previewsLocked { false }, replacePreview { false }, captureArmed { false };
+    std::atomic<bool> sharedCaptureOptions { true };
+    std::atomic<bool> entryPreviewLocked { false };
+    std::atomic<double> manualDetectedBpm { 0 };
+    juce::String manualDetectedKey, lastPreferenceId;
+    juce::uint32 preferencesReadAt = 0;
+    juce::uint32 optionsPolledAt = 0;
     // prepare owns the audio-thread pointer; retired banks live until drained.
     std::shared_ptr<Bank> currentBank;
     std::vector<std::shared_ptr<Bank>> banks;

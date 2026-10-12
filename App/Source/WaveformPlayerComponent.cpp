@@ -27,18 +27,81 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     {
         auto state = std::make_shared<juce::String>();
         auto ticket = std::make_shared<LoadTicket>();
-        ProjectScanner::queryAsync ([state, ticket]
+        auto preferences = std::make_shared<juce::var>();
+        ProjectScanner::queryAsync ([state, ticket, preferences]
         {
-            *state = LibraryStore::readJson (LibraryStore::configFile()).getProperty ("audioDeviceState", "").toString();
+            *preferences = LibraryStore::readJson (LibraryStore::configFile());
+            *state = preferences->getProperty ("audioDeviceState", "").toString();
             return juce::Result::ok();
-        }, [safePlayer, state, ticket] (juce::Result)
+        }, [safePlayer, state, ticket, preferences] (juce::Result)
         {
             if (safePlayer == nullptr) return;
             safePlayer->deviceSettingsLoaded = true;
             if (! safePlayer->audioDeviceOpen) safePlayer->savedAudioState = *state;
+            if (! safePlayer->preferencesTouched)
+            {
+                safePlayer->applyingPreferences = true;
+                safePlayer->volumeSlider.setValue (juce::jlimit (0.0, 1.0, (double) preferences->getProperty ("playbackVolume", 1.0)), juce::dontSendNotification);
+                safePlayer->muteBtn.setToggleState ((bool) preferences->getProperty ("playbackMuted", false), juce::dontSendNotification);
+                safePlayer->normalize = (bool) preferences->getProperty ("normalizePlayback", false);
+                safePlayer->normalizeBtn.setToggleState (safePlayer->normalize, juce::dontSendNotification);
+                safePlayer->autoplay = (bool) preferences->getProperty ("autoplaySelection", true);
+                safePlayer->queue.setShuffle ((bool) preferences->getProperty ("shufflePlayback", false));
+                safePlayer->shuffleBtn.setToggleState (safePlayer->queue.shuffle, juce::dontSendNotification);
+                safePlayer->queue.repeat = (PlaybackQueue::Repeat) juce::jlimit (0, 2, (int) preferences->getProperty ("repeatPlayback", 0));
+                safePlayer->repeatBtn.setToggleState (safePlayer->queue.repeat != PlaybackQueue::Off, juce::dontSendNotification);
+                safePlayer->repeatBtn.getProperties().set ("rememberRepeatOne", safePlayer->queue.repeat == PlaybackQueue::One);
+                safePlayer->applyOutputGain(); safePlayer->applyingPreferences = false;
+            }
         });
     }
     playBtn.setEnabled (false);
+    RememberUI::iconButton (previousBtn, "previous", "Previous preview; restart after 3 seconds");
+    RememberUI::iconButton (nextBtn, "next", "Next preview");
+    RememberUI::iconButton (shuffleBtn, "shuffle", "Shuffle previews");
+    RememberUI::iconButton (repeatBtn, "repeat", "Repeat: off");
+    RememberUI::iconButton (muteBtn, "volume", "Mute volume");
+    RememberUI::iconButton (normalizeBtn, "normalize", "Normalize preview loudness to -14 LUFS");
+    for (auto* button : { &previousBtn, &nextBtn, &shuffleBtn, &repeatBtn, &muteBtn, &normalizeBtn, &playbackOptionsBtn })
+    {
+        button->setWantsKeyboardFocus (false);
+        RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
+        RememberUI::bindColour (*button, juce::TextButton::textColourOffId, Pal::Text);
+        addAndMakeVisible (*button);
+    }
+    shuffleBtn.setClickingTogglesState (true); muteBtn.setClickingTogglesState (true); normalizeBtn.setClickingTogglesState (true);
+    previousBtn.onClick = [this] { previous(); }; nextBtn.onClick = [this] { next(); };
+    shuffleBtn.onClick = [this] { queue.setShuffle (shuffleBtn.getToggleState()); savePlaybackPreferences(); };
+    repeatBtn.onClick = [this]
+    {
+        queue.repeat = (PlaybackQueue::Repeat) (((int) queue.repeat + 1) % 3);
+        repeatBtn.setToggleState (queue.repeat != PlaybackQueue::Off, juce::dontSendNotification);
+        repeatBtn.getProperties().set ("rememberRepeatOne", queue.repeat == PlaybackQueue::One);
+        RememberUI::iconButton (repeatBtn, "repeat", queue.repeat == PlaybackQueue::Off ? "Repeat: off" : queue.repeat == PlaybackQueue::All ? "Repeat: all" : "Repeat: one");
+        repeatBtn.repaint(); savePlaybackPreferences();
+    };
+    muteBtn.onClick = [this] { setMuted (getVolume() == 0 ? false : muteBtn.getToggleState()); };
+    normalizeBtn.onClick = [this] { setNormalized (normalizeBtn.getToggleState()); };
+    playbackOptionsBtn.setTooltip ("Playback preferences"); playbackOptionsBtn.onClick = [this] { showPlaybackOptions(); };
+    volumeSlider.setSliderStyle (juce::Slider::LinearHorizontal); volumeSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    volumeSlider.setRange (0, 1, 0.01); volumeSlider.setValue (1, juce::dontSendNotification); volumeSlider.setTitle ("Volume");
+    volumeSlider.setTooltip ("Playback volume");
+    RememberUI::bindColour (volumeSlider, juce::Slider::thumbColourId, Pal::Text);
+    RememberUI::bindColour (volumeSlider, juce::Slider::trackColourId, Pal::Accent);
+    RememberUI::bindColour (volumeSlider, juce::Slider::backgroundColourId, Pal::Border);
+    volumeSlider.onValueChange = [this]
+    {
+        preferencesTouched = true;
+        if (volumeSlider.getValue() > 0)
+        {
+            volumeSlider.getProperties().set ("rememberAudibleVolume", volumeSlider.getValue());
+            muteBtn.setToggleState (false, juce::dontSendNotification);
+        }
+        applyOutputGain();
+        if (! volumeSlider.isMouseButtonDown()) savePlaybackPreferences();
+    };
+    volumeSlider.onDragEnd = [this] { savePlaybackPreferences(); };
+    addAndMakeVisible (volumeSlider);
 
     auto btnSetup = [&] (juce::TextButton& b, uint32_t bg, uint32_t fg)
     {
@@ -47,6 +110,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     };
 
     RememberUI::iconButton (playBtn, "play", "Play or pause preview (Space)");
+    playBtn.getProperties().set ("rememberTransportPrimary", true);
     btnSetup (playBtn, Pal::Action,   Pal::OnAction);
     btnSetup (openBtn,   Pal::Elevated, Pal::Text);
     btnSetup (assignBtn, Pal::Elevated, Pal::Subtext);
@@ -113,6 +177,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
                         safe->currentEntry.projectFileId = association->projectFileId;
                         safe->currentEntry.projectFingerprint = association->projectFingerprint;
                         safe->currentEntry.projectAvailable = association->projectAvailable;
+                        safe->currentEntry.projectProblem = association->projectAvailable ? juce::String{} : "Selected project could not be verified";
                         safe->currentEntry.name = association->name;
                         safe->nameLabel.setText (association->name, juce::dontSendNotification);
                         safe->updatePathLabel();
@@ -179,6 +244,8 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     detachSource();
     const auto request = loadGeneration->fetch_add (1) + 1;
     currentEntry = entry;
+    queue.select (entry);
+    if (onEntryLoaded) onEntryLoaded (entry);
     isLoaded     = false;
     isLoading = true;
     playWhenLoaded = false;
@@ -249,7 +316,11 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
             [safe, generation, request, ticket] (juce::Result result)
             {
                 if (safe == nullptr || generation->load() != request) return;
-                if (result.wasOk()) safe->waveform = ticket->envelope;
+                if (result.wasOk())
+                {
+                    safe->waveform = ticket->envelope; safe->applyOutputGain();
+                    if (safe->playWhenLoaded) safe->play();
+                }
                 else safe->pathLabel.setTooltip (result.getErrorMessage());
                 safe->repaint();
             });
@@ -361,6 +432,8 @@ void WaveformPlayerComponent::stop()
 void WaveformPlayerComponent::togglePlay()
 {
     if (! isLoaded) return;
+    if (normalize && ! waveform && ! transport.isPlaying())
+    { playWhenLoaded = ! playWhenLoaded; playBtn.setButtonText (playWhenLoaded ? "..." : ">"); return; }
     if (waitingForBuffer) { waitingForBuffer = false; playBtn.setButtonText (">"); armIdleRelease(); return; }
     if (transport.isPlaying())
     {
@@ -389,6 +462,7 @@ void WaveformPlayerComponent::togglePlay()
 void WaveformPlayerComponent::play()
 {
     if (isLoading) { playWhenLoaded = true; return; }
+    if (normalize && ! waveform && isLoaded) { playWhenLoaded = true; return; }
     if (! isLoaded || transport.isPlaying() || waitingForBuffer) return;
     togglePlay();
 }
@@ -427,9 +501,11 @@ void WaveformPlayerComponent::updateTimeLabel()
 void WaveformPlayerComponent::updatePathLabel()
 {
     pathLabel.setText (currentEntry.pending ? "Unsaved project - save in the DAW to keep this audio"
+                       : currentEntry.projectProblem.isNotEmpty() ? currentEntry.projectProblem
                        : currentEntry.projectPath.isEmpty()
                            ? "(no project file - press Assign path)" : currentEntry.projectPath,
                        juce::dontSendNotification);
+    pathLabel.setTooltip (currentEntry.projectProblem + "\n" + currentEntry.projectPath);
 }
 
 // ── Callbacks ─────────────────────────────────────────────────────────────────
@@ -506,6 +582,7 @@ void WaveformPlayerComponent::timerCallback()
 
     if (isLoaded && transport.hasStreamFinished())
     {
+        if (auto following = queue.next (true)) { loadEntry (*following); play(); return; }
         readerSource->setActive (false);
         transport.setPosition (0.0);
         playBtn.setButtonText (">");
@@ -591,14 +668,13 @@ void WaveformPlayerComponent::resized()
 {
     auto area = getLocalBounds().reduced (26, 16);
 
-    // Top row: play + name + time
     auto topRow = area.removeFromTop (34);
-    playBtn.setBounds   (topRow.removeFromLeft (36).reduced (0, 2));
-    topRow.removeFromLeft (8);
-    audioBtn.setBounds (topRow.removeFromRight (64).reduced (2, 2));
-    timeLabel.setBounds (topRow.removeFromRight (80));
-    nameLabel.setBounds (topRow);
-
+    shuffleBtn.setBounds (topRow.removeFromLeft (32)); previousBtn.setBounds (topRow.removeFromLeft (32));
+    playBtn.setBounds (topRow.removeFromLeft (36)); nextBtn.setBounds (topRow.removeFromLeft (32)); repeatBtn.setBounds (topRow.removeFromLeft (32));
+    audioBtn.setBounds (topRow.removeFromRight (56).reduced (2, 2));
+    playbackOptionsBtn.setBounds (topRow.removeFromRight (30)); normalizeBtn.setBounds (topRow.removeFromRight (30));
+    volumeSlider.setBounds (topRow.removeFromRight (getWidth() >= 800 ? 100 : 72)); muteBtn.setBounds (topRow.removeFromRight (30));
+    timeLabel.setBounds (topRow.removeFromRight (80)); nameLabel.setBounds (topRow.reduced (6, 0));
     area.removeFromTop (6);
 
     // Bottom row: open + assign + path
@@ -612,4 +688,68 @@ void WaveformPlayerComponent::resized()
 
     // Waveform occupies the middle
     waveArea = area;
+}
+
+void WaveformPlayerComponent::next (bool automatic)
+{
+    const bool resume = automatic || isPlaying() || waitingForBuffer || playWhenLoaded;
+    if (auto entry = queue.next (automatic)) { loadEntry (*entry); if (resume) play(); }
+}
+void WaveformPlayerComponent::previous()
+{
+    const bool resume = isPlaying() || waitingForBuffer || playWhenLoaded;
+    if (position() > 3.0) { seekTo (0); updateTimeLabel(); repaint(); return; }
+    if (auto entry = queue.previous()) { loadEntry (*entry); if (resume) play(); }
+}
+void WaveformPlayerComponent::setVolume (double value)
+{
+    volumeSlider.setValue (juce::jlimit (0.0, 1.0, value), juce::dontSendNotification);
+    if (value > 0) { volumeSlider.getProperties().set ("rememberAudibleVolume", getVolume()); muteBtn.setToggleState (false, juce::dontSendNotification); }
+    applyOutputGain(); savePlaybackPreferences();
+}
+void WaveformPlayerComponent::setMuted (bool value)
+{
+    muteBtn.setToggleState (value, juce::dontSendNotification);
+    if (! value && getVolume() == 0)
+        volumeSlider.setValue ((double) volumeSlider.getProperties().getWithDefault ("rememberAudibleVolume", 1.0), juce::dontSendNotification);
+    RememberUI::iconButton (muteBtn, value ? "mute" : "volume", value ? "Unmute volume" : "Mute volume");
+    applyOutputGain(); savePlaybackPreferences();
+}
+void WaveformPlayerComponent::setNormalized (bool value)
+{
+    normalize = value; normalizeBtn.setToggleState (value, juce::dontSendNotification);
+    applyOutputGain(); savePlaybackPreferences();
+    if (! value && playWhenLoaded && isLoaded) play();
+}
+void WaveformPlayerComponent::applyOutputGain()
+{
+    const auto volume = volumeSlider.getValue();
+    if (volume > 0) volumeSlider.getProperties().set ("rememberAudibleVolume", volume);
+    RememberUI::iconButton (muteBtn, isMuted() || volume == 0 ? "mute" : "volume", isMuted() || volume == 0 ? "Unmute volume" : "Mute volume");
+    const auto gain = normalize && waveform ? waveform->normalizationGain : 1.0f;
+    transport.setGain (isMuted() ? 0.0f : (float) (volume * volume) * gain);
+    normalizeBtn.setTooltip (normalize && ! waveform ? "Measuring preview loudness..." : "Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)");
+}
+void WaveformPlayerComponent::savePlaybackPreferences()
+{
+    if (applyingPreferences || ! persistAudioState) return;
+    preferencesTouched = true;
+    juce::var patch (new juce::DynamicObject()); auto& o = *patch.getDynamicObject();
+    o.setProperty ("playbackVolume", getVolume()); o.setProperty ("playbackMuted", isMuted()); o.setProperty ("normalizePlayback", normalize);
+    o.setProperty ("shufflePlayback", queue.shuffle); o.setProperty ("repeatPlayback", (int) queue.repeat); o.setProperty ("autoplaySelection", autoplay);
+    auto safe = juce::Component::SafePointer<WaveformPlayerComponent> (this);
+    ProjectScanner::editAsync ([patch] { return LibraryStore::patchJson (LibraryStore::configFile(), patch, true); }, [safe] (juce::Result result)
+    { if (safe != nullptr && result.failed()) { safe->pathLabel.setText ("Cannot save playback preferences", juce::dontSendNotification); safe->pathLabel.setTooltip (result.getErrorMessage()); } });
+}
+void WaveformPlayerComponent::showPlaybackOptions()
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "Play when selecting a recording", true, autoplay);
+    menu.addItem (2, "Normalize preview volume", true, normalize);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&playbackOptionsBtn), [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this)] (int r)
+    {
+        if (safe == nullptr) return;
+        if (r == 1) { safe->autoplay = ! safe->autoplay; safe->savePlaybackPreferences(); }
+        if (r == 2) safe->setNormalized (! safe->normalize);
+    });
 }

@@ -51,6 +51,8 @@ juce::File audioFile (const juce::File& entryFolder, const juce::var& metadata, 
 juce::File audioFile (const juce::File& entryFolder, bool pcm);
 bool isDeleted (const juce::File& entryFolder);
 juce::Result deleteEntry (const juce::File& previewsRoot, const juce::File& entryFolder);
+juce::Result restoreEntry (const juce::File& previewsRoot, const juce::File& trashFolder);
+juce::Result purgeExpiredTrash (const juce::File& previewsRoot, juce::Time now = juce::Time::getCurrentTime());
 juce::Result renameEntryWithoutReplacement (const juce::File& source, const juce::File& target);
 
 struct AudioRevision

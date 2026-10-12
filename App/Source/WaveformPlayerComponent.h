@@ -4,6 +4,7 @@
 #include "ProjectScanner.h"
 #include "ReadAheadSource.h"
 #include "WaveformEnvelope.h"
+#include "PlaybackQueue.h"
 
 class WaveformPlayerComponent : public juce::Component,
                                 public juce::ChangeListener,
@@ -17,6 +18,18 @@ public:
     void releaseEntry (const juce::File& metadataFile);
     void stop();
     void play();         // start playback if a preview is loaded
+    void setQueue (const juce::Array<ProjectEntry>& entries)
+    { queue.setEntries (entries); nextBtn.setEnabled (! entries.isEmpty()); previousBtn.setEnabled (! entries.isEmpty()); }
+    std::function<void (const ProjectEntry&)> onEntryLoaded;
+    void next (bool automatic = false);
+    void previous();
+    void setVolume (double value);
+    double getVolume() const { return volumeSlider.getValue(); }
+    void setMuted (bool);
+    bool isMuted() const { return muteBtn.getToggleState(); }
+    void setNormalized (bool);
+    float getOutputGain() const { return transport.getGain(); }
+    bool autoplaySelection() const { return autoplay; }
     void togglePlay();   // public wrapper for keyboard shortcut
     bool hasLoadedEntry() const noexcept { return isLoaded; }
     juce::String getPlaybackError() const { return playbackError; }
@@ -36,6 +49,13 @@ public:
 
 private:
     RememberUI::Style uiStyle { *this };
+    PlaybackQueue queue;
+    juce::TextButton previousBtn, nextBtn, shuffleBtn, repeatBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
+    juce::Slider volumeSlider;
+    bool normalize = false, autoplay = true, applyingPreferences = false, preferencesTouched = false;
+    void applyOutputGain();
+    void savePlaybackPreferences();
+    void showPlaybackOptions();
     void   seekTo (double normalizedPos);
     double getPositionNormalized() const;
     void   updateTimeLabel();

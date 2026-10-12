@@ -11,7 +11,28 @@ namespace
 RememberEditor::RememberEditor (RememberProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    setSize (440, 360);
+    setSize (440, 496);
+    for (auto* toggle : { &manualToggle, &lockToggle, &replaceToggle })
+    {
+        toggle->setTitle (toggle->getButtonText());
+        toggle->onClick = [this] { saveCaptureOptions(); };
+        addAndMakeVisible (*toggle);
+    }
+    lockToggle.setTooltip ("Shared with app Settings. Stops updates in all Remember instances; unlock to capture again.");
+    replaceToggle.setTooltip ("Off: a short capture keeps the old tail. On: only the new capture is kept.");
+    manualToggle.setTooltip ("Only this project. Saved with the DAW project; app Settings sets the default for new instances.");
+    manualToggle.onClick = [this]
+    {
+        auto options = processor.getEngine().getCaptureOptions();
+        options.manual = manualToggle.getToggleState();
+        processor.getEngine().setCaptureOptions (options);
+        processor.updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withNonParameterStateChanged (true));
+        refreshFromEngine();
+    };
+    RememberUI::bindColour (captureButton, juce::TextButton::buttonColourId, Pal::Action);
+    RememberUI::bindColour (captureButton, juce::TextButton::textColourOffId, Pal::OnAction);
+    captureButton.onClick = [this] { processor.getEngine().armCapture(); refreshFromEngine(); };
+    addAndMakeVisible (captureButton);
 
     // ── Project name editor ──────────────────────────────────────────────────
     nameEditor.setFont (RememberUI::font (16.0f, true));
@@ -87,6 +108,16 @@ void RememberEditor::refreshFromEngine()
     auto& eng   = processor.getEngine();
     auto  state = eng.getState();
     int   stInt = (int) state;
+    const auto options = eng.getCaptureOptions();
+    for (auto* toggle : { &manualToggle, &lockToggle, &replaceToggle }) toggle->setEnabled (! settingsRequest);
+    if (! settingsRequest)
+    {
+        manualToggle.setToggleState (options.manual, juce::dontSendNotification);
+        lockToggle.setToggleState (options.locked, juce::dontSendNotification);
+        replaceToggle.setToggleState (options.replace, juce::dontSendNotification);
+    }
+    captureButton.setEnabled (! settingsRequest && options.manual && ! eng.isPreviewLocked() && ! eng.isCaptureArmed() && state != RecordingEngine::State::Recording);
+    captureButton.setButtonText (eng.isCaptureArmed() ? "Armed for playback" : "Capture next play");
     const auto association = eng.getAssociationInfo();
     const bool followsFile = association.confirmed && association.source != RecordingEngine::Association::ManualRecording;
     nameEditor.setReadOnly (followsFile);
@@ -205,6 +236,8 @@ void RememberEditor::refreshFromEngine()
         statusText = "Project search unavailable; check Settings or Associate a file";
         statusColour = kError;
     }
+    if (options.locked && state != RecordingEngine::State::Error) statusText = "Preview updates locked; unlock to record";
+    else if (options.manual && state == RecordingEngine::State::Idle) statusText = eng.isCaptureArmed() ? "Armed: play from any position" : "Choose a position and arm the capture";
     statusLabel.setTooltip (statusText + (settingsMessage.isNotEmpty() ? "\n" + settingsMessage : juce::String{})
         + (association.problem.isNotEmpty() ? "\n" + association.problem : juce::String{})
         + "\nSkipped captures: " + juce::String (eng.getDroppedCaptures())
@@ -249,7 +282,7 @@ void RememberEditor::paint (juce::Graphics& g)
     paintProgressBar (g, { 28, 304, getWidth() - 56, 5 }, recordProgress);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (kSubtext));
-    g.drawText ("Automatic preview", 28, 326, 160, 22, juce::Justification::centredLeft);
+    g.drawText (processor.getEngine().getCaptureOptions().manual ? "Manual preview" : "Automatic preview", 28, 326, 160, 22, juce::Justification::centredLeft);
 }
 
 void RememberEditor::paintProgressBar (juce::Graphics& g,
@@ -279,7 +312,11 @@ void RememberEditor::resized()
     associationButton.setBounds (getWidth() - 116, 173, 88, 32);
     bpmKeyLabel.setBounds (28, 239, getWidth() - 56, 24);
     statusLabel.setBounds (28, 264, getWidth() - 56, 32);
-    versionLabel.setBounds (getWidth() - 200, 328, 172, 18);
+    manualToggle.setBounds (28, 348, getWidth() - 56, 30);
+    lockToggle.setBounds (28, 378, getWidth() - 56, 30);
+    replaceToggle.setBounds (28, 408, getWidth() - 56, 30);
+    captureButton.setBounds (28, 446, 174, 32);
+    versionLabel.setBounds (getWidth() - 200, 455, 172, 18);
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -351,6 +388,7 @@ void RememberEditor::refreshSettingsRequest()
     else
     {
         settingsFolder = request->snapshot.previews;
+        processor.getEngine().applySharedCaptureOptions (request->snapshot.capture);
         RememberUI::setDark (request->snapshot.darkAppearance);
         if (savingSettings)
         {
@@ -391,4 +429,14 @@ void RememberEditor::chooseProjectFile (const juce::String& expectedId)
             if (safe != nullptr && ! chooser.getResults().isEmpty())
                 safe->processor.getEngine().associateProjectFile (chooser.getResult(), expectedId);
         });
+}
+
+void RememberEditor::saveCaptureOptions()
+{
+    if (settingsRequest) return;
+    settingsMessage = "Saving shared recording options...";
+    settingsFailed = false;
+    settingsButton.setEnabled (false);
+    settingsRequest = SettingsManager::getInstance().setCaptureOptionsAsync (
+        { manualToggle.getToggleState(), lockToggle.getToggleState(), replaceToggle.getToggleState() });
 }

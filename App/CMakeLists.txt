@@ -29,6 +29,7 @@ target_sources(RememberApp PRIVATE
     Source/ReadAheadSource.cpp
     Source/WaveformEnvelope.cpp
     Source/ProjectListComponent.cpp
+    Source/ProjectListWorkflow.cpp
     Source/SettingsDialog.cpp
     Source/TagsEditorDialog.cpp
     Source/RecoveryChoiceDialog.cpp
@@ -92,9 +93,9 @@ if(REMEMBER_BUILD_TESTS)
         ../Tests/LibraryWatchTests.cpp
         ../Tests/UiTests.cpp Source/FoldersSidebarComponent.cpp Source/MainComponent.cpp
         ../Tests/RecoveryUiTests.cpp ../Tests/StartupTests.cpp
-        ../Tests/ShellTests.cpp Source/AppShell.cpp
+        ../Tests/ShellTests.cpp ../Tests/WorkflowTests.cpp Source/AppShell.cpp
         Source/WaveformPlayerComponent.cpp Source/ProjectScanner.cpp Source/LibraryWatch.cpp
-        Source/ProjectListComponent.cpp Source/TagsEditorDialog.cpp
+        Source/ProjectListComponent.cpp Source/ProjectListWorkflow.cpp Source/TagsEditorDialog.cpp
         Source/RecoveryChoiceDialog.cpp
         Source/SettingsDialog.cpp
         Source/ReadAheadSource.cpp Source/WaveformEnvelope.cpp
@@ -111,6 +112,8 @@ if(REMEMBER_BUILD_TESTS)
     target_include_directories(RememberAppTests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
     remember_copy_asan_runtime(RememberAppTests)
     add_test(NAME RememberAppRegression COMMAND RememberAppTests)
+    add_test(NAME RememberAppWorkflow COMMAND RememberAppTests --workflow)
+    set_tests_properties(RememberAppWorkflow PROPERTIES TIMEOUT 90)
     add_test(NAME RememberAppFrontend COMMAND RememberAppTests --frontend)
     set_tests_properties(RememberAppFrontend PROPERTIES TIMEOUT 90)
     set_tests_properties(RememberAppRegression PROPERTIES TIMEOUT 300)

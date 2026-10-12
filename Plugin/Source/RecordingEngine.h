@@ -28,6 +28,12 @@ public:
     void prepareAsync (double sampleRate, int maxBlockSize, SettingsManager::Reader);
     bool isPreparingSettings() const;
     void finishCapture();
+    void setCaptureOptions (CaptureOptions);
+    void applySharedCaptureOptions (CaptureOptions);
+    CaptureOptions getCaptureOptions() const;
+    void armCapture();
+    bool isCaptureArmed() const;
+    bool isPreviewLocked() const;
     void processBlock (const juce::AudioBuffer<float>&, juce::AudioPlayHead*, bool offline = false);
     void setOutputFolder (const juce::File&);
     void loadOutputFolderFromSettings (SettingsManager::Reader);

@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "../../Shared/RememberLookAndFeel.h"
 #include "ProjectScanner.h"
+#include "LibraryFilter.h"
 
 class ProjectListComponent;
 
@@ -20,6 +21,8 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override;
 
     std::function<void()>                 onSelect;
+    std::function<void(juce::ModifierKeys)> onSelectionGesture;
+    std::function<void()>                 onDetails, onRestore;
     std::function<void()>                 onPlay;
     std::function<void(bool)>             onFavoriteToggle;
     std::function<void(juce::String)>     onRenameCommitted;
@@ -64,6 +67,10 @@ public:
     void editTagsForSelected();
     void toggleFavoriteForSelected();
     void deleteSelected();
+    const juce::Array<ProjectEntry>& visibleEntries() const { return filtered; }
+    juce::Array<ProjectEntry> selectedEntries() const;
+    void selectEntry (const ProjectEntry&);
+    std::function<void (const juce::Array<ProjectEntry>&)> onVisibleEntriesChanged;
 
     std::function<void (const ProjectEntry&)> onEntrySelected;
     std::function<void (const ProjectEntry&)> onEntryPlay;
@@ -90,6 +97,18 @@ private:
     void recoverRecording (ProjectEntry, bool keep, bool confirmed,
                            std::shared_ptr<LibraryStore::RecoveryChoice> selection = {}, juce::String token = {});
     void applyFilter();
+    void configureWorkflow();
+    void showFilters();
+    void showActions();
+    void editDetails (ProjectEntry);
+    void saveCollection();
+    void restoreRecording (ProjectEntry);
+    void bulkEdit (juce::Array<ProjectEntry>, juce::String operation);
+    LibraryFilter filter;
+    juce::ComboBox collectionCombo, sortCombo, viewCombo;
+    juce::TextButton filtersBtn { "Filters" }, collectionBtn { "+" }, actionsBtn { "Actions" };
+    juce::var collections;
+    int view = 1;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void publishLibrary();
     void scheduleSearchDebounce();
@@ -108,6 +127,6 @@ private:
     bool         showFavOnly       { false };
     juce::String folderFilter;            // empty = no filter
 
-    static constexpr int kToolbarH = 102;
+    static constexpr int kToolbarH = 132;
     static constexpr int kRowH     = 64;
 };

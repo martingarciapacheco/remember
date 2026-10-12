@@ -246,7 +246,14 @@ void testAssociation (const juce::File& fixtureRoot)
         sourceIs (engine, Association::ManualRecording);
         std::unique_ptr<RememberEditor> editor (static_cast<RememberEditor*> (processor.createEditor())); editor->timerCallback();
         const auto snapshot = editor->createComponentSnapshot (editor->getLocalBounds());
-        check (snapshot.isValid() && snapshot.getWidth() == 440 && snapshot.getHeight() == 360, "Association editor has invalid bounds");
+        check (snapshot.isValid() && snapshot.getWidth() == 440 && snapshot.getHeight() == 496, "Association editor has invalid bounds");
+        int captureSwitches = 0;
+        for (auto* child : editor->getChildren())
+        {
+            check (editor->getLocalBounds().contains (child->getBounds()), "Association editor clips a control");
+            if (dynamic_cast<juce::ToggleButton*> (child) != nullptr) ++captureSwitches;
+        }
+        check (captureSwitches == 3, "Association editor omitted capture/lock/replacement switches");
         const auto artifact = juce::File::getCurrentWorkingDirectory().getChildFile ("artifacts/association-editor.png");
         check (LibraryStore::ensureDirectory (artifact.getParentDirectory()).wasOk(), "Cannot create editor artifact directory");
         juce::FileOutputStream stream (artifact);

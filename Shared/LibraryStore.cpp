@@ -561,6 +561,8 @@ juce::Result commitAudio (const juce::File& folder, const AudioRevision& audio,
         if (file.existsAsFile()) return juce::Result::fail ("Invalid audio manifest: " + file.getFullPathName());
         metadata = juce::var (new juce::DynamicObject());
     }
+    if ((bool) metadata.getProperty ("previewLocked", false))
+        return juce::Result::fail ("Preview is locked; audio was preserved");
     if (metadata.getProperty ("audioRevision", "").toString() != expected)
         return juce::Result::fail ("Audio revision changed during encoding; retry the merge");
     auto next = metadata.clone();
@@ -617,9 +619,61 @@ juce::Result deleteEntry (const juce::File& root, const juce::File& folder)
         return juce::Result::fail ("The DAW still owns this pending capture; close its session before deleting it");
     juce::DynamicObject::Ptr marker (new juce::DynamicObject());
     marker->setProperty ("deletedAt", juce::Time::getCurrentTime().toISO8601 (true));
+    marker->setProperty ("originalRelativePath", folder.getRelativePathFrom (root));
     auto result = writeJsonAtomically (deletionMarker (folder), juce::var (marker.get()));
     if (result.failed()) return result;
-    if (! folder.deleteRecursively()) return juce::Result::fail ("Cannot remove entry files: " + folder.getFullPathName());
+    const auto trashRoot = root.getChildFile (".trash");
+    if (trashRoot.isSymbolicLink()) return juce::Result::fail ("Trash folder must be inside the library");
+    if (auto created = ensureDirectory (trashRoot); created.failed()) return created;
+    const auto target = trashRoot.getChildFile (folder.getFileName());
+    if (target.exists() || ! folder.moveFileTo (target))
+    {
+        deletionMarker (folder).deleteFile();
+        return juce::Result::fail ("Cannot move entry to trash: " + folder.getFullPathName());
+    }
+    return juce::Result::ok();
+}
+
+juce::Result restoreEntry (const juce::File& root, const juce::File& folder)
+{
+    const auto trash = root.getChildFile (".trash");
+    if (folder.getParentDirectory() != trash || folder.isSymbolicLink() || trash.isSymbolicLink())
+        return juce::Result::fail ("Recording is outside the library trash");
+    const auto markerFile = root.getChildFile (".deleted").getChildFile (folder.getFileName() + ".json");
+    const auto marker = readJson (markerFile);
+    const auto relative = marker.getProperty ("originalRelativePath", "").toString();
+    if (relative.isEmpty() || juce::File::isAbsolutePath (relative) || relative.contains (".."))
+        return juce::Result::fail ("Trash entry has no valid original location");
+    const auto target = root.getChildFile (relative);
+    if (! (target.getParentDirectory() == root || target.getParentDirectory() == root.getChildFile (".pending")))
+        return juce::Result::fail ("Invalid original recording location");
+    if (target.getParentDirectory().isSymbolicLink()) return juce::Result::fail ("Original recording parent is outside the library");
+    Guard guard (target.getChildFile ("metadata.json"));
+    if (! guard.locked || target.exists()) return juce::Result::fail ("Original location is busy or occupied");
+    if (auto made = ensureDirectory (target.getParentDirectory()); made.failed()) return made;
+    if (! folder.moveFileTo (target)) return juce::Result::fail ("Cannot restore recording files");
+    if (! markerFile.deleteFile())
+    { target.moveFileTo (folder); return juce::Result::fail ("Cannot clear deletion marker; recording remains in trash"); }
+    return juce::Result::ok();
+}
+juce::Result purgeExpiredTrash (const juce::File& root, juce::Time now)
+{
+    const auto trash = root.getChildFile (".trash");
+    if (trash.isSymbolicLink()) return juce::Result::fail ("Invalid trash directory");
+    for (const auto& folder : trash.findChildFiles (juce::File::findDirectories, false))
+    {
+        if (folder.isSymbolicLink()) continue;
+        const auto markerFile = root.getChildFile (".deleted").getChildFile (folder.getFileName() + ".json");
+        const auto marker = readJson (markerFile);
+        const auto deleted = juce::Time::fromISO8601 (marker.getProperty ("deletedAt", "").toString());
+        if (deleted.toMilliseconds() <= 0 || now.toMilliseconds() - deleted.toMilliseconds() < 30LL * 24 * 60 * 60 * 1000) continue;
+        const auto relative = marker.getProperty ("originalRelativePath", "").toString();
+        if (relative.isEmpty() || juce::File::isAbsolutePath (relative) || relative.contains ("..")) continue;
+        const auto original = root.getChildFile (relative);
+        if (! original.isAChildOf (root) || original.getParentDirectory().isSymbolicLink()) continue;
+        Guard guard (original.getChildFile ("metadata.json"));
+        if (guard.locked && ! folder.deleteRecursively()) return juce::Result::fail ("Cannot remove expired trash: " + folder.getFullPathName());
+    }
     return juce::Result::ok();
 }
 

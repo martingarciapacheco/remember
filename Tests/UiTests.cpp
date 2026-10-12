@@ -25,12 +25,12 @@ struct SavedConfig
     }
 };
 void check (bool passed, const char* message) { if (! passed) throw std::runtime_error (message); }
-template<class Condition> void awaitUi (Condition condition, int timeoutMs = 10000)
+template<class Condition> void awaitUi (Condition condition, int timeoutMs = 10000, const char* reason = "UI fixture timed out")
 {
     const auto until = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
     while (! condition())
     {
-        check (juce::Time::getMillisecondCounter() < until, "UI fixture timed out");
+        check (juce::Time::getMillisecondCounter() < until, reason);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
     }
 }
@@ -630,6 +630,16 @@ void testRowInteractions (const juce::File& root)
 
 void testLibraryScene (const juce::File& root)
 {
+    const auto diagnostics = juce::File::getCurrentWorkingDirectory().getChildFile ("artifacts/scene-index.log");
+    check (diagnostics.getParentDirectory().createDirectory().wasOk(), "Cannot create scene diagnostics");
+    diagnostics.deleteFile();
+    juce::FileLogger logger (diagnostics, "Scene index diagnostics", 0);
+    struct RestoreLogger
+    {
+        juce::Logger* previous = juce::Logger::getCurrentLogger();
+        ~RestoreLogger() { juce::Logger::setCurrentLogger (previous); }
+    } restoreLogger;
+    juce::Logger::setCurrentLogger (&logger);
     SavedConfig restore;
     const auto library = root.getChildFile ("scene-library"), projects = root.getChildFile ("scene-projects");
     check (library.createDirectory().wasOk() && projects.createDirectory().wasOk(), "Cannot create full-scene library");
@@ -717,15 +727,26 @@ void testLibraryScene (const juce::File& root)
     check (selected && selected->onSelect, "Cannot select middle scene row"); selected->onSelect();
     const auto target = ProjectScanner::librarySnapshot()->entries[5000];
     check (clickedId == target.projectId && scene->keyPressed (juce::KeyPress ('F')), "Main favorite hotkey did not reach selected entry");
-    awaitUi ([&] { return (bool) LibraryStore::readJson (target.metadataFile).getProperty ("favorite", false); });
+    awaitUi ([&] { return (bool) LibraryStore::readJson (target.metadataFile).getProperty ("favorite", false); }, 10000, "Scene favorite commit did not complete");
     juce::TextButton* favorites = nullptr;
     for (auto* child : list->getChildren()) if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText().contains ("Favorites")) favorites = button;
     check (favorites != nullptr, "Favorites filter button is missing");
-    favorites->triggerClick(); awaitUi ([&] { return list->getNumRows() == 1; });
-    favorites->triggerClick(); awaitUi ([&] { return list->getNumRows() == 10000; });
+    favorites->triggerClick(); awaitUi ([&] { return list->getNumRows() == 1; }, 10000, "Scene favorite filter did not isolate one entry");
+    favorites->triggerClick(); awaitUi ([&] { return list->getNumRows() == 10000; }, 10000, "Scene favorites toggle did not restore all entries");
     juce::var patch (new juce::DynamicObject()); patch.getDynamicObject()->setProperty ("recordedAt", "2050-01-01T00:00:00Z");
     check (LibraryStore::patchJson (target.metadataFile, patch).wasOk(), "Cannot reorder selected scene entry");
-    awaitUi ([&] { return ProjectScanner::librarySnapshot()->entries[0].projectId == target.projectId && rows->getSelectedRow() == 0; });
+    try
+    {
+        awaitUi ([&] { return ProjectScanner::librarySnapshot()->entries[0].projectId == target.projectId && rows->getSelectedRow() == 0; }, 10000, "Scene publication did not preserve reordered selection by project ID");
+    }
+    catch (...)
+    {
+        const auto current = ProjectScanner::librarySnapshot();
+        std::cerr << "SCENE reorder target=" << target.projectId << " publishedFirst=" << current->entries[0].projectId
+            << " publishedDate=" << current->entries[0].recordedAt << " selectedRow=" << rows->getSelectedRow()
+            << " visibleFirst=" << list->visibleEntries()[0].projectId << " targetManifest=" << target.metadataFile.loadFileAsString() << std::endl;
+        throw;
+    }
     selected = dynamic_cast<ProjectRowComponent*> (rows->getComponentForRowNumber (0));
     check (selected && selected->onSelect, "Reordered selected row is missing"); selected->onSelect();
     check (clickedId == target.projectId, "Publication reordered selection by row number instead of identity");
@@ -743,7 +764,7 @@ void testLibraryScene (const juce::File& root)
     const auto closing = juce::Time::getMillisecondCounterHiRes(); scene.reset();
     const auto closeMs = juce::Time::getMillisecondCounterHiRes() - closing;
     check (closeMs < 200, "Closing a full library waited for its index worker");
-    awaitUi ([] { return ProjectScanner::pendingJobs() == 0 && WaveformPlayerComponent::pendingLoads() == 0; });
+    awaitUi ([] { return ProjectScanner::pendingJobs() == 0 && WaveformPlayerComponent::pendingLoads() == 0; }, 10000, "Scene closure left accepted jobs or readers pending");
     check (juce::Component::getNumCurrentlyModalComponents() == 0, "Full scene opened an unexpected settings/missing-project dialog");
     std::cout << "PASS: native full scene 100/1000/10000, recycled/last rows, search/folders/favorites, hotkey and reordered ID selection, minimum/large renders and deferred-close safety; close=" << closeMs << " ms\n";
 }

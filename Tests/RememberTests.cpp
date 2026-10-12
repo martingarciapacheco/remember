@@ -15,6 +15,7 @@
 #include "FeatureCacheTests.h"
 #include "RecoveryTests.h"
 #include "StressTests.h"
+#include "WorkflowCaptureTests.h"
 #include "../Shared/BackgroundRetirement.h"
 #include <iostream>
 #include <stdexcept>
@@ -225,6 +226,10 @@ int main (int argc, char** argv)
     int status = 0;
     try
     {
+        if (argc > 1 && juce::String (argv[1]) == "--workflow-capture")
+        {
+            testWorkflowCapture (root); root.deleteRecursively(); return 0;
+        }
         if (argc > 1 && juce::String (argv[1]) == "--frontend")
         {
             testPluginFrontend (root);

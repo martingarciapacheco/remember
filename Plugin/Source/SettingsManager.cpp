@@ -111,6 +111,7 @@ SettingsManager::Snapshot SettingsManager::readSnapshot (const juce::File& sourc
     result.quality = juce::jlimit (0, 10, (int) json.getProperty ("oggQuality", 4));
     result.mono = (bool) json.getProperty ("recordMono", false);
     result.darkAppearance = AppearanceSettings::isDark (json);
+    result.capture = CaptureOptions::fromJson (json);
     return result;
 }
 juce::File SettingsManager::getPreviewsFolder() const { return readSnapshot().previews; }
@@ -171,6 +172,19 @@ std::shared_ptr<SettingsManager::Request> SettingsManager::setAppearanceAsync (b
     return launchSettingsTask ([config, dark] (Request& request)
     {
         request.result = AppearanceSettings::save (dark);
+        if (request.result.wasOk()) populateSettingsRequest (request, config);
+    });
+}
+
+std::shared_ptr<SettingsManager::Request> SettingsManager::setCaptureOptionsAsync (CaptureOptions options) const
+{
+    const auto config = configFile;
+    return launchSettingsTask ([config, options] (Request& request)
+    {
+        auto patch = options.patch();
+        // The plugin edits its manual mode locally, never the creation default.
+        patch.getDynamicObject()->removeProperty ("manualCapture");
+        request.result = LibraryStore::patchJson (config, patch, true);
         if (request.result.wasOk()) populateSettingsRequest (request, config);
     });
 }

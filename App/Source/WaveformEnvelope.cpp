@@ -1,4 +1,5 @@
 #include "WaveformEnvelope.h"
+#include "LoudnessMeter.h"
 
 juce::Result WaveformEnvelope::read (const juce::File& file, const std::function<bool()>& cancelled)
 {
@@ -12,12 +13,14 @@ juce::Result WaveformEnvelope::read (const juce::File& file, const std::function
     const auto bins = (int) juce::jlimit ((juce::int64) 1, (juce::int64) 2048, (length + 511) / 512);
     for (auto& channel : channels) channel.resize ((size_t) bins);
     juce::AudioBuffer<float> audio (2, 8192);
+    LoudnessMeter meter (reader->sampleRate, (int) reader->numChannels);
     for (juce::int64 position = 0; position < length;)
     {
         if (cancelled()) { for (auto& channel : channels) channel.clear(); return juce::Result::ok(); }
         const auto count = (int) juce::jmin ((juce::int64) 8192, length - position);
         if (! reader->read (&audio, 0, count, position, true, true))
         { for (auto& channel : channels) channel.clear(); return juce::Result::fail ("Waveform read failed: " + file.getFullPathName()); }
+        meter.add (audio, count);
         for (int i = 0; i < count; ++i)
         {
             const auto bin = (size_t) ((long double) (position + i) * bins / length);
@@ -31,5 +34,6 @@ juce::Result WaveformEnvelope::read (const juce::File& file, const std::function
         }
         position += count;
     }
+    normalizationGain = meter.gain(); loudness = meter.integrated(); decodedPeak = meter.peak;
     return juce::Result::ok();
 }

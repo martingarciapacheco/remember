@@ -10,6 +10,7 @@
 #include "UiTests.h"
 #include "StartupTests.h"
 #include "ShellTests.h"
+#include "WorkflowTests.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -57,6 +58,20 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+        if (argc == 2 && juce::String (argv[1]) == "--scene")
+        {
+            testLibraryScene (root);
+            ProjectScanner::beginShutdown();
+            awaitUi ([] { return ProjectScanner::shutdownReady(); });
+            return 0;
+        }
+        if (argc == 2 && juce::String (argv[1]) == "--workflow")
+        {
+            testWorkflowFeatures (root);
+            ProjectScanner::beginShutdown();
+            awaitUi ([] { return ProjectScanner::shutdownReady(); });
+            return 0;
+        }
         if (argc == 2 && juce::String (argv[1]) == "--frontend")
         {
             testFrontendDesign (root);

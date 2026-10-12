@@ -259,6 +259,8 @@ void RecordingEngine::Core::prepare (double newSampleRate, int maxBlockSize)
 
 void RecordingEngine::Core::prepare (double newSampleRate, int maxBlockSize, const SettingsManager::Snapshot& settings)
 {
+    sharedCaptureOptions.store (false);
+    applySharedCaptureOptions (settings.capture);
     if (settings.previews != juce::File{}) setOutputFolder (settings.previews);
     {
         juce::ScopedLock lock (projectLock);
@@ -270,6 +272,7 @@ void RecordingEngine::Core::prepare (double newSampleRate, int maxBlockSize, con
 
 void RecordingEngine::Core::prepareAsync (double rate, int block, SettingsManager::Reader reader)
 {
+    sharedCaptureOptions.store (true);
     auto request = SettingsManager::readSnapshotAsync (std::move (reader));
     {
         juce::ScopedLock lock (projectLock);
@@ -325,6 +328,7 @@ void RecordingEngine::Core::applyPreparation()
         fail ("Prepare settings", LibraryStore::configFile(), request->result.getErrorMessage());
         return;
     }
+    applySharedCaptureOptions (request->snapshot.capture);
     recordSeconds.store ((float) juce::jlimit (15, 120, request->snapshot.seconds));
     {
         juce::ScopedLock lock (resultsLock);
@@ -443,6 +447,7 @@ void RecordingEngine::Core::startCapture (double bpm)
         slot.queued.store (false);
         slot.bpm = std::isfinite (bpm) && bpm > 0 ? bpm : 0;
         slot.minimumBpm = slot.maximumBpm = slot.bpm;
+        slot.replace = replacePreview.load();
         slot.generation = generation.load();
         slot.sequence = ++nextSequence;
         capturedBpm.store (bpm);
@@ -481,7 +486,7 @@ void RecordingEngine::Core::finishCapture()
 void RecordingEngine::Core::processBlock (const juce::AudioBuffer<float>& buffer,
                                     juce::AudioPlayHead* playHead, bool offline)
 {
-    if (associationBlocked.load (std::memory_order_acquire))
+    if (isPreviewLocked() || associationBlocked.load (std::memory_order_acquire))
     {
         finishCapture(); wasPlaying = false; previousTime = -1; return;
     }
@@ -514,9 +519,13 @@ void RecordingEngine::Core::processBlock (const juce::AudioBuffer<float>& buffer
     const bool jumpedForward = previousTime >= 0 && time > previousTime + previousBlockSeconds + blockSeconds * 2;
     // A stopped block, seek, or another loop must not be appended to the preview.
     if (activeSlot >= 0 && (! playing || movedBack || jumpedForward)) finishCapture();
-    if (playing && time >= 0 && time <= 0.5 / captureRate && (! wasPlaying || movedBack))
-        startCapture (position.hasValue() ? position->getBpm().orFallback (0) : 0);
-    else if (playing && ! wasPlaying && time > 0.5 / captureRate)
+    const bool manual = manualCapture.load() == 1;
+    const bool requested = playing && manual && captureArmed.exchange (false);
+    if (requested || (! manual && playing && time >= 0 && time <= 0.5 / captureRate && (! wasPlaying || movedBack)))
+    {
+        if (activeSlot < 0) startCapture (position.hasValue() ? position->getBpm().orFallback (0) : 0);
+    }
+    else if (! manual && playing && ! wasPlaying && time > 0.5 / captureRate)
         transportIssue.store (TransportIssue::LateStart);
     if (playing && activeSlot >= 0)
     {
@@ -1027,6 +1036,13 @@ void RecordingEngine::Core::run()
 {
     for (;;)
     {
+        const auto now = juce::Time::getMillisecondCounter();
+        if (sharedCaptureOptions.load() && manualCapture.load() != -1 && now - optionsPolledAt >= 1000)
+        {
+            optionsPolledAt = now;
+            const auto options = SettingsManager::readSnapshot (LibraryStore::configFile());
+            if (options.fingerprint.isNotEmpty()) applySharedCaptureOptions (options.capture);
+        }
         applyCommands();
         applyPreparation();
         applyRestoration();
@@ -1034,6 +1050,7 @@ void RecordingEngine::Core::run()
         // Commands arriving during migration override that discovery result
         // before selecting a context for the next capture.
         applyCommands();
+        refreshEntryPreferences();
         processReadySlots();
         if (pendingCaptures.load() == 0 && ! capturing.load()) activateOutputFolder (desiredOutputFolder);
         publishProject();
@@ -1181,7 +1198,7 @@ void RecordingEngine::Core::AnalysisThread::run()
 
 void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialMetadata)
 {
-    const auto cancelled = [&] { return threadShouldExit() || slot.generation != generation.load(); };
+    const auto cancelled = [&] { return threadShouldExit() || previewsLocked.load() || slot.generation != generation.load(); };
     const auto sampleRate = slot.rate;
     const auto channels = slot.mono ? 1 : 2;
     if (! outputFolder.isDirectory()) { fail ("Open library", outputFolder, "Folder is unavailable"); return; }
@@ -1222,6 +1239,8 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
             }
         }
         const auto previousMetadata = loadMetadata (folder);
+        if (previewsLocked.load() || (bool) previousMetadata.getProperty ("previewLocked", false))
+        { state.store (entry.confirmed ? State::Done : State::Pending); return; }
         if (hasPreviousStorage && previousMetadata.getProperty ("audioRevision", "").toString() != integrity.revision)
         {
             if (attempt < 2) continue;
@@ -1235,7 +1254,7 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
         if (previousFile.existsAsFile() && ! previous.valid())
         { fail ("Read previous audio", previousFile, "Unsupported or corrupt preview"); return; }
         const auto prefix = juce::jmin (slot.limit, juce::jmin (slot.count, captured.length()));
-        const auto oldLength = previous.valid() ? juce::jmin (slot.limit, previous.length()) : 0;
+        const auto oldLength = ! slot.replace && previous.valid() ? juce::jmin (slot.limit, previous.length()) : 0;
         const auto length = juce::jmax (prefix, oldLength);
         if (length <= 0) { fail ("Read capture", slot.capturedPcm, "Capture is empty"); return; }
         // An analysis reader may outlive a cancelled encoder. Shared ownership
@@ -1375,6 +1394,8 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
         obj->setProperty ("recordSeconds", (int) std::llround (slot.limit / sampleRate));
         obj->setProperty ("oggQuality", slot.quality);
         obj->setProperty ("recordMono", slot.mono);
+        obj->setProperty ("previewUpdatePolicy", slot.replace ? "replace" : "preserve-tail");
+        obj->setProperty ("preservedTailSeconds", juce::jmax (0.0, (double) (oldLength - prefix) / sampleRate));
         obj->setProperty ("bpm", bpm);
         obj->setProperty ("bpmSource", slot.bpm > 0 ? "host" : "estimated");
         obj->setProperty ("bpmConfidence", slot.bpm > 0 ? 1.0 : bpmEstimate.confidence);
@@ -1408,6 +1429,12 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
         HeavyPermit commitPermit (cancelled);
         if (! commitPermit.acquired) { state.store (State::Idle); return; }
         const auto commitStarted = juce::Time::getMillisecondCounterHiRes();
+        if (sharedCaptureOptions.load())
+        {
+            const auto latestOptions = SettingsManager::readSnapshot (LibraryStore::configFile());
+            if (latestOptions.fingerprint.isNotEmpty() && latestOptions.capture.locked)
+            { applySharedCaptureOptions (latestOptions.capture); state.store (entry.confirmed ? State::Done : State::Pending); return; }
+        }
         const auto committed = LibraryStore::commitAudio (folder, *revision, metadata,
             previousMetadata.getProperty ("audioRevision", "").toString(), cancelled);
         const auto commitMs = juce::Time::getMillisecondCounterHiRes() - commitStarted;
@@ -1548,6 +1575,7 @@ void RecordingEngine::Core::loadOutputFolderFromSettings (SettingsManager::Reade
             if (! reader || epoch != generation.load()) return;
             const auto settings = reader();
             if (threadShouldExit() || epoch != generation.load()) return;
+            applySharedCaptureOptions (settings.capture);
             {
                 juce::ScopedLock result (projectLock);
                 // Preparation or an explicit editor choice has newer evidence.
@@ -1750,9 +1778,13 @@ void RecordingEngine::Core::saveState (juce::XmlElement& xml) const
     xml.setAttribute ("projectAssociation", associationName (snapshot.association));
     xml.setAttribute ("manualAssociationConfirmed", snapshot.confirmed);
     xml.setAttribute ("previewsFolder", destination.getFullPathName());
+    xml.setAttribute ("manualCapture", manualCapture.load() == 1);
 }
 void RecordingEngine::Core::restoreState (const juce::XmlElement& xml, SettingsManager::Reader sharedSettings)
 {
+    // Legacy projects must not inherit a default enabled after they were saved.
+    manualCapture.store (xml.getBoolAttribute ("manualCapture", false) ? 1 : 0);
+    captureArmed.store (false);
     Entry replacement;
     auto id = xml.getStringAttribute ("projectId");
     if (id.isNotEmpty() && ! juce::Uuid (id).isNull()) replacement.id = juce::Uuid (id).toString();
@@ -1858,7 +1890,7 @@ int RecordingEngine::Core::getTotalSeconds() const noexcept
 juce::String RecordingEngine::Core::getDetectedKey() const
 {
     juce::ScopedLock lock (resultsLock);
-    return detectedKey;
+    return manualDetectedKey.isNotEmpty() ? manualDetectedKey : detectedKey;
 }
 juce::String RecordingEngine::Core::getLastSavedTime() const
 {
@@ -1875,6 +1907,7 @@ juce::String RecordingEngine::Core::getLastError() const
 size_t RecordingEngine::Core::getProcessCaptureBytes() noexcept { return captureBytes.load(); }
 juce::String RecordingEngine::Core::getTransportWarning() const
 {
+    if (entryPreviewLocked.load()) return "This project's preview is locked in app details";
     switch (transportIssue.load())
     {
         case TransportIssue::None: return {};
@@ -1886,4 +1919,39 @@ juce::String RecordingEngine::Core::getTransportWarning() const
         case TransportIssue::Budget: return "Capture memory is busy; retry preparation after pending jobs finish";
     }
     return {};
+}
+
+void RecordingEngine::Core::setCaptureOptions (CaptureOptions value)
+{
+    manualCapture.store (value.manual ? 1 : 0); previewsLocked.store (value.locked); replacePreview.store (value.replace);
+    if (! value.manual || value.locked) captureArmed.store (false);
+}
+CaptureOptions RecordingEngine::Core::getCaptureOptions() const
+{ return { manualCapture.load() == 1, previewsLocked.load(), replacePreview.load() }; }
+void RecordingEngine::Core::applySharedCaptureOptions (CaptureOptions value)
+{
+    int uninitialised = -1;
+    manualCapture.compare_exchange_strong (uninitialised, value.manual ? 1 : 0);
+    previewsLocked.store (value.locked); replacePreview.store (value.replace);
+    if (manualCapture.load() != 1 || value.locked) captureArmed.store (false);
+}
+void RecordingEngine::Core::armCapture()
+{ if (manualCapture.load() == 1 && ! isPreviewLocked()) captureArmed.store (true); }
+bool RecordingEngine::Core::isCaptureArmed() const { return captureArmed.load(); }
+
+void RecordingEngine::Core::refreshEntryPreferences()
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    const auto identity = outputFolder.getFullPathName() + "/" + entry.id;
+    if (identity == lastPreferenceId && now - preferencesReadAt < 1000) return;
+    const auto metadata = outputFolder != juce::File{} ? loadMetadata (entryFolder()) : juce::var{};
+    const auto bpm = (double) metadata.getProperty ("bpmOverride", 0.0);
+    manualDetectedBpm.store (std::isfinite (bpm) && bpm > 0 ? bpm : 0);
+    entryPreviewLocked.store ((bool) metadata.getProperty ("previewLocked", false));
+    {
+        juce::ScopedLock lock (resultsLock);
+        manualDetectedKey = metadata.getProperty ("keyOverride", "").toString();
+    }
+    if (entryPreviewLocked.load()) captureArmed.store (false);
+    preferencesReadAt = now; lastPreferenceId = identity;
 }

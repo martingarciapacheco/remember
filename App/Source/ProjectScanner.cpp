@@ -3,6 +3,7 @@
 #include "../../Shared/ProjectIdentity.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/BackgroundRetirement.h"
+#include "../../Shared/OrganizationUndo.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
@@ -15,19 +16,17 @@
 bool ProjectEntry::matches (const juce::String& term) const
 {
     if (term.isEmpty()) return true;
-    auto t = term.toLowerCase();
-    if (name.toLowerCase().contains (t)) return true;
-    if (daw .toLowerCase().contains (t)) return true;
-    if (key .toLowerCase().contains (t)) return true;
-    for (auto& tag : tags)
-        if (tag.toLowerCase().contains (t)) return true;
-    return false;
+    const auto haystack = (name + " " + daw + " " + key + " " + status + " " + notes + " " + tags.joinIntoString (" ")).toLowerCase();
+    for (const auto& token : juce::StringArray::fromTokens (term.toLowerCase(), " \t", "\""))
+        if (! haystack.contains (token.unquoted())) return false;
+    return true;
 }
 
 juce::Result ProjectEntry::save (const juce::StringArray& scalarIntents, const std::function<bool()>& cancelled) const
 {
     if (baseline.getDynamicObject() == nullptr) return juce::Result::fail ("Entry has no edit snapshot");
     const auto old = baseline.clone();
+    std::vector<OrganizationUndo::Edit> undoEdits;
     const auto pathChanged = scalarIntents.contains ("projectPath") || projectPath != old.getProperty ("projectPath", "").toString();
     const auto nameChanged = scalarIntents.contains ("projectName") || name != old.getProperty ("projectName", "").toString();
     juce::String fileId, fingerprint;
@@ -56,8 +55,20 @@ juce::Result ProjectEntry::save (const juce::StringArray& scalarIntents, const s
             const auto currentPath = object.getProperty ("projectPath").toString();
             if (currentPath.isEmpty() || ! juce::File (currentPath).existsAsFile()) object.setProperty ("projectName", name);
         }
+        const std::pair<juce::String, juce::var> scalars[] = {
+            { "status", status }, { "notes", notes }, { "bpmOverride", bpmOverride },
+            { "keyOverride", keyOverride }, { "previewLocked", previewLocked } };
+        for (const auto& field : scalars)
+        {
+            const auto fallback = field.first == "status" ? juce::var ("Idea")
+                : field.first == "bpmOverride" ? juce::var (0.0)
+                : field.first == "previewLocked" ? juce::var (false) : juce::var ("");
+            if (scalarIntents.contains (field.first) || field.second != old.getProperty (field.first, fallback))
+                object.setProperty (field.first, field.second);
+        }
         auto mergeArray = [&] (const juce::Identifier& field, const juce::StringArray& wanted)
         {
+            const auto before = object.getProperty (field);
             juce::StringArray previous, latest;
             if (auto* array = old.getProperty (field, juce::var{}).getArray())
                 for (auto& item : *array) previous.add (item.toString());
@@ -68,6 +79,8 @@ juce::Result ProjectEntry::save (const juce::StringArray& scalarIntents, const s
             juce::Array<juce::var> merged;
             for (const auto& item : latest) merged.add (item);
             object.setProperty (field, merged);
+            const auto beforeStrings = OrganizationUndo::strings (before);
+            if (beforeStrings != latest) undoEdits.push_back ({ metadataFile, projectId, field, beforeStrings, latest });
         };
         mergeArray ("tags", tags);
         mergeArray ("folders", folders);
@@ -79,11 +92,22 @@ juce::Result ProjectEntry::save (const juce::StringArray& scalarIntents, const s
         return result;
     }
     // Baseline describes this in-memory copy, not somebody else's newer fields.
+    OrganizationUndo::Batch undoBatch;
+    for (const auto& change : undoEdits)
+    {
+        juce::Array<juce::var> before, after;
+        for (const auto& item : change.before) before.add (item);
+        for (const auto& item : change.after) after.add (item);
+        OrganizationUndo::record (change.file, change.identity, change.field, before, after);
+    }
     baseline = old.clone();
     auto* object = baseline.getDynamicObject();
     object->setProperty ("projectPath", projectPath);
     object->setProperty ("projectName", name);
     object->setProperty ("favorite", favorite);
+    object->setProperty ("status", status); object->setProperty ("notes", notes);
+    object->setProperty ("bpmOverride", bpmOverride); object->setProperty ("keyOverride", keyOverride);
+    object->setProperty ("previewLocked", previewLocked);
     for (auto field : { "tags", "folders" })
     {
         juce::Array<juce::var> values;
@@ -221,7 +245,7 @@ static juce::Result saveConfigField (const juce::String& field, const juce::var&
 }
 
 static juce::var recordingSettingsPatch (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr)
 {
     juce::var patch (new juce::DynamicObject());
     auto* object = patch.getDynamicObject();
@@ -232,23 +256,28 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
     object->setProperty ("recordSeconds", juce::jlimit (15, 120, seconds));
     object->setProperty ("oggQuality", juce::jlimit (0, 10, quality));
     object->setProperty ("recordMono", mono);
+    if (capture)
+    {
+        const auto options = capture->patch();
+        for (const auto& property : options.getDynamicObject()->getProperties()) object->setProperty (property.name, property.value);
+    }
     return patch;
 }
 
 juce::Result ProjectScanner::saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture)
 {
-    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono), true);
+    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture), true);
 }
 juce::Result ProjectScanner::rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                              int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                             juce::File& originalBackup)
+                                             juce::File& originalBackup, const CaptureOptions* capture)
 {
     originalBackup = {};
     const auto current = readSettings();
     if (current.result.wasOk() || ! current.canRebuild)
         return juce::Result::fail ("Configuration is valid or unavailable: " + configFilePath().getFullPathName() + ". Reload Settings before saving");
-    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono),
+    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture),
                                             fingerprint, originalBackup);
 }
 
@@ -302,6 +331,7 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
         juce::jlimit (0, 10, (int) config.getProperty ("oggQuality", 4)),
         (bool) config.getProperty ("recordMono", false) };
     snapshot.result = result; snapshot.fingerprint = fingerprint; snapshot.canRebuild = result.failed() && readable;
+    snapshot.capture = CaptureOptions::fromJson (config);
     snapshot.darkAppearance = config.getProperty ("appearance", "light").toString() == "dark";
     return snapshot;
 }
@@ -427,6 +457,7 @@ public:
             const auto configResult = readLibraryConfig (config, previousConfig.isEmpty());
             if (configResult.failed()) { publishError (configResult.getErrorMessage()); waitForRetry(); continue; }
             const auto root = previewsFromConfig (config);
+            if (root.isDirectory()) LibraryStore::purgeExpiredTrash (root);
             if (root == juce::File{} && snapshot()->sourceRoot != juce::File{})
             {
                 publishError ("Remember configuration has no preview folder: " + configFilePath().getFullPathName()
@@ -470,8 +501,11 @@ public:
                 for (const auto& path : *explicitPaths) addPath (path.toString());
             const juce::String configSignature = root.getFullPathName()
                 + juce::JSON::toString (config.getProperty ("explicitFolders", juce::var{}))
-                + config.getProperty ("sidebarSort", "name_asc").toString();
+                + config.getProperty ("sidebarSort", "name_asc").toString()
+                + juce::JSON::toString (config.getProperty ("smartCollections", juce::var{}));
+            auto trash = ProjectScanner::scanTrash (root);
             std::vector<juce::String> signature;
+            for (const auto& item : trash) signature.push_back ("trash:" + item.metadataFile.getFullPathName() + item.deletedAt);
             signature.reserve ((size_t) entries.size());
             for (const auto& entry : entries)
             {
@@ -480,7 +514,7 @@ public:
                 // String and no JSON serialisation on every unchanged refresh.
                 signature.push_back (entry.metadataFile.getFullPathName() + "\n" + entry.metadataStamp
                     + "\n" + entry.previewOgg.getFullPathName() + "\n" + entry.projectPath
-                    + (entry.projectAvailable ? "\n1" : "\n0") + "\n" + juce::String ((int) entry.pendingOwner) + "\n" + entry.storageError);
+                    + (entry.projectAvailable ? "\n1" : "\n0") + "\n" + juce::String ((int) entry.pendingOwner) + "\n" + entry.storageError + "\n" + entry.projectProblem);
                 for (const auto& path : entry.folders) addPath (path);
             }
             paths.sort (true);
@@ -494,6 +528,8 @@ public:
                 next->folders = std::move (paths);
                 next->sort = sortFromConfig (config);
                 next->sourceRoot = root;
+                next->trash = std::move (trash);
+                next->smartCollections = config.getProperty ("smartCollections", juce::var{}).clone();
                 std::unordered_set<std::string> knownTags;
                 for (const auto& entry : next->entries)
                 {
@@ -606,7 +642,7 @@ void ProjectScanner::editAsync (std::function<juce::Result()> work, std::functio
     static juce::ThreadPool edits (1);
     edits.addJob ([ticket, work = std::move (work), completion = std::move (completion)]
     {
-        auto result = work();
+        auto result = [&] { OrganizationUndo::Batch undoBatch; return work(); }();
         libraryIndex().refresh();
         if (completion) juce::MessageManager::callAsync ([ticket, completion, result] { completion (result); });
     });
@@ -666,8 +702,27 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
     thread_local std::unordered_map<std::string, RepairAttempt> repairAttempts;
     auto stampOf = [] (const juce::File& file)
     {
+       #if JUCE_WINDOWS
+        // Identity, timestamp and length must describe the same file handle.
+        // Avoid two additional attribute queries for every cached entry.
+        const auto handle = CreateFileW (file.getFullPathName().toWideCharPointer(), 0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        if (handle == INVALID_HANDLE_VALUE) return juce::String (":0:0");
+        BY_HANDLE_FILE_INFORMATION info {};
+        const bool valid = GetFileInformationByHandle (handle, &info) != FALSE;
+        CloseHandle (handle);
+        if (! valid) return juce::String (":0:0");
+        const auto ticks = ((uint64_t) info.ftLastWriteTime.dwHighDateTime << 32) | info.ftLastWriteTime.dwLowDateTime;
+        const auto modified = (juce::int64) (ticks / 10000) - 11644473600000LL;
+        const auto length = ((uint64_t) info.nFileSizeHigh << 32) | info.nFileSizeLow;
+        return juce::String::toHexString ((juce::int64) info.dwVolumeSerialNumber) + ":"
+            + juce::String::toHexString ((juce::int64) info.nFileIndexHigh) + ":"
+            + juce::String::toHexString ((juce::int64) info.nFileIndexLow) + ":"
+            + juce::String (modified) + ":" + juce::String ((juce::int64) length);
+       #else
         return ProjectIdentity::fileId (file) + ":"
             + juce::String (file.getLastModificationTime().toMilliseconds()) + ":" + juce::String (file.getSize());
+       #endif
     };
     if (metrics) *metrics = {};
     ProjectIdentity::CandidateIndex localIndex;
@@ -684,6 +739,23 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
 
     std::unordered_set<std::string> seen;
     std::unordered_set<std::string> deleted;
+    struct ProjectObservation { bool exists = false, idRead = false; juce::String id; };
+    std::unordered_map<std::string, ProjectObservation> projectObservations;
+    auto projectAvailable = [&] (const ProjectEntry& entry)
+    {
+        if (entry.projectPath.isEmpty()) return false;
+        auto key = entry.projectPath.replaceCharacter ('\\', '/');
+       #if JUCE_WINDOWS
+        key = key.toLowerCase();
+       #endif
+        auto found = projectObservations.find (key.toStdString());
+        if (found == projectObservations.end())
+            found = projectObservations.emplace (key.toStdString(), ProjectObservation { juce::File (entry.projectPath).existsAsFile() }).first;
+        auto& observation = found->second;
+        if (observation.exists && entry.projectFileId.isNotEmpty() && ! observation.idRead)
+        { observation.id = ProjectIdentity::fileId (juce::File (entry.projectPath)); observation.idRead = true; }
+        return observation.exists && (entry.projectFileId.isEmpty() || observation.id == entry.projectFileId);
+    };
     juce::Array<juce::File> directories, markers, pendingDirectories;
     auto pendingRoot = root.getChildFile (".pending");
     const auto rootIdentity = ProjectIdentity::fileId (root);
@@ -792,6 +864,15 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
             e.daw          = json.getProperty ("daw",         "").toString();
             e.key          = json.getProperty ("key",         "").toString();
             e.bpm          = (double) json.getProperty ("bpm", 0.0);
+            e.status = json.getProperty ("status", "Idea").toString();
+            e.notes = json.getProperty ("notes", "").toString();
+            e.bpmOverride = (double) json.getProperty ("bpmOverride", 0.0);
+            e.keyOverride = json.getProperty ("keyOverride", "").toString();
+            e.bpmSource = e.bpmOverride > 0 ? "manual" : json.getProperty ("bpmSource", "estimated").toString();
+            e.keyConfidence = (double) json.getProperty ("keyConfidence", 0.0);
+            e.previewLocked = (bool) json.getProperty ("previewLocked", false);
+            if (e.bpmOverride > 0) e.bpm = e.bpmOverride;
+            if (e.keyOverride.isNotEmpty()) e.key = e.keyOverride;
             e.favorite     = (bool)   json.getProperty ("favorite", false);
             e.pending      = pending;
             e.pendingOwner = owner;
@@ -837,8 +918,9 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
         }
 
         // Auto-resolve project path on first sight (or if file vanished)
-        e.projectAvailable = e.projectPath.isNotEmpty() && juce::File (e.projectPath).existsAsFile()
-            && (e.projectFileId.isEmpty() || ProjectIdentity::fileId (juce::File (e.projectPath)) == e.projectFileId);
+        // Multiple recordings can refer to the same DAW file. Observe it once
+        // per scan; the next scan and Open in DAW independently revalidate it.
+        e.projectAvailable = projectAvailable (e);
         bool needsResolve = ! e.projectAvailable;
         if (needsResolve && ! e.pending)
         {
@@ -870,12 +952,23 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
             {
                 // Preserve the historical path on disk for future relocation,
                 // but never launch a replacement file that failed identity checks.
+                e.projectProblem = "Project file identity changed; assign the original file";
                 e.projectPath.clear();
                 e.baseline = e.baseline.clone();
                 e.baseline.getDynamicObject()->setProperty ("projectPath", "");
             }
         }
 
+        if (! e.pending && ! e.projectAvailable && e.projectProblem.isEmpty())
+        {
+            if (e.projectPath.isEmpty()) e.projectProblem = "No project file assigned";
+            else
+            {
+                const auto volume = std::filesystem::u8path (e.projectPath.toStdString()).root_path().u8string();
+                e.projectProblem = ! volume.empty() && ! juce::File (juce::String::fromUTF8 (volume.c_str())).isDirectory()
+                    ? "Project drive unavailable; reconnect it and Refresh" : "Project file not found; Assign path or check search folders";
+            }
+        }
         results.add (e);
     }
 
@@ -915,8 +1008,10 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
 
 static juce::Result editExplicitFolders (const std::function<void(juce::StringArray&)>& edit)
 {
-    return LibraryStore::updateJson (configFilePath(), [&] (juce::DynamicObject& object)
+    juce::var before, after;
+    const auto result = LibraryStore::updateJson (configFilePath(), [&] (juce::DynamicObject& object)
     {
+        before = object.getProperty ("explicitFolders");
         juce::StringArray list;
         if (auto* values = object.getProperty ("explicitFolders").getArray())
             for (const auto& value : *values) list.addIfNotAlreadyThere (value.toString());
@@ -924,8 +1019,11 @@ static juce::Result editExplicitFolders (const std::function<void(juce::StringAr
         juce::Array<juce::var> values;
         for (const auto& value : list) values.add (value);
         object.setProperty ("explicitFolders", values);
+        after = values;
         return juce::Result::ok();
     }, true);
+    if (result.wasOk()) OrganizationUndo::record (configFilePath(), {}, "explicitFolders", before, after);
+    return result;
 }
 
 static juce::Result transformEntryFolders (const std::function<juce::String(const juce::String&)>& transform)
@@ -939,8 +1037,10 @@ static juce::Result transformEntryFolders (const std::function<juce::String(cons
         if (directory.getFileName().startsWithChar ('.')) continue;
         const auto file = directory.getChildFile ("metadata.json");
         if (! file.existsAsFile()) continue;
+        juce::var before, after; juce::String identity;
         auto result = LibraryStore::updateJson (file, [&] (juce::DynamicObject& object)
         {
+            before = object.getProperty ("folders"); identity = object.getProperty ("projectId").toString();
             juce::StringArray transformed;
             if (auto* folders = object.getProperty ("folders").getArray())
                 for (const auto& value : *folders)
@@ -951,8 +1051,10 @@ static juce::Result transformEntryFolders (const std::function<juce::String(cons
             juce::Array<juce::var> folders;
             for (const auto& folder : transformed) folders.add (folder);
             object.setProperty ("folders", folders);
+            after = folders;
             return juce::Result::ok();
         });
+        if (result.wasOk()) OrganizationUndo::record (file, identity, "folders", before, after);
         if (result.failed()) failures.add (result.getErrorMessage());
     }
     return failures.isEmpty() ? juce::Result::ok()
@@ -966,11 +1068,13 @@ juce::StringArray ProjectScanner::getAllFolderPaths()
 
 juce::Result ProjectScanner::createFolder (const juce::String& path)
 {
+    OrganizationUndo::Batch undoBatch;
     if (path.trim().isEmpty()) return juce::Result::fail ("Folder name is empty");
     return editExplicitFolders ([&] (juce::StringArray& list) { list.addIfNotAlreadyThere (path); });
 }
 juce::Result ProjectScanner::deleteFolder (const juce::String& path)
 {
+    OrganizationUndo::Batch undoBatch;
     if (path.isEmpty()) return juce::Result::fail ("Cannot delete the All collection");
     auto remove = [&] (const juce::String& value)
     { return value == path || value.startsWith (path + "/") ? juce::String{} : value; };
@@ -983,6 +1087,7 @@ juce::Result ProjectScanner::deleteFolder (const juce::String& path)
 }
 juce::Result ProjectScanner::renameFolder (const juce::String& oldPath, const juce::String& newPath)
 {
+    OrganizationUndo::Batch undoBatch;
     if (oldPath.isEmpty() || newPath.isEmpty()) return juce::Result::fail ("Folder path is empty");
     if (oldPath == newPath) return juce::Result::ok();
     if (newPath.startsWith (oldPath + "/")) return juce::Result::fail ("Cannot move a folder inside itself");
@@ -1069,3 +1174,29 @@ void ProjectScanner::setRecordMono (bool m)
 {
     saveConfigField ("recordMono", m);
 }
+
+juce::Array<ProjectEntry> ProjectScanner::scanTrash (const juce::File& root)
+{
+    juce::Array<ProjectEntry> result;
+    for (const auto& folder : root.getChildFile (".trash").findChildFiles (juce::File::findDirectories, false))
+    {
+        if (folder.isSymbolicLink()) continue;
+        const auto marker = LibraryStore::readJson (root.getChildFile (".deleted").getChildFile (folder.getFileName() + ".json"));
+        if (marker.getDynamicObject() == nullptr) continue;
+        const auto json = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
+        ProjectEntry e; e.trashed = true; e.metadataFile = folder.getChildFile ("metadata.json");
+        e.projectId = json.getProperty ("projectId", folder.getFileName()).toString();
+        e.name = json.getProperty ("projectName", folder.getFileName()).toString();
+        e.daw = json.getProperty ("daw", "").toString();
+        e.deletedAt = marker.getProperty ("deletedAt", "").toString();
+        e.recordedAt = e.deletedAt;
+        result.add (e);
+    }
+    return result;
+}
+juce::Result ProjectScanner::restoreEntry (const ProjectEntry& entry)
+{
+    return LibraryStore::restoreEntry (getPreviewsFolder(), entry.metadataFile.getParentDirectory());
+}
+bool ProjectScanner::canUndoOrganization() { return OrganizationUndo::available(); }
+juce::Result ProjectScanner::undoOrganization() { return OrganizationUndo::undo(); }
