@@ -33,9 +33,14 @@ public:
     void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool sel) override
     {
         if (row < 0 || row >= owner.projectsFolders.size()) return;
-        g.fillAll (RememberUI::colour (sel ? Pal::Elevated : Pal::BgDeep));
+        g.fillAll (RememberUI::colour (Pal::Elevated));
+        if (sel)
+        {
+            g.setColour (RememberUI::colour (Pal::Selected));
+            g.fillRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h), RememberUI::controlRadius);
+        }
         g.setColour (RememberUI::colour (Pal::Border));
-        g.drawHorizontalLine (h - 1, 0.0f, (float) w);
+        g.drawHorizontalLine (h - 1, RememberUI::controlRadius, (float) w - RememberUI::controlRadius);
 
         g.setColour (RememberUI::colour (Pal::Text));
         g.setFont (RememberUI::font (12.0f));
@@ -106,9 +111,10 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     styleLabel (appearanceCaption, 13.0f, Pal::Text, true);
     styleLabel (appearanceHint, 11.0f, Pal::Subtext);
     appearanceCombo.setTitle ("Appearance");
+    appearanceCombo.addItem ("System (automatic)", 3);
     appearanceCombo.addItem ("Light", 1);
     appearanceCombo.addItem ("Dark", 2);
-    appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+    appearanceCombo.setSelectedId (RememberUI::appearanceMode == RememberAppearance::System ? 3 : RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
     appearanceCombo.onChange = [this] { saveAppearance(); };
     addAndMakeVisible (appearanceCaption);
     addAndMakeVisible (appearanceHint);
@@ -286,18 +292,19 @@ void SettingsDialog::saveZoom()
 void SettingsDialog::saveAppearance()
 {
     if (! settingsLoaded || appearanceSaving) return;
-    const bool dark = appearanceCombo.getSelectedId() == 2;
+    const auto dark = appearanceCombo.getSelectedId() == 3 ? RememberAppearance::System
+        : appearanceCombo.getSelectedId() == 2 ? RememberAppearance::Dark : RememberAppearance::Light;
     appearanceSaving = true;
     appearanceCombo.setEnabled (false);
     okBtn.setEnabled (false);
     ProjectScanner::editAsync ([dark] { return AppearanceSettings::save (dark); },
         [safe = juce::Component::SafePointer<SettingsDialog> (this), dark] (juce::Result result)
         {
-            if (result.wasOk()) RememberUI::setDark (dark);
+            if (result.wasOk()) RememberUI::setAppearanceMode (dark);
             if (safe == nullptr) return;
             safe->appearanceSaving = false;
             safe->appearanceCombo.setEnabled (true);
-            safe->appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+            safe->appearanceCombo.setSelectedId (RememberUI::appearanceMode == RememberAppearance::System ? 3 : RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
             safe->refreshLabels();
             if (result.failed())
             {
@@ -343,8 +350,8 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             safe->recordMono = settings->mono;
             // JUCE Button::setToggleState ignores changes while disabled.
             for (auto* child : safe->getChildren()) child->setEnabled (true);
-            if (result.wasOk()) RememberUI::setDark (settings->darkAppearance);
-            safe->appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+            if (result.wasOk()) RememberUI::setAppearanceMode (settings->appearance);
+            safe->appearanceCombo.setSelectedId (RememberUI::appearanceMode == RememberAppearance::System ? 3 : RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
             safe->appearanceCombo.setEnabled (result.wasOk());
             if (result.wasOk()) RememberUI::appZoom().set (settings->interfaceZoom);
             safe->zoomCombo.setSelectedId (RememberUI::appZoom().percent, juce::dontSendNotification);

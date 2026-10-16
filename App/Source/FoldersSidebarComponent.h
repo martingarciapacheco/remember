@@ -71,6 +71,6 @@ private:
 
     static constexpr int kHeaderH = 48;
 
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
+    juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FoldersSidebarComponent)
 };

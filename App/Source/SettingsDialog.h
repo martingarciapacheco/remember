@@ -53,7 +53,7 @@ private:
     juce::Label zoomHint { {}, "Text and controls in the app. Saved immediately." };
     juce::ComboBox zoomCombo;
     juce::Label appearanceCaption { {}, "Appearance" };
-    juce::Label appearanceHint { {}, "Saved immediately for the app and plugin" };
+    juce::Label appearanceHint { {}, "System follows light and dark automatically" };
     juce::ComboBox appearanceCombo;
 
     juce::Label  header;
@@ -81,7 +81,7 @@ private:
     // List of configured project root folders (each row has a delete button)
     class FoldersListModel;
     std::unique_ptr<FoldersListModel> foldersModel;
-    juce::ListBox    foldersList;
+    RememberUI::RecordingListBox foldersList;
     juce::TextButton addProjectsBtn { "+ Add folder" };
     juce::TextButton refreshProjectsBtn { "Search folders" };
     juce::Label searchStatus;
@@ -100,6 +100,6 @@ private:
 
     std::unique_ptr<juce::FileChooser> chooser;
 
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
+    juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsDialog)
 };

@@ -7,6 +7,7 @@
 #include "../App/Source/SettingsDialog.h"
 #include "../App/Source/RecoveryChoiceDialog.h"
 #include "../Shared/LibraryStore.h"
+#include "../Shared/AppearanceSettings.h"
 #include <iostream>
 #include <stdexcept>
 #include <set>
@@ -58,6 +59,7 @@ void testFrontendDesign (const juce::File& root)
 {
     testFrontendTypography();
     testAppearanceContrast();
+    testAutomaticAppearance();
     SavedConfig restoreConfig;
     const auto library = root.getChildFile ("design-library");
     const auto projects = root.getChildFile ("projects");
@@ -101,6 +103,17 @@ void testFrontendDesign (const juce::File& root)
     auto* launchers = childOf<DawLauncher> (*scene);
     check (launchers != nullptr, "Installed DAW launchers are missing");
     awaitUi ([&] { return launchers->hasDiscoveredApplications(); }, 15000, "DAW discovery did not finish");
+    awaitUi ([] { return ProjectScanner::pendingJobs() == 0; });
+    check (RememberUI::appearanceMode == RememberAppearance::System
+        && RememberUI::isDark() == juce::Desktop::getInstance().isDarkModeActive(), "App did not start in system appearance");
+    auto lightReady = std::make_shared<bool> (false);
+    ProjectScanner::editAsync ([] { return AppearanceSettings::save (RememberAppearance::Light); },
+        [lightReady] (juce::Result result)
+        {
+            check (result.wasOk(), "Cannot configure light snapshot appearance");
+            RememberUI::setAppearanceMode (RememberAppearance::Light); *lightReady = true;
+        });
+    awaitUi ([&] { return *lightReady; });
     auto* launcherViewport = childOf<juce::Viewport> (*launchers);
     check (launcherViewport != nullptr, "DAW launchers cannot scroll");
     for (auto* child : launcherViewport->getViewedComponent()->getChildren())
@@ -156,7 +169,7 @@ void testFrontendDesign (const juce::File& root)
                 "Selection does not cover both horizontal edges of the preview surface");
         }
         // Capture the native tooltip with the same semantic look and feel.
-        auto tips = juce::SharedResourcePointer<juce::TooltipWindow>::getSharedObjectWithoutCreating();
+        auto tips = juce::SharedResourcePointer<RememberUI::TooltipWindow>::getSharedObjectWithoutCreating();
         if (tips.has_value())
         {
             (*tips)->setLookAndFeel (&scene->getLookAndFeel());
@@ -284,6 +297,8 @@ void testFrontendDesign (const juce::File& root)
         juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
         auto* folders = childOf<juce::ListBox> (settings);
         check (folders != nullptr, "Settings has no folder list");
+        const auto foldersImage = folders->createComponentSnapshot (folders->getLocalBounds(), true, 1, juce::SoftwareImageType{});
+        check (foldersImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Settings folder list retained square corners");
         auto* row = folders->getComponentForRowNumber (0);
         check (row != nullptr, "Settings folder row is missing");
         auto* remove = childOf<juce::TextButton> (*row);
@@ -322,12 +337,12 @@ void testFrontendDesign (const juce::File& root)
         check (ProjectScanner::readSettings().interfaceZoom == 125, "App failed to persist zoom");
         appearance->setSelectedId (2, juce::sendNotificationSync);
         awaitUi ([&] { return RememberUI::isDark() && appearance->isEnabled(); });
-        check (LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() == "dark", "App did not persist dark appearance");
+        check (LibraryStore::readJson (LibraryStore::configFile())["appearanceMode"].toString() == "dark", "App did not persist dark appearance");
         check (search->findColour (juce::TextEditor::backgroundColourId) == RememberUI::colour (Pal::Elevated), "Existing search did not change appearance");
         check (rows->getSelectedRow() == 0 && player->hasLoadedEntry(), "Appearance switch lost selection or loaded audio");
         saveImage (settings, "apple-settings-dark.png", true);
         check (ProjectScanner::saveSettings (library, { projects }, 60, 4, false).wasOk()
-            && ProjectScanner::readSettings().darkAppearance, "Saving recording options discarded appearance");
+            && ProjectScanner::readSettings().appearance == RememberAppearance::Dark, "Saving recording options discarded appearance");
         saveImage (*scene, "apple-app-dark.png", true);
         scene->setSize (640, 480);
         saveImage (*scene, "apple-app-dark-minimum.png", true);
@@ -364,8 +379,14 @@ void testFrontendDesign (const juce::File& root)
         check (appearance && appearance->getSelectedId() == 2, "Reopened settings lost dark appearance");
         appearance->setSelectedId (1, juce::sendNotificationSync);
         awaitUi ([&] { return ! RememberUI::isDark() && appearance->isEnabled(); });
-        check (LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() == "light", "App did not persist light appearance");
+        check (LibraryStore::readJson (LibraryStore::configFile())["appearanceMode"].toString() == "light", "App did not persist light appearance");
         check (search->findColour (juce::TextEditor::textColourId) == RememberUI::colour (Pal::Text), "Switching back left dark text colours");
+        appearance->setSelectedId (3, juce::sendNotificationSync);
+        awaitUi ([&] { return appearance->isEnabled() && RememberUI::appearanceMode == RememberAppearance::System; });
+        check (RememberUI::isDark() == juce::Desktop::getInstance().isDarkModeActive()
+            && LibraryStore::readJson (LibraryStore::configFile())["appearanceMode"].toString() == "system",
+            "App did not persist or resume automatic system appearance");
+        saveImage (reopened, "apple-settings-system.png", true);
     }
     {
         auto tags = TagsEditorDialog::create ("Midnight sketches", { "Ambient", "Work in progress" }, [] (juce::StringArray) {});
@@ -1000,7 +1021,7 @@ void testLibraryScene (const juce::File& root)
     scene->setSize (1024, 768);
     juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
     saveImage (*scene, "scene-10000.png");
-    auto sharedTip = juce::SharedResourcePointer<juce::TooltipWindow>::getSharedObjectWithoutCreating();
+    auto sharedTip = juce::SharedResourcePointer<RememberUI::TooltipWindow>::getSharedObjectWithoutCreating();
     check (sharedTip.has_value(), "Full scene never enabled its configured tooltips");
     const auto closing = juce::Time::getMillisecondCounterHiRes(); scene.reset();
     const auto closeMs = juce::Time::getMillisecondCounterHiRes() - closing;

@@ -127,7 +127,7 @@ private:
     RememberUI::RecordingListBox listBox;
     juce::Label       libraryStatus;
     juce::Label       itemCount;
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
+    juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
     juce::Component::SafePointer<juce::DialogWindow> recoveryWindow;
 
     juce::Array<ProjectEntry> allEntries;

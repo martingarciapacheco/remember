@@ -335,7 +335,7 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
         (bool) config.getProperty ("recordMono", false) };
     snapshot.result = result; snapshot.fingerprint = fingerprint; snapshot.canRebuild = result.failed() && readable;
     snapshot.capture = CaptureOptions::fromJson (config);
-    snapshot.darkAppearance = config.getProperty ("appearance", "light").toString() == "dark";
+    snapshot.appearance = appearanceFromConfig (config);
     snapshot.interfaceZoom = (int) config.getProperty ("appZoom", 100);
     return snapshot;
 }

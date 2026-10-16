@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "RememberTypography.h"
+#include "AppearanceMode.h"
 
 // Shared semantic tokens for the native app, plugin and their dialogs.
 namespace Pal
@@ -15,7 +16,17 @@ inline constexpr int recordingRowHeight = 48;
 inline constexpr int recordingRowPadding = 6;
 inline constexpr int recordingRowActionSize = 32;
 inline constexpr float surfaceRadius = 12.0f;
-inline constexpr float recordingRowRadius = 8.0f;
+inline constexpr float controlRadius = 8.0f;
+inline constexpr float smallRadius = 4.0f;
+inline constexpr float recordingRowRadius = controlRadius;
+inline float capsuleRadius (juce::Rectangle<float> bounds) { return bounds.getHeight() * 0.5f; }
+
+class TooltipWindow : public juce::TooltipWindow
+{
+public:
+    explicit TooltipWindow (juce::Component* parent = nullptr) : juce::TooltipWindow (parent)
+    { setOpaque (! juce::Desktop::canUseSemiTransparentWindows()); }
+};
 inline constexpr int zoomPercentages[] = { 50, 75, 90, 100, 125, 150, 200 };
 inline int validZoom (int percent)
 {
@@ -83,6 +94,8 @@ private:
 };
 // Message-thread state, shared by Remember roots in this process, never the host.
 inline bool darkAppearance = false;
+inline RememberAppearance appearanceMode = RememberAppearance::System;
+inline void setAppearanceMode (RememberAppearance);
 inline bool isDark() { return darkAppearance; }
 inline juce::Colour colour (uint32_t token)
 {
@@ -146,12 +159,12 @@ inline void refreshColours (juce::Component& component)
     component.repaint();
 }
 
-inline void panel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius = 12.0f)
+inline void panel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius = surfaceRadius)
 {
     g.setColour (RememberUI::colour (Pal::Content));
     g.fillRoundedRectangle (bounds, radius);
     g.setColour (RememberUI::colour (Pal::Border).withAlpha (0.65f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), radius, 1.0f);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), juce::jmax (0.0f, radius - 0.5f), 1.0f);
 }
 
 // Original geometric icons, kept in code so they render crisply at host DPI.
@@ -346,6 +359,29 @@ public:
     }
     juce::Font getComboBoxFont (juce::ComboBox&) override { return font(); }
     juce::Font getPopupMenuFont() override { return font(); }
+    void preparePopupMenuWindow (juce::Component& window) override
+    {
+        juce::LookAndFeel_V4::preparePopupMenuWindow (window);
+        window.setOpaque (! juce::Desktop::canUseSemiTransparentWindows());
+    }
+    int getPopupMenuBorderSize() override { return 6; }
+    void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
+    {
+        if (! juce::Desktop::canUseSemiTransparentWindows()) g.fillAll (RememberUI::colour (Pal::Content));
+        panel (g, juce::Rectangle<float> (0, 0, (float) w, (float) h));
+    }
+    void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area, bool separator, bool active,
+                            bool highlighted, bool ticked, bool submenu, const juce::String& text,
+                            const juce::String& shortcut, const juce::Drawable* drawable,
+                            const juce::Colour* textColour) override
+    {
+        juce::Graphics::ScopedSaveState saved (g);
+        juce::Path contour;
+        contour.addRoundedRectangle (area.toFloat().reduced (2, 0), controlRadius);
+        g.reduceClipRegion (contour);
+        juce::LookAndFeel_V4::drawPopupMenuItem (g, area, separator, active, highlighted, ticked,
+                                               submenu, text, shortcut, drawable, textColour);
+    }
 
     juce::TextLayout tooltipLayout (const juce::String& text)
     {
@@ -367,9 +403,12 @@ public:
     }
     void drawTooltip (juce::Graphics& g, const juce::String& text, int w, int h) override
     {
-        g.fillAll (findColour (juce::TooltipWindow::backgroundColourId));
+        const auto bounds = juce::Rectangle<float> (0, 0, (float) w, (float) h);
+        if (! juce::Desktop::canUseSemiTransparentWindows()) g.fillAll (findColour (juce::TooltipWindow::backgroundColourId));
+        g.setColour (findColour (juce::TooltipWindow::backgroundColourId));
+        g.fillRoundedRectangle (bounds, controlRadius);
         g.setColour (findColour (juce::TooltipWindow::outlineColourId));
-        g.drawRect (0, 0, w, h);
+        g.drawRoundedRectangle (bounds.reduced (0.5f), controlRadius - 0.5f, 1);
         tooltipLayout (text).draw (g, juce::Rectangle<float> (8, 4, (float) w - 16, (float) h - 8));
     }
 
@@ -377,10 +416,10 @@ public:
     {
         auto bounds = juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1);
         g.setColour (RememberUI::colour (down ? Pal::Selected : Pal::Content));
-        g.fillRoundedRectangle (bounds, 7);
+        g.fillRoundedRectangle (bounds, controlRadius);
         const bool focused = box.hasKeyboardFocus (true);
         g.setColour (RememberUI::colour (focused ? Pal::Accent : Pal::Border));
-        g.drawRoundedRectangle (bounds, 7, focused ? 2.0f : 1.0f);
+        g.drawRoundedRectangle (bounds, controlRadius, focused ? 2.0f : 1.0f);
         g.setColour (RememberUI::colour (Pal::Subtext).withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.4f));
         const float x = (float) w - 17, y = (float) h * 0.5f;
         juce::Path arrow;
@@ -394,9 +433,9 @@ public:
         {
             const auto box = juce::Rectangle<float> (6, button.getHeight() * 0.5f - 9, 18, 18);
             g.setColour (RememberUI::colour (button.getToggleState() ? Pal::Action : (over || down ? Pal::Elevated : Pal::Content)));
-            g.fillRoundedRectangle (box, 4);
+            g.fillRoundedRectangle (box, smallRadius);
             g.setColour (RememberUI::colour (button.hasKeyboardFocus (false) ? Pal::Accent : Pal::Border));
-            g.drawRoundedRectangle (box, 4, button.hasKeyboardFocus (false) ? 2.0f : 1.0f);
+            g.drawRoundedRectangle (box, smallRadius, button.hasKeyboardFocus (false) ? 2.0f : 1.0f);
             if (button.getToggleState())
             {
                 g.setColour (RememberUI::colour (Pal::OnAction));
@@ -410,13 +449,13 @@ public:
         const auto opacity = button.isEnabled() ? 1.0f : 0.4f;
         auto colour = RememberUI::colour (button.getToggleState() ? Pal::Action : Pal::Subtext);
         if (over || down) colour = colour.darker (down ? 0.15f : 0.05f);
-        g.setColour (colour.withMultipliedAlpha (opacity)); g.fillRoundedRectangle (track, 9);
+        g.setColour (colour.withMultipliedAlpha (opacity)); g.fillRoundedRectangle (track, capsuleRadius (track));
         g.setColour (juce::Colours::white.withMultipliedAlpha (opacity));
         g.fillEllipse (button.getToggleState() ? 18.0f : 4.0f, track.getY() + 2, 14, 14);
         if (button.hasKeyboardFocus (false))
         {
             g.setColour (RememberUI::colour (Pal::Accent));
-            g.drawRoundedRectangle (track.expanded (2), 11, 1.5f);
+            g.drawRoundedRectangle (track.expanded (2), capsuleRadius (track.expanded (2)), 1.5f);
         }
         g.setColour (button.findColour (juce::ToggleButton::textColourId).withMultipliedAlpha (opacity));
         g.setFont (font());
@@ -432,11 +471,12 @@ public:
         if (! b.isEnabled()) colour = colour.withMultipliedAlpha (0.45f);
         g.setColour (colour);
         if ((bool) b.getProperties()["rememberTransportPrimary"]) g.fillEllipse (bounds);
-        else g.fillRoundedRectangle (bounds, 7);
+        else g.fillRoundedRectangle (bounds, controlRadius);
         if (b.hasKeyboardFocus (false))
         {
             g.setColour (RememberUI::colour (Pal::Accent));
-            g.drawRoundedRectangle (bounds, 7, 2);
+            if ((bool) b.getProperties()["rememberTransportPrimary"]) g.drawEllipse (bounds, 2);
+            else g.drawRoundedRectangle (bounds, controlRadius, 2);
         }
     }
 
@@ -454,14 +494,27 @@ public:
     void fillTextEditorBackground (juce::Graphics& g, int w, int h, juce::TextEditor& e) override
     {
         g.setColour (e.findColour (juce::TextEditor::backgroundColourId));
-        g.fillRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1), 7);
+        g.fillRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1), controlRadius);
     }
     void drawTextEditorOutline (juce::Graphics& g, int w, int h, juce::TextEditor& e) override
     {
         const bool focused = e.hasKeyboardFocus (true) && ! e.isReadOnly();
         g.setColour (RememberUI::colour (focused ? Pal::Accent : Pal::Border));
-        g.drawRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1), 7, focused ? 2.0f : 1.0f);
+        g.drawRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1), controlRadius, focused ? 2.0f : 1.0f);
     }
+};
+
+// One native OS listener per module, retained only while UI roots exist.
+// An injectable read source lets tests deliver OS notifications without changing
+// the user's desktop setting. No timer, filesystem work or host theme mutation.
+class SystemAppearance final : public juce::DarkModeSettingListener
+{
+public:
+    explicit SystemAppearance (std::function<bool()> reader = [] { return juce::Desktop::getInstance().isDarkModeActive(); });
+    ~SystemAppearance() override;
+    void darkModeSettingChanged() override;
+private:
+    std::function<bool()> read;
 };
 
 // Each root owns a reference, including detached test components and dialogs.
@@ -473,6 +526,7 @@ struct Style final
     ~Style() { roots().removeFirstMatchingValue (&owner); owner.setLookAndFeel (nullptr); }
     static juce::Array<juce::Component*>& roots()
     { static juce::Array<juce::Component*> values; return values; }
+    juce::SharedResourcePointer<SystemAppearance> systemAppearance;
     juce::SharedResourcePointer<LookAndFeel> look;
     juce::Component& owner;
 };
@@ -484,11 +538,32 @@ inline void setDark (bool dark)
     look->applyPalette();
     juce::Array<juce::Component::SafePointer<juce::Component>> roots;
     for (auto* root : Style::roots()) roots.add (root);
+    auto& desktop = juce::Desktop::getInstance();
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+        if (auto* window = desktop.getComponent (i); &window->getLookAndFeel() == &look.get())
+            roots.add (window);
     for (auto root : roots)
     {
         if (root == nullptr) continue;
         refreshColours (*root);
         root->sendLookAndFeelChange();
     }
+}
+
+inline void setAppearanceMode (RememberAppearance mode)
+{
+    appearanceMode = mode;
+    setDark (mode == RememberAppearance::System ? juce::Desktop::getInstance().isDarkModeActive()
+                                               : mode == RememberAppearance::Dark);
+}
+inline SystemAppearance::SystemAppearance (std::function<bool()> reader) : read (std::move (reader))
+{
+    juce::Desktop::getInstance().addDarkModeSettingListener (this);
+    darkModeSettingChanged();
+}
+inline SystemAppearance::~SystemAppearance() { juce::Desktop::getInstance().removeDarkModeSettingListener (this); }
+inline void SystemAppearance::darkModeSettingChanged()
+{
+    if (appearanceMode == RememberAppearance::System) setDark (read());
 }
 }

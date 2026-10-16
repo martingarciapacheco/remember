@@ -41,7 +41,7 @@ public:
         if (sel)
         {
             g.setColour (RememberUI::colour (Pal::Selected));
-            g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 6, (float) h - 4), 7);
+            g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 6, (float) h - 4), RememberUI::controlRadius);
         }
 
         g.setColour (RememberUI::colour (sel ? Pal::Accent : Pal::Text));

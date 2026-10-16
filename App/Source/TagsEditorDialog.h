@@ -75,6 +75,6 @@ private:
     juce::Rectangle<int> chipsArea;
     juce::Rectangle<int> suggestArea;
 
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
+    juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TagsEditorDialog)
 };

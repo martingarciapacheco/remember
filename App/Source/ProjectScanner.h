@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include "../../Shared/CaptureOptions.h"
+#include "../../Shared/AppearanceMode.h"
 
 struct ProjectEntry
 {
@@ -60,7 +61,7 @@ public:
         juce::Result result = juce::Result::ok();
         juce::String fingerprint;
         bool canRebuild = false;
-        bool darkAppearance = false;
+        RememberAppearance appearance = RememberAppearance::System;
         int interfaceZoom = 100;
         CaptureOptions capture;
     };

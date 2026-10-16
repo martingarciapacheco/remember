@@ -16,6 +16,7 @@ void testPluginFrontend (const juce::File& root)
 {
     testFrontendTypography();
     testAppearanceContrast();
+    testAutomaticAppearance();
     auto* originalLookAndFeel = &juce::LookAndFeel::getDefaultLookAndFeel();
     const auto library = root.getChildFile ("design-library");
     if (library.createDirectory().failed()) throw std::runtime_error ("Cannot create plugin design library");
@@ -25,6 +26,7 @@ void testPluginFrontend (const juce::File& root)
     config.getDynamicObject()->setProperty ("oggQuality", 6);
     config.getDynamicObject()->setProperty ("recordMono", true);
     config.getDynamicObject()->setProperty ("futureSetting", "preserved");
+    config.getDynamicObject()->setProperty ("appearance", "dark"); // legacy preference now defaults to System
     if (LibraryStore::writeJsonAtomically (LibraryStore::configFile(), config).failed())
         throw std::runtime_error ("Cannot configure plugin design library");
     {
@@ -45,6 +47,10 @@ void testPluginFrontend (const juce::File& root)
             }
         };
         ready();
+        if (RememberUI::appearanceMode != RememberAppearance::System
+            || RememberUI::isDark() != juce::Desktop::getInstance().isDarkModeActive())
+            throw std::runtime_error ("Plugin did not start in system appearance");
+        editor->applyAppearance (false); ready();
         if (&juce::LookAndFeel::getDefaultLookAndFeel() != originalLookAndFeel)
             throw std::runtime_error ("Plugin changed the host global LookAndFeel");
         for (auto* child : editor->getChildren())
@@ -110,7 +116,7 @@ void testPluginFrontend (const juce::File& root)
         editor->applyAppearance (true);
        #endif
         ready();
-        if (! RememberUI::isDark() || LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() != "dark")
+        if (! RememberUI::isDark() || LibraryStore::readJson (LibraryStore::configFile())["appearanceMode"].toString() != "dark")
             throw std::runtime_error ("Plugin failed to save dark appearance");
         for (auto* child : editor->getChildren())
             if (auto* text = dynamic_cast<juce::TextEditor*> (child))
@@ -121,7 +127,7 @@ void testPluginFrontend (const juce::File& root)
         editor.reset (static_cast<RememberEditor*> (processor.createEditor())); ready();
         if (! RememberUI::isDark()) throw std::runtime_error ("Plugin reopen failed to restore dark appearance");
         editor->applyAppearance (false); ready();
-        if (RememberUI::isDark() || LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() != "light")
+        if (RememberUI::isDark() || LibraryStore::readJson (LibraryStore::configFile())["appearanceMode"].toString() != "light")
             throw std::runtime_error ("Plugin failed to restore light appearance");
         if (SettingsManager::getInstance().readSnapshot().previews != library)
             throw std::runtime_error ("Appearance edit changed the output folder");
@@ -140,6 +146,14 @@ void testPluginFrontend (const juce::File& root)
             if (auto* label = dynamic_cast<juce::Label*> (child)) appearanceError |= label->getText().containsIgnoreCase ("config");
         if (! appearanceError) throw std::runtime_error ("Failed appearance edit hid its error");
         if (! LibraryStore::configFile().replaceWithText (validConfig)) throw std::runtime_error ("Cannot restore appearance fixture");
+        editor->applyAppearance (RememberAppearance::System); ready();
+        if (RememberUI::isDark() != juce::Desktop::getInstance().isDarkModeActive()
+            || LibraryStore::readJson (LibraryStore::configFile())["appearanceMode"].toString() != "system")
+            throw std::runtime_error ("Plugin did not resume automatic system appearance");
+        editor.reset(); editor.reset (static_cast<RememberEditor*> (processor.createEditor())); ready();
+        if (RememberUI::appearanceMode != RememberAppearance::System
+            || RememberUI::isDark() != juce::Desktop::getInstance().isDarkModeActive())
+            throw std::runtime_error ("Plugin reopen did not retain system appearance");
         editor->applyOutputFolder (root.getChildFile ("unavailable-design-folder"));
         ready();
         bool errorVisible = false;

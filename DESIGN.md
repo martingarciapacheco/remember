@@ -13,7 +13,11 @@ are design guidance; Remember remains a native JUCE application and VST3.
 
 ## Visual language
 
-Support Light and Dark through Appearance in Settings in both app and plugin.
+Default to System (automatic) through Appearance in Settings in both app and
+plugin, with explicit Light and Dark overrides. Read the native OS setting on
+UI creation and listen to JUCE dark-mode notifications for live changes. Keep
+one listener per UI module, scoped to live interface roots; no polling or audio
+thread access. Existing profiles with the old `appearance` key adopt System.
 Light uses white content surfaces and a neutral sidebar. Dark uses a charcoal
 base (#141416), a #1C1C1E sidebar and lighter #242426 content / #2C2C30 controls;
 never replace the base with pure black. Adapt foregrounds, selection, icons,
@@ -29,7 +33,7 @@ depth. These are custom JUCE palettes informed by that guidance, not fixed Apple
 system colours. Text contrast must be at least 4.5:1 in both modes. Keep the
 action fill distinct from link/focus blue so white button labels stay readable.
 Use `RememberUI::colour` for paint and `bindColour` for control overrides so
-existing controls update live. Save `appearance` independently and atomically
+existing controls update live. Save `appearanceMode` (`system`, `light`, `dark`) independently and atomically
 in shared config.json on a worker; restore it on startup/editor creation.
 Changing appearance applies immediately after saving; Cancel in the app's
 settings only cancels its other pending edits. Never alter a DAW's global theme.
@@ -46,8 +50,14 @@ References: [Apple Fonts and licence](https://developer.apple.com/fonts/) and
 Use 13–14 for
 controls/body, 12–13 for supporting text, 20–24 for screen titles. Build hierarchy
 with weight and spacing. Use sentence case. Keep 16–24 logical pixels around
-major groups and 6–12 between related controls. Surface radii are 12; control
-radii are 7. Preserve native window frames on Windows and macOS.
+major groups and 6–12 between related controls. Use the shared radius family:
+12 for panels and menu surfaces, 8 for controls, previews, folder selections and
+tooltips, and 4 for small checkboxes. Borders follow the same contour with their
+stroke inset accounted for. Inner waveform surfaces use 8 within their outer 12
+panel. Switches and progress tracks are capsules with radius half their height;
+primary transport controls stay circular and their focus rings match. Icon
+strokes retain their own geometry. Preserve native window frames on Windows and
+macOS rather than clipping platform controls to custom rounded shapes.
 
 Original vector symbols render at host DPI; give icon buttons accessible titles,
 descriptions and tooltips. Do not bundle SF fonts or SF Symbols for Windows.

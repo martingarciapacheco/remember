@@ -718,7 +718,7 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
 
     // Waveform background
     g.setColour (RememberUI::colour (Pal::BgDeep));
-    g.fillRoundedRectangle (waveArea.toFloat(), 8.0f);
+    g.fillRoundedRectangle (waveArea.toFloat(), RememberUI::controlRadius);
 
     if (waveform && ! waveform->channels[0].empty() && ! waveArea.isEmpty())
     {

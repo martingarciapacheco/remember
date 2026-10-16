@@ -111,7 +111,7 @@ SettingsManager::Snapshot SettingsManager::readSnapshot (const juce::File& sourc
     result.seconds = juce::jlimit (15, 120, (int) json.getProperty ("recordSeconds", 60));
     result.quality = juce::jlimit (0, 10, (int) json.getProperty ("oggQuality", 4));
     result.mono = (bool) json.getProperty ("recordMono", false);
-    result.darkAppearance = AppearanceSettings::isDark (json);
+    result.appearance = appearanceFromConfig (json);
     result.interfaceZoom = ZoomSettings::read (json, true);
     result.capture = CaptureOptions::fromJson (json);
     return result;
@@ -178,7 +178,7 @@ std::shared_ptr<SettingsManager::Request> SettingsManager::setZoomAsync (int per
     });
 }
 
-std::shared_ptr<SettingsManager::Request> SettingsManager::setAppearanceAsync (bool dark) const
+std::shared_ptr<SettingsManager::Request> SettingsManager::setAppearanceAsync (RememberAppearance dark) const
 {
     const auto config = configFile;
     return launchSettingsTask ([config, dark] (Request& request)

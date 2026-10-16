@@ -16,7 +16,8 @@ public:
     // The native folder selector and other editor integrations use this same
     // asynchronous edit path; preparation applies it to future capture banks.
     void applyOutputFolder (const juce::File&);
-    void applyAppearance (bool dark);
+    void applyAppearance (RememberAppearance mode);
+    void applyAppearance (bool dark) { applyAppearance (dark ? RememberAppearance::Dark : RememberAppearance::Light); }
     void applyZoom (int percent);
 
 private:
@@ -63,6 +64,6 @@ private:
         kElevated = Pal::Elevated, kBorder = Pal::Border, kAccent = Pal::Accent,
         kText = Pal::Text, kSubtext = Pal::Subtext, kSuccess = Pal::Success, kError = Pal::Error;
 
-    juce::TooltipWindow tooltips { this }; // parented to the editor for host scaling/lifetime
+    RememberUI::TooltipWindow tooltips { this }; // parented to the editor for host scaling/lifetime
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RememberEditor)
 };

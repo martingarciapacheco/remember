@@ -142,7 +142,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
 void MainComponent::checkFirstRun()
 {
     auto needsSetup = std::make_shared<bool> (false);
-    auto dark = std::make_shared<bool> (false);
+    auto dark = std::make_shared<RememberAppearance> (RememberAppearance::System);
     auto zoom = std::make_shared<int> (100);
     ProjectScanner::queryAsync ([needsSetup, dark, zoom]
     {
@@ -151,14 +151,14 @@ void MainComponent::checkFirstRun()
         // A configured drive/folder can be temporarily unavailable. Its index
         // error offers Settings/Refresh; it is not a new profile to initialise.
         *needsSetup = settings.previews == juce::File{};
-        *dark = settings.darkAppearance;
+        *dark = settings.appearance;
         *zoom = settings.interfaceZoom;
         return juce::Result::ok();
     },
         [safe = juce::Component::SafePointer<MainComponent> (this), needsSetup, dark, zoom] (juce::Result result)
         {
             if (safe == nullptr || result.failed()) return;
-            RememberUI::setDark (*dark);
+            RememberUI::setAppearanceMode (*dark);
             RememberUI::appZoom().set (*zoom);
             if (! *needsSetup) return;
             SettingsDialog::launch (true, [safe]

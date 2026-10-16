@@ -18,7 +18,7 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 - Settings adds Search folders with recursive scanning and a result summary. Adding a folder starts a search immediately; pending folder settings still save with OK. Ambiguous names require verified identity or manual association.
 
 - Redesigned the app, plugin and dialogs with a shared Apple-inspired interface: clearer hierarchy, layered surfaces, rounded controls, vector icons and visible keyboard focus.
-- Added persistent Light and Dark appearance options in app Settings and the plugin's gear menu. Dark uses charcoal grey surfaces; switching appearance preserves the current preview and library selection and leaves the DAW's global theme intact.
+- App Settings and the plugin's gear menu default to System (automatic), following live OS light/dark changes; Light and Dark remain explicit overrides. Legacy profiles adopt System. Switching appearance preserves the current preview and library selection and leaves the DAW's global theme intact. Shared 12/8/4 corner radii unify panels, menus, controls, rows and small checkboxes; switches and progress tracks retain capsule shapes.
 - Integrated Inter 4.1 on Windows, with Regular/SemiBold text and Display variants for headings. Fonts are embedded and need no system installation; their SIL OFL licence ships with the app, VST3 and installer. Apple builds select native San Francisco; macOS validation remains pending.
 
 - Settings distinguishes a read failure from damaged configuration, offers reload or explicit reconstruction, preserves an original copy and rejects a stale recovery attempt. App and plugin writers reject JSON arrays where an object is required; invalid metadata can recover through verified committed history.

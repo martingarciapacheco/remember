@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include "../../Shared/CaptureOptions.h"
+#include "../../Shared/AppearanceMode.h"
 
 // Manages shared config at %APPDATA%/Remember/config.json.
 // Both the plugin and the browser app read/write this file.
@@ -29,7 +30,7 @@ public:
         bool mono = false;
         juce::int64 revision = 0, modifiedMs = 0;
         juce::String fingerprint;
-        bool darkAppearance = false;
+        RememberAppearance appearance = RememberAppearance::System;
         int interfaceZoom = 100;
         CaptureOptions capture;
     };
@@ -51,7 +52,7 @@ public:
     // encoding and an older constructor/restore read.
     static std::shared_ptr<Request> readSnapshotAsync (Reader);
     std::shared_ptr<Request> setPreviewsFolderAsync (const juce::File&) const;
-    std::shared_ptr<Request> setAppearanceAsync (bool dark) const;
+    std::shared_ptr<Request> setAppearanceAsync (RememberAppearance mode) const;
     std::shared_ptr<Request> setZoomAsync (int percent) const;
     // Only shared lock/replacement; manualCapture is the app's creation default.
     std::shared_ptr<Request> setCaptureOptionsAsync (CaptureOptions) const;

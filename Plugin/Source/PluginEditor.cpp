@@ -292,14 +292,14 @@ void RememberEditor::paintProgressBar (juce::Graphics& g,
 {
     // Track
     g.setColour (RememberUI::colour (kElevated));
-    g.fillRoundedRectangle (bounds.toFloat(), 2.0f);
+    g.fillRoundedRectangle (bounds.toFloat(), RememberUI::capsuleRadius (bounds.toFloat()));
 
     // Fill
     if (progress > 0.0f)
     {
         auto fill = bounds.toFloat().withWidth (bounds.getWidth() * progress);
         g.setColour (RememberUI::colour (kAccent));
-        g.fillRoundedRectangle (fill, 2.0f);
+        g.fillRoundedRectangle (fill, RememberUI::capsuleRadius (fill));
     }
 }
 
@@ -328,8 +328,9 @@ void RememberEditor::showSettingsPanel()
     if (settingsRequest) return;
     juce::PopupMenu menu, appearance, zoom;
     menu.setLookAndFeel (&getLookAndFeel());
-    appearance.addItem (2, "Light", true, ! RememberUI::isDark());
-    appearance.addItem (3, "Dark", true, RememberUI::isDark());
+    appearance.addItem (4, "System (automatic)", true, RememberUI::appearanceMode == RememberAppearance::System);
+    appearance.addItem (2, "Light", true, RememberUI::appearanceMode == RememberAppearance::Light);
+    appearance.addItem (3, "Dark", true, RememberUI::appearanceMode == RememberAppearance::Dark);
     menu.addSubMenu ("Appearance", appearance);
     for (auto percent : RememberUI::zoomPercentages)
         zoom.addItem (1000 + percent, juce::String (percent) + (percent == 100 ? "% (default)" : "%"), true, percent == zoomPercent);
@@ -342,6 +343,7 @@ void RememberEditor::showSettingsPanel()
             if (safe == nullptr) return;
             if (result == 1) safe->chooseOutputFolder();
             else if (result == 2 || result == 3) safe->applyAppearance (result == 3);
+            else if (result == 4) safe->applyAppearance (RememberAppearance::System);
             else if (result >= 1050 && result <= 1200) safe->applyZoom (result - 1000);
         });
 }
@@ -356,7 +358,7 @@ void RememberEditor::applyZoom (int percent)
     refreshFromEngine();
 }
 
-void RememberEditor::applyAppearance (bool dark)
+void RememberEditor::applyAppearance (RememberAppearance dark)
 {
     if (settingsRequest) return;
     settingsMessage = "Saving appearance...";
@@ -405,7 +407,7 @@ void RememberEditor::refreshSettingsRequest()
     {
         settingsFolder = request->snapshot.previews;
         processor.getEngine().applySharedCaptureOptions (request->snapshot.capture);
-        RememberUI::setDark (request->snapshot.darkAppearance);
+        RememberUI::setAppearanceMode (request->snapshot.appearance);
         if (zoomPercent != request->snapshot.interfaceZoom)
         {
             zoomPercent = RememberUI::validZoom (request->snapshot.interfaceZoom);
