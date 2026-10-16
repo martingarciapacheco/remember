@@ -13,6 +13,10 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 
 ## Changes in 1.0.0-beta4
 
+- Left-click Repeat to cycle Off, All, One, Single and back to Off; right-click to choose from the menu. Single plays the selected preview once and stops, without advancing through the queue; manual Previous/Next remain available. The chosen mode is saved between sessions.
+- The Windows taskbar thumbnail provides Previous, Play/Pause and Next, including while the app is minimised.
+- Settings adds Search folders with recursive scanning and a result summary. Adding a folder starts a search immediately; pending folder settings still save with OK. Ambiguous names require verified identity or manual association.
+
 - Redesigned the app, plugin and dialogs with a shared Apple-inspired interface: clearer hierarchy, layered surfaces, rounded controls, vector icons and visible keyboard focus.
 - Added persistent Light and Dark appearance options in app Settings and the plugin's gear menu. Dark uses charcoal grey surfaces; switching appearance preserves the current preview and library selection and leaves the DAW's global theme intact.
 - Integrated Inter 4.1 on Windows, with Regular/SemiBold text and Display variants for headings. Fonts are embedded and need no system installation; their SIL OFL licence ships with the app, VST3 and installer. Apple builds select native San Francisco; macOS validation remains pending.

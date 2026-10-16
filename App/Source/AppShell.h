@@ -12,6 +12,7 @@ public:
     ~AppShell() override;
     void open();
     void requestQuit();
+    bool hasTaskbarButtons() const;
 
 private:
     class MainWindow;

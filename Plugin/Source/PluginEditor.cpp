@@ -266,20 +266,21 @@ void RememberEditor::refreshFromEngine()
 
 void RememberEditor::paint (juce::Graphics& g)
 {
+    g.addTransform (juce::AffineTransform::scale (zoomScale()));
     g.fillAll (RememberUI::colour (kBgDeep));
     g.setFont (titleFont());
     g.setColour (RememberUI::colour (kText));
     g.drawText ("Remember", 24, 16, 210, 28, juce::Justification::centredLeft);
     g.setFont (bodyFont());
     g.setColour (RememberUI::colour (kSubtext));
-    g.drawText ("Capture the idea. Keep the moment.", 24, 46, getWidth() - 48, 22, juce::Justification::centredLeft);
-    RememberUI::panel (g, juce::Rectangle<float> (16, 84, (float) getWidth() - 32, 140));
+    g.drawText ("Capture the idea. Keep the moment.", 24, 46, logicalWidth() - 48, 22, juce::Justification::centredLeft);
+    RememberUI::panel (g, juce::Rectangle<float> (16, 84, (float) logicalWidth() - 32, 140));
     g.setFont (bodyFont());
     g.setColour (RememberUI::colour (kSubtext));
     g.drawText ("Project", 28, 96, 160, 18, juce::Justification::centredLeft);
     g.setColour (RememberUI::colour (kBorder));
-    g.drawHorizontalLine (228, 28, (float) getWidth() - 28);
-    paintProgressBar (g, { 28, 304, getWidth() - 56, 5 }, recordProgress);
+    g.drawHorizontalLine (228, 28, (float) logicalWidth() - 28);
+    paintProgressBar (g, { 28, 304, logicalWidth() - 56, 5 }, recordProgress);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (kSubtext));
     g.drawText (processor.getEngine().getCaptureOptions().manual ? "Manual preview" : "Automatic preview", 28, 326, 160, 22, juce::Justification::centredLeft);
@@ -306,17 +307,18 @@ void RememberEditor::paintProgressBar (juce::Graphics& g,
 
 void RememberEditor::resized()
 {
-    settingsButton.setBounds (getWidth() - 60, 16, 36, 36);
-    nameEditor.setBounds (28, 120, getWidth() - 56, 38);
-    associationLabel.setBounds (28, 171, getWidth() - 152, 36);
-    associationButton.setBounds (getWidth() - 116, 173, 88, 32);
-    bpmKeyLabel.setBounds (28, 239, getWidth() - 56, 24);
-    statusLabel.setBounds (28, 264, getWidth() - 56, 32);
-    manualToggle.setBounds (28, 348, getWidth() - 56, 30);
-    lockToggle.setBounds (28, 378, getWidth() - 56, 30);
-    replaceToggle.setBounds (28, 408, getWidth() - 56, 30);
+    for (auto* child : getChildren()) child->setTransform (juce::AffineTransform::scale (zoomScale()));
+    settingsButton.setBounds (logicalWidth() - 60, 16, 36, 36);
+    nameEditor.setBounds (28, 120, logicalWidth() - 56, 38);
+    associationLabel.setBounds (28, 171, logicalWidth() - 152, 36);
+    associationButton.setBounds (logicalWidth() - 116, 173, 88, 32);
+    bpmKeyLabel.setBounds (28, 239, logicalWidth() - 56, 24);
+    statusLabel.setBounds (28, 264, logicalWidth() - 56, 32);
+    manualToggle.setBounds (28, 348, logicalWidth() - 56, 30);
+    lockToggle.setBounds (28, 378, logicalWidth() - 56, 30);
+    replaceToggle.setBounds (28, 408, logicalWidth() - 56, 30);
     captureButton.setBounds (28, 446, 174, 32);
-    versionLabel.setBounds (getWidth() - 200, 455, 172, 18);
+    versionLabel.setBounds (logicalWidth() - 200, 455, 172, 18);
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -324,11 +326,14 @@ void RememberEditor::resized()
 void RememberEditor::showSettingsPanel()
 {
     if (settingsRequest) return;
-    juce::PopupMenu menu, appearance;
+    juce::PopupMenu menu, appearance, zoom;
     menu.setLookAndFeel (&getLookAndFeel());
     appearance.addItem (2, "Light", true, ! RememberUI::isDark());
     appearance.addItem (3, "Dark", true, RememberUI::isDark());
     menu.addSubMenu ("Appearance", appearance);
+    for (auto percent : RememberUI::zoomPercentages)
+        zoom.addItem (1000 + percent, juce::String (percent) + (percent == 100 ? "% (default)" : "%"), true, percent == zoomPercent);
+    menu.addSubMenu ("Interface zoom", zoom);
     menu.addSeparator();
     menu.addItem (1, "Change previews output folder...");
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&settingsButton),
@@ -337,7 +342,18 @@ void RememberEditor::showSettingsPanel()
             if (safe == nullptr) return;
             if (result == 1) safe->chooseOutputFolder();
             else if (result == 2 || result == 3) safe->applyAppearance (result == 3);
+            else if (result >= 1050 && result <= 1200) safe->applyZoom (result - 1000);
         });
+}
+
+void RememberEditor::applyZoom (int percent)
+{
+    if (settingsRequest) return;
+    settingsMessage = "Saving interface zoom...";
+    settingsFailed = false;
+    settingsButton.setEnabled (false);
+    settingsRequest = SettingsManager::getInstance().setZoomAsync (RememberUI::validZoom (percent));
+    refreshFromEngine();
 }
 
 void RememberEditor::applyAppearance (bool dark)
@@ -390,6 +406,13 @@ void RememberEditor::refreshSettingsRequest()
         settingsFolder = request->snapshot.previews;
         processor.getEngine().applySharedCaptureOptions (request->snapshot.capture);
         RememberUI::setDark (request->snapshot.darkAppearance);
+        if (zoomPercent != request->snapshot.interfaceZoom)
+        {
+            zoomPercent = RememberUI::validZoom (request->snapshot.interfaceZoom);
+            setSize (juce::roundToInt (440 * zoomScale()), juce::roundToInt (496 * zoomScale()));
+            resized();
+            repaint();
+        }
         if (savingSettings)
         {
             processor.getEngine().setOutputFolder (settingsFolder);

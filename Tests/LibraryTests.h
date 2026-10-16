@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 void testLibraryCache (const juce::File& root);
+void testFlStudioBackups (const juce::File& root);
 void testLibraryFailureRecovery (const juce::File& root);
 void testLibraryWatch (const juce::File& root);
 void benchmarkLibrary (const juce::File& root);

@@ -765,8 +765,16 @@ void RecordingEngine::Core::DiscoveryThread::run()
             }
             if (host.path.isNotEmpty() && ! cancelled())
             {
-                const juce::File file (host.path);
-                if (! file.existsAsFile()) host.path.clear();
+                const juce::File observedFile (host.path);
+                const auto preferred = ProjectIdentity::preferredProjectFile (observedFile);
+                const bool redirectedBackup = preferred != juce::File{}
+                    && (preferred != observedFile
+                        || (verifyManualIdentity && preferred != juce::File (context.path)
+                            && ProjectIdentity::preferredProjectFile (juce::File (context.path)) == preferred));
+                host.path = preferred == juce::File{} ? juce::String{} : preferred.getFullPathName();
+                if (redirectedBackup) host.name = preferred.getFileNameWithoutExtension();
+                const auto file = preferred;
+                if (host.path.isEmpty() || ! file.existsAsFile()) host.path.clear();
                 else
                 {
                     observation->stamp = file.getLastModificationTime().toMilliseconds();
@@ -784,7 +792,7 @@ void RecordingEngine::Core::DiscoveryThread::run()
                     if (observation->hash.isEmpty()
                         || observation->stamp != file.getLastModificationTime().toMilliseconds()
                         || observation->fileId != ProjectIdentity::fileId (file)) host.path.clear();
-                    if (verifyManualIdentity && ! ((context.fileId.isNotEmpty() && observation->fileId == context.fileId)
+                    if (verifyManualIdentity && ! redirectedBackup && ! ((context.fileId.isNotEmpty() && observation->fileId == context.fileId)
                                                   || (context.hash.isNotEmpty() && observation->hash == context.hash))) host.path.clear();
                 }
             }
@@ -1529,8 +1537,11 @@ void RecordingEngine::Core::associateProjectFile (const juce::File& file, const 
         juce::ScopedLock lock (projectLock);
         const auto id = expectedId.isEmpty() ? publishedEntry.id : expectedId;
         const auto epoch = generation.load();
-        commands.push_back ([this, file, id, epoch]
+        commands.push_back ([this, selectedFile = file, id, epoch]
         {
+            const auto file = ProjectIdentity::preferredProjectFile (selectedFile);
+            if (file == juce::File{})
+            { fail ("Associate project file", selectedFile, "Select a primary DAW project outside its backup folder"); return; }
             if (epoch != generation.load() || id != entry.id)
             { fail ("Associate project file", file, "The project changed while choosing a file. Select it again"); return; }
             if (! file.existsAsFile() || ! file.hasFileExtension ("flp;als;rpp;cpr;npr;song;ptx;bwproject;logicx"))

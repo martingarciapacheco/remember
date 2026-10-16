@@ -88,7 +88,8 @@ void testFrontendDesign (const juce::File& root)
         juce::AudioBuffer<float> audio (2, 96000);
         for (int ch = 0; ch < 2; ++ch)
             for (int i = 0; i < audio.getNumSamples(); ++i)
-                audio.setSample (ch, i, (float) (0.4 * std::sin (i * 0.0288) * (0.6 + 0.4 * std::sin (i * 0.00011))));
+                audio.setSample (ch, i, (float) ((ch == 0 ? 0.7 : 0.5) * std::sin (i * 0.0288)
+                    * (0.55 + 0.45 * std::sin (i * (ch == 0 ? 0.00011 : 0.00016) + ch))));
         check (writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples()), "Cannot write design audio");
     }
     ProjectScanner::refreshAsync();
@@ -97,6 +98,24 @@ void testFrontendDesign (const juce::File& root)
     auto* list = childOf<ProjectListComponent> (*scene);
     auto* player = childOf<WaveformPlayerComponent> (*scene);
     check (list && player, "Design scene lacks list or player");
+    auto* launchers = childOf<DawLauncher> (*scene);
+    check (launchers != nullptr, "Installed DAW launchers are missing");
+    awaitUi ([&] { return launchers->hasDiscoveredApplications(); }, 15000, "DAW discovery did not finish");
+    auto* launcherViewport = childOf<juce::Viewport> (*launchers);
+    check (launcherViewport != nullptr, "DAW launchers cannot scroll");
+    for (auto* child : launcherViewport->getViewedComponent()->getChildren())
+        check (child->getTitle().startsWith ("Open "), "DAW launcher lost its accessible name");
+    juce::TextButton* assignButton = nullptr;
+    juce::TextButton* openButton = nullptr;
+    for (auto* child : player->getChildren())
+        if (auto* button = dynamic_cast<juce::TextButton*> (child))
+        {
+            if (button->getButtonText() == "Assign path") assignButton = button;
+            if (button->getButtonText() == "Open in DAW") openButton = button;
+        }
+    check (assignButton && ! assignButton->isEnabled(), "Assign path is available without a selected entry");
+    check (openButton && ! openButton->isEnabled(), "Open in DAW is available without a selected entry");
+    check (openButton->getTooltip().isEmpty(), "Disabled Open in DAW still shows a tooltip");
     auto* search = childOf<juce::TextEditor> (*list);
     auto* rows = childOf<juce::ListBox> (*list);
     check (search && rows, "Design scene lacks search or rows");
@@ -106,18 +125,142 @@ void testFrontendDesign (const juce::File& root)
     for (auto size : { juce::Point<int> (640, 480), juce::Point<int> (1024, 768) })
     {
         scene->setSize (size.x, size.y);
+        check (launchers->getX() == 16 && launchers->getRight() <= 216
+            && launchers->getBottom() <= player->getY(), "DAW launchers moved away from below the folders");
         juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
         check (search->getWidth() >= 160 && search->getHeight() >= 32, "Minimum window clipped the search target");
+        juce::Label* count = nullptr;
+        juce::TextButton* filters = nullptr;
+        for (auto* child : list->getChildren())
+        {
+            if (child->getTitle() == "Recording count") count = dynamic_cast<juce::Label*> (child);
+            if (child->getTitle() == "Filter projects") filters = dynamic_cast<juce::TextButton*> (child);
+        }
+        check (count && filters && count->getText() == "1 item", "Recording count is missing or stale");
+        check (count->getY() == filters->getY() && count->getHeight() == filters->getHeight()
+            && ! count->getBounds().intersects (filters->getBounds()), "Recording count is not aligned with Filters");
+        check (rows->getY() - filters->getBottom() == 8, "Toolbar still reserves an empty counter row");
         for (auto* component : scene->getChildren())
             check (scene->getLocalBounds().contains (component->getBounds()), "Main layout places a component outside its bounds");
+        rows->deselectAllRows();
+        saveImage (*scene, size.x == 640 ? "apple-app-unselected-minimum.png" : "apple-app-unselected.png", true);
         rows->selectRow (0);
         saveImage (*scene, size.x == 640 ? "apple-app-minimum.png" : "apple-app.png", true);
+        // Capture the native tooltip with the same semantic look and feel.
+        auto tips = juce::SharedResourcePointer<juce::TooltipWindow>::getSharedObjectWithoutCreating();
+        if (tips.has_value())
+        {
+            (*tips)->setLookAndFeel (&scene->getLookAndFeel());
+            (*tips)->displayTip ({ 50, 50 }, RememberUI::shortcutTooltip ("Previous preview", "Ctrl+Left",
+                "Restart the current preview after 3 seconds; otherwise play the previous preview."));
+            saveImage (**tips, size.x == 640 ? "keyboard-tooltip-minimum.png" : "keyboard-tooltip.png", true);
+            (*tips)->hideTip();
+            (*tips)->setLookAndFeel (nullptr);
+        }
     }
     player->loadEntry (ProjectScanner::scan()[0]);
+    check (assignButton->isEnabled(), "Assign path is unavailable for a selected entry");
+    check (openButton->isEnabled(), "Open in DAW is unavailable for a selected entry with a verified project");
+    check (openButton->getTooltip().contains ("Ctrl+O"), "Available Open in DAW lost its shortcut tooltip");
+    juce::TextButton* repeatButton = nullptr;
+    for (auto* child : player->getChildren())
+        if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle().startsWith ("Repeat:")) repeatButton = button;
+    check (repeatButton != nullptr, "Player has no Repeat options");
+    auto* repeatContext = dynamic_cast<RememberUI::ContextMenuButton*> (repeatButton);
+    check (repeatContext != nullptr, "Repeat lacks a separate context action");
+    for (const auto* mode : { "all", "one", "single", "off" })
+    {
+        repeatButton->onClick();
+        check (repeatButton->getTitle() == "Repeat: " + juce::String (mode)
+               && juce::Component::getCurrentlyModalComponent() == nullptr, "Left Repeat click did not cycle without a menu");
+    }
+    const auto point = repeatContext->getLocalBounds().toFloat().getCentre();
+    const auto time = juce::Time::getCurrentTime();
+    juce::MouseEvent rightClick (juce::Desktop::getInstance().getMainMouseSource(), point,
+        juce::ModifierKeys (juce::ModifierKeys::rightButtonModifier), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        repeatContext, repeatContext, time, point, time, 1, false);
+    repeatContext->mouseDown (rightClick); repeatContext->mouseUp (rightClick);
+    check (repeatButton->getTitle() == "Repeat: off", "Right Repeat click cycled the current mode");
+    auto* repeatMenu = juce::Component::getCurrentlyModalComponent();
+    check (repeatMenu != nullptr, "Repeat options did not open");
+    saveImage (*repeatMenu, "apple-repeat-options.png", true);
+    repeatMenu->exitModalState (4);
+    awaitUi ([&] { return repeatButton->getTitle() == "Repeat: single"; });
+    scene->setSize (640, 480); saveImage (*scene, "apple-single-minimum.png", true);
+    scene->setSize (1024, 768); saveImage (*scene, "apple-single.png", true);
+    {
+        RememberUI::ZoomView zoomScene (std::make_unique<MainComponent>());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        for (auto percent : RememberUI::zoomPercentages)
+            for (auto size : { juce::Point<int> (640, 480), juce::Point<int> (1024, 768) })
+            {
+                RememberUI::appZoom().set (percent);
+                zoomScene.setSize (size.x, size.y);
+                auto* content = zoomScene.getContent();
+                check (content->getWidth() >= 640 && content->getHeight() >= 480, "Zoom lost minimum logical layout");
+                auto* viewport = childOf<juce::Viewport> (zoomScene);
+                viewport->setViewPosition (10000, 10000);
+                const auto bottom = viewport->getViewArea().getBottom();
+                check (bottom >= juce::roundToInt (content->getHeight() * percent / 100.0f) - 2, "Large zoom cannot scroll to bottom controls");
+                viewport->setViewPosition (0, 0);
+                const auto filename = "zoom-app-" + juce::String (percent) + "-" + juce::String (size.x) + ".png";
+                saveImage (zoomScene, filename.toRawUTF8(), true);
+            }
+        RememberUI::appZoom().set (100);
+    }
     awaitUi ([&] { return player->hasLoadedEntry(); });
     juce::MessageManager::getInstance()->runDispatchLoopUntil (40);
     check (! player->isAudioDeviceOpen(), "Design snapshot opened an audio device");
+    scene->setSize (640, 480); saveImage (*scene, "apple-app-waveform-minimum.png", true);
+    scene->setSize (1024, 768);
     saveImage (*scene, "apple-app-waveform.png", true);
+    {
+        // Dispatch through a native peer so focused editors/listeners get the
+        // first chance to consume keys, as they do in the standalone app.
+        scene->addToDesktop (juce::ComponentPeer::windowIsTemporary);
+        scene->setVisible (true);
+        scene->getPeer()->grabFocus();
+        scene->grabKeyboardFocus();
+        auto press = [&] (int code, int modifiers = 0, juce::juce_wchar text = 0)
+        { return scene->getPeer()->handleKeyPress (juce::KeyPress (code, modifiers, text)); };
+        check (press ('F', juce::ModifierKeys::ctrlModifier) && search->hasKeyboardFocus (false), "Ctrl+F did not focus search");
+        search->setText ({}, false);
+        press ('M', 0, 'm'); press ('S', 0, 's'); press ('L', 0, 'l');
+        check (search->getText() == "msl" && ! player->isMuted(), "Transport shortcuts intercepted typing");
+        search->setText ({}, false);
+        const int favoritesKey = juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier;
+        juce::TextButton* favorites = nullptr;
+        juce::TextButton* shuffle = nullptr;
+        for (auto* child : list->getChildren()) if (auto* b = dynamic_cast<juce::TextButton*> (child); b && b->getTitle() == "Filter favorites") favorites = b;
+        for (auto* child : player->getChildren()) if (auto* b = dynamic_cast<juce::TextButton*> (child); b && b->getTitle() == "Shuffle previews") shuffle = b;
+        check (favorites && shuffle, "Keyboard controls are missing");
+        check (press ('F', favoritesKey) && favorites->getToggleState() && search->getText().isEmpty(), "Ctrl+Shift+F did not filter from search");
+        press ('F', favoritesKey); check (! favorites->getToggleState(), "Favorites shortcut did not restore its filter");
+        rows->deselectAllRows();
+        check (press ('O', juce::ModifierKeys::ctrlModifier), "Ctrl+O was not handled with an empty selection");
+        check (press (',', juce::ModifierKeys::ctrlModifier, ',') && juce::Component::getCurrentlyModalComponent(), "Ctrl+, typed into search instead of opening Settings");
+        juce::Component::getCurrentlyModalComponent()->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+        scene->getPeer()->grabFocus();
+        scene->grabKeyboardFocus();
+        press ('M'); check (player->isMuted() && player->getOutputGain() == 0, "M did not mute");
+        press ('M'); check (! player->isMuted(), "M did not unmute");
+        const bool wasShuffled = shuffle->getToggleState();
+        press ('S'); check (shuffle->getToggleState() != wasShuffled, "S did not shuffle");
+        press ('S'); check (shuffle->getToggleState() == wasShuffled, "S did not restore shuffle");
+        const auto repeatTitle = repeatButton->getTitle();
+        press ('L'); check (repeatButton->getTitle() != repeatTitle && repeatButton->getTooltip().contains ("(L)"), "L did not change repeat and its hint");
+        press ('L'); press ('L'); press ('L'); check (repeatButton->getTitle() == repeatTitle, "Repeat shortcut did not cycle all modes");
+        juce::Label* time = nullptr;
+        for (auto* child : player->getChildren()) if (auto* label = dynamic_cast<juce::Label*> (child); label && label->getText().contains (" / ")) time = label;
+        check (time != nullptr, "Loaded preview has no time label");
+        for (int i = 0; i < 10; ++i) press (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier);
+        check (time->getText().upToFirstOccurrenceOf (" / ", false, false) == time->getText().fromFirstOccurrenceOf (" / ", false, false), "Alt+Right did not clamp to the end");
+        for (int i = 0; i < 10; ++i) press (juce::KeyPress::leftKey, juce::ModifierKeys::altModifier);
+        check (time->getText().startsWith ("0:00 / ") && ! player->isAudioDeviceOpen(), "Alt+Left did not clamp without opening audio");
+        scene->removeFromDesktop();
+        std::cout << "PASS: native keyboard search/settings/open-empty/favorites, editor typing, mute/shuffle/repeat and bounded seeks without audio\n";
+    }
     search->setText ("no matching project", true);
     awaitUi ([&] { return list->getNumRows() == 0; });
     check (! rows->isVisible(), "An empty list hides the no-results message");
@@ -136,11 +279,38 @@ void testFrontendDesign (const juce::File& root)
         check (row != nullptr, "Settings folder row is missing");
         auto* remove = childOf<juce::TextButton> (*row);
         check (remove && remove->getWidth() == 32 && remove->getRight() == row->getWidth(), "Folder remove action spans or clips its row");
+        juce::TextButton* searchFolders = nullptr;
+        juce::Label* searchStatus = nullptr;
+        for (auto* child : settings.getChildren())
+        {
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "Search project folders") searchFolders = button;
+            if (auto* label = dynamic_cast<juce::Label*> (child); label && label->getTitle() == "Project folder search status") searchStatus = label;
+        }
+        check (searchFolders && searchStatus && searchFolders->isEnabled()
+               && searchFolders->getRight() > settings.getWidth() / 2, "Settings lacks its right-aligned folder search");
+        const auto nested = projects.getChildFile ("nested/deep");
+        check (nested.createDirectory().wasOk() && nested.getChildFile ("New project.als").replaceWithText ("nested fixture"),
+               "Cannot create recursive search fixture");
+        const auto configBeforeSearch = LibraryStore::configFile().loadFileAsString();
+        searchFolders->onClick();
+        check (! searchFolders->isEnabled() && searchStatus->getText().contains ("Searching"), "Search has no immediate progress feedback");
+        saveImage (settings, "apple-settings-searching.png", true);
+        awaitUi ([&] { return searchFolders->isEnabled(); });
+        check (searchStatus->getText().contains ("2 project files") && searchStatus->getText().contains ("1 linked"),
+               "Manual folder search missed a nested project or its association");
+        check (LibraryStore::configFile().loadFileAsString() == configBeforeSearch, "Searching draft folders saved pending settings");
         saveImage (settings, "apple-settings.png", true);
         juce::ComboBox* appearance = nullptr;
         for (auto* child : settings.getChildren())
             if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Appearance") appearance = combo;
         check (appearance && appearance->isEnabled(), "Settings lacks an enabled appearance option");
+        juce::ComboBox* zoom = nullptr;
+        for (auto* child : settings.getChildren())
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Interface zoom") zoom = combo;
+        check (zoom && zoom->isEnabled() && zoom->getNumItems() == 7, "Settings lacks zoom presets");
+        zoom->setSelectedId (125, juce::sendNotificationSync);
+        awaitUi ([&] { return RememberUI::appZoom().percent == 125 && zoom->isEnabled(); });
+        check (ProjectScanner::readSettings().interfaceZoom == 125, "App failed to persist zoom");
         appearance->setSelectedId (2, juce::sendNotificationSync);
         awaitUi ([&] { return RememberUI::isDark() && appearance->isEnabled(); });
         check (LibraryStore::readJson (LibraryStore::configFile())["appearance"].toString() == "dark", "App did not persist dark appearance");
@@ -173,6 +343,12 @@ void testFrontendDesign (const juce::File& root)
     {
         SettingsDialog reopened (false);
         awaitUi ([&] { return reopened.hasLoadedSettings(); });
+        juce::ComboBox* zoom = nullptr;
+        for (auto* child : reopened.getChildren())
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Interface zoom") zoom = combo;
+        check (zoom && zoom->getSelectedId() == 125, "Reopened settings lost zoom after other edits");
+        zoom->setSelectedId (100, juce::sendNotificationSync);
+        awaitUi ([&] { return RememberUI::appZoom().percent == 100 && zoom->isEnabled(); });
         juce::ComboBox* appearance = nullptr;
         for (auto* child : reopened.getChildren())
             if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Appearance") appearance = combo;
@@ -191,6 +367,9 @@ void testFrontendDesign (const juce::File& root)
         auto recovery = RecoveryChoiceDialog::create ({ choice }, [] (auto) {}, [] (auto) {}, false);
         saveImage (*recovery, "apple-recovery.png", true);
     }
+    player->releaseEntry (ProjectScanner::scan()[0].metadataFile);
+    check (! openButton->isEnabled() && openButton->getTooltip().isEmpty(), "Clearing selection retained the Open in DAW tooltip");
+    check (! assignButton->isEnabled(), "Assign path stayed available after releasing the entry");
     scene.reset();
     awaitUi ([] { return ProjectScanner::pendingJobs() == 0 && WaveformPlayerComponent::pendingLoads() == 0; });
     std::cout << "PASS: frontend minimum/large layout, waveform without device, no-results and restored search, settings/tags/recovery snapshots\n";

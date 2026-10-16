@@ -8,7 +8,7 @@
 class PlaybackQueue
 {
 public:
-    enum Repeat { Off, All, One };
+    enum Repeat { Off, All, One, Single }; // Append to preserve saved values.
     void setEntries (const juce::Array<ProjectEntry>& value)
     {
         std::vector<juce::String> next;
@@ -29,6 +29,7 @@ public:
     }
     std::unique_ptr<ProjectEntry> next (bool automatic = false)
     {
+        if (automatic && repeat == Single) return {};
         if (automatic && repeat == One) return find (current);
         while (cursor + 1 < (int) history.size())
         {

@@ -1,6 +1,7 @@
 #include "ShellTests.h"
 #include "../App/Source/AppShell.h"
 #include "../App/Source/MainComponent.h"
+#include "../App/Source/WindowsTaskbarTransport.h"
 #include "../Shared/BackgroundRetirement.h"
 #include <iostream>
 #include <atomic>
@@ -137,7 +138,8 @@ void testShellCase (const juce::File& root, const juce::String& mode)
     const bool trayRegistered = registeredTray (identifier);
     std::cout << "SHELL_NATIVE mode=" << mode << " trayRegistered=" << trayRegistered
               << " constructorMs=" << constructorMs << " initialState=" << window->getWindowStateAsString() << std::endl;
-    auto* content = dynamic_cast<MainComponent*> (window->getContentComponent());
+    auto* zoom = dynamic_cast<RememberUI::ZoomView*> (window->getContentComponent());
+    auto* content = zoom ? dynamic_cast<MainComponent*> (zoom->getContent()) : nullptr;
     check (content != nullptr, "Native shell does not use production MainComponent");
     auto* player = childOf<WaveformPlayerComponent> (*content);
     check (player != nullptr && ! player->isAudioDeviceOpen(), "Shell startup opened a physical audio device");
@@ -193,6 +195,44 @@ void testShellCase (const juce::File& root, const juce::String& mode)
         auto readsDrained = std::make_shared<bool> (false);
         ProjectScanner::queryAsync ([] { return juce::Result::ok(); }, [readsDrained] (juce::Result) { *readsDrained = true; });
         gate->release.signal(); awaitUi ([&] { return *readsDrained; });
+        if (mode == "restore")
+        {
+            awaitUi ([&] { return shell->hasTaskbarButtons(); });
+            window->setMinimised (true);
+            awaitUi ([&] { return window->isMinimised(); });
+            // Use unreadable previews so native transport dispatch cannot open
+            // a physical audio device during this shell acceptance test.
+            ProjectEntry first, second;
+            first.projectId = "taskbar-first"; first.name = "First thumbnail preview";
+            first.previewOgg = root.getChildFile ("missing-first.ogg");
+            second.projectId = "taskbar-second"; second.name = "Second thumbnail preview";
+            second.previewOgg = root.getChildFile ("missing-second.ogg");
+            juce::String selected;
+            const auto originalLoaded = player->onEntryLoaded;
+            player->onEntryLoaded = [&](const ProjectEntry& entry) { selected = entry.projectId; };
+            player->setQueue ({ first, second });
+            const auto click = [&](UINT id)
+            { SendMessageW (windowHandle, WM_COMMAND, MAKEWPARAM (id, THBN_CLICKED), 0); };
+            click (WindowsTaskbarTransport::nextId);
+            awaitUi ([&] { return selected == first.projectId; });
+            click (WindowsTaskbarTransport::nextId);
+            awaitUi ([&] { return selected == second.projectId; });
+            click (WindowsTaskbarTransport::previousId);
+            awaitUi ([&] { return selected == first.projectId; });
+            click (WindowsTaskbarTransport::playId);
+            auto dispatched = std::make_shared<bool> (false);
+            juce::MessageManager::callAsync ([dispatched] { *dispatched = true; });
+            awaitUi ([&] { return *dispatched; });
+            player->stop();
+            player->onEntryLoaded = originalLoaded;
+            check (window->isMinimised(), "Taskbar playback restored the minimised window");
+            window->setMinimised (false);
+            // Explorer restarts invalidate toolbar registration, not playback.
+            SendMessageW (windowHandle, RegisterWindowMessageW (L"TaskbarButtonCreated"), 0, 0);
+            awaitUi ([&] { return shell->hasTaskbarButtons(); });
+            check (! player->isAudioDeviceOpen(), "Taskbar transport opened audio for an unreadable preview");
+            std::cout << "PASS: native thumbnail buttons registered and dispatched next/back/play; re-registration retained transport\n";
+        }
         check (! player->isAudioDeviceOpen() && juce::Component::getNumCurrentlyModalComponents() == 0,
                "Shell settings completion opened an unsolicited device/dialog");
         if (mode == "read-failure")

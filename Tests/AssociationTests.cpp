@@ -64,6 +64,39 @@ void testAssociation (const juce::File& fixtureRoot)
     isolatedRoots.getDynamicObject()->setProperty ("projectsRootFolders", juce::Array<juce::var> { root.getFullPathName() });
     check (LibraryStore::patchJson (LibraryStore::configFile(), isolatedRoots, true).wasOk(), "Cannot isolate association search roots");
     SettingsManager::Snapshot settings; settings.previews = library; settings.seconds = 15;
+    struct BackupCase { const char* daw; const char* extension; const char* folder; };
+    int fixture = 0;
+    for (const auto& scenario : { BackupCase { "FL Studio", ".flp", "Backup" },
+                                 BackupCase { "Ableton Live", ".als", "Backup" },
+                                 BackupCase { "Ableton Live", ".als", "Bakup" },
+                                 BackupCase { "Bitwig Studio", ".bwproject", "auto-backup/versions" } })
+    {
+        const auto folder = root.getChildFile ("host-backups/" + juce::String (++fixture));
+        check (folder.getChildFile (scenario.folder).createDirectory().wasOk(), "Cannot create DAW association fixture");
+        const auto primary = folder.getChildFile ("LOVIN YOU" + juce::String (scenario.extension));
+        const auto backup = folder.getChildFile (scenario.folder).getChildFile ("LOVIN YOU (autosaved)" + juce::String (scenario.extension));
+        check (primary.replaceWithText ("official project") && backup.replaceWithText ("autosaved project"),
+               "Cannot seed FL association fixture");
+        {
+            RecordingEngine engine ([backup, daw = juce::String (scenario.daw)]
+                { return HostProject { true, backup.getFileNameWithoutExtension(), backup.getFullPathName(), daw }; });
+            engine.prepare (8000, 128, settings); sourceIs (engine, Association::HostPath);
+            check (engine.getAssociationInfo().path == primary.getFullPathName() && engine.getProjectName() == "LOVIN YOU",
+                   "A direct host path selected a DAW backup");
+            capture (engine, 0.15f); saved (engine);
+            check (meta (library.getChildFile (engine.getAssociationInfo().id)).getProperty ("projectPath", "").toString() == primary.getFullPathName(),
+                   "DAW backup host observation persisted the wrong preview project");
+        }
+        retire();
+        {
+            RecordingEngine engine ([] { return HostProject{}; }); engine.prepare (8000, 128, settings);
+            engine.associateProjectFile (backup); sourceIs (engine, Association::ManualFile);
+            await ([&] { const auto info = engine.getAssociationInfo(); return info.verified && info.path == primary.getFullPathName(); },
+                   "Manual DAW backup selection did not use the primary project");
+        }
+        retire();
+        std::cout << "PASS: " << scenario.daw << " " << scenario.folder << " host/manual associations use the official preview project\n";
+    }
     juce::XmlElement kept ("RememberState"); juce::String keepId;
     {
         RecordingEngine engine ([] { return HostProject{}; }); engine.prepare (8000, 128, settings);

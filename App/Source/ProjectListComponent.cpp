@@ -12,10 +12,10 @@ ProjectRowComponent::ProjectRowComponent()
     // selected row gets captured by whichever button was last clicked.
     setWantsKeyboardFocus (false);
     favBtn .setWantsKeyboardFocus (false);
-    playBtn.setWantsKeyboardFocus (false);
+    actionsBtn.setWantsKeyboardFocus (false);
 
     RememberUI::iconButton (favBtn, "star", "Toggle favorite");
-    RememberUI::iconButton (playBtn, "play", "Play preview");
+    RememberUI::iconButton (actionsBtn, "more", "Preview actions");
     favBtn.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
     favBtn.onClick = [this]
     {
@@ -27,10 +27,24 @@ ProjectRowComponent::ProjectRowComponent()
     };
     addAndMakeVisible (favBtn);
 
-    RememberUI::bindColour (playBtn, juce::TextButton::buttonColourId, Pal::Action);
-    playBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    playBtn.onClick = [this] { if (onPlay) onPlay(); };
-    addAndMakeVisible (playBtn);
+    RememberUI::bindColour (actionsBtn, juce::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (actionsBtn, juce::TextButton::textColourOffId, Pal::Text);
+    actionsBtn.onClick = [this] { if (onActions) onActions (this); };
+    addAndMakeVisible (actionsBtn);
+
+    statusBtn.setWantsKeyboardFocus (false);
+    statusBtn.setTitle ("Change preview status");
+    statusBtn.setTooltip ("Change preview status");
+    addAndMakeVisible (statusBtn);
+    statusBtn.onClick = [this]
+    {
+        const juce::StringArray values { "Idea", "In progress", "Finished", "Archived" };
+        juce::PopupMenu menu;
+        for (int i = 0; i < values.size(); ++i) menu.addItem (i + 1, values[i], true, entry.status == values[i]);
+        const auto action = onStatusChanged;
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&statusBtn), [values, action] (int result)
+        { if (result > 0 && result <= values.size() && action) action (values[result - 1]); });
+    };
 
     renameEditor.setFont (RememberUI::font (13.0f, true));
     RememberUI::bindColour (renameEditor, juce::TextEditor::backgroundColourId, Pal::Elevated);
@@ -80,9 +94,17 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
 
     entry    = e;
     selected = isSelected;
+    setTitle (e.name);
+    setDescription (e.storageError.isNotEmpty() ? e.storageError : e.projectProblem);
+    // These keys act on the selected row, even when another row is hovered.
+    // Rebind hints along with identity/selection when ListBox recycles rows.
+    favBtn.setTooltip (selected ? RememberUI::shortcutTooltip ("Toggle favorite", "F", "Selected recording") : "Toggle favorite");
+    actionsBtn.setTooltip ("Preview actions");
     favBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
-    playBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
-    setTooltip (e.storageError.isNotEmpty() ? e.storageError : e.name + (e.projectProblem.isNotEmpty() ? "\n" + e.projectProblem : juce::String{}));
+    actionsBtn.setEnabled (true);
+    statusBtn.setButtonText (e.status);
+    statusBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
+    setTooltip ({});
 
     favBtn.setButtonText (e.favorite ? "*" : ".");
     RememberUI::bindColour (favBtn, juce::TextButton::textColourOffId, e.favorite ? Pal::Star : Pal::Subtext);
@@ -96,7 +118,7 @@ void ProjectRowComponent::startInlineRename()
     renaming = true;
     renameCommit = onRenameCommitted;
     renameEditor.setText (entry.name, false);
-    auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 14);
+    auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (156).reduced (0, RememberUI::recordingRowPadding);
     renameEditor.setBounds (bounds.removeFromTop (22));
     renameEditor.setVisible (true);
     renameEditor.grabKeyboardFocus();
@@ -127,7 +149,7 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
         m.addItem (6, "Check and repair recording", canRecover);
         if (entry.pending) m.addItem (7, "Keep recording", canRecover && entry.storageError.isEmpty());
         m.addSeparator();
-        m.addItem (4, "Delete entry", canRecover);
+        m.addItem (4, "Delete entry (Delete / Backspace)", canRecover);
         m.addSeparator(); m.addItem (8, "Project details and musical metadata", entry.storageError.isEmpty());
         const auto detailsAction = onDetails;
         const auto recoverAction = onRecover;
@@ -197,7 +219,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     g.setColour (RememberUI::colour (Pal::Border));
     g.drawHorizontalLine (getHeight() - 1, 44.0f, (float) getWidth() - 12);
 
-    auto area = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 10);
+    auto area = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (156).reduced (0, RememberUI::recordingRowPadding);
 
     // ── Top row: project name + inline tag chips ─────────────────────────────
     auto nameRow = area.removeFromTop (20);
@@ -260,7 +282,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     if (entry.key.isNotEmpty())         { sep(); meta += entry.key; }
     if (entry.recordedAt.isNotEmpty())  { sep(); meta += entry.recordedAt.substring (0, 10); }
     if (entry.trashed) { sep(); meta += "Trash - retained for 30 days"; }
-    else { sep(); meta += entry.status; if (entry.previewLocked) meta += " | Locked"; }
+    else if (entry.previewLocked) { sep(); meta += "Locked"; }
     if (! entry.pending && ! entry.projectAvailable && ! entry.trashed) { sep(); meta += "Project not located"; }
 
     g.setFont (RememberUI::font (12.0f));
@@ -270,12 +292,16 @@ void ProjectRowComponent::paint (juce::Graphics& g)
 
 void ProjectRowComponent::resized()
 {
-    favBtn.setBounds  (getLocalBounds().removeFromLeft (40).reduced (4, 14));
-    playBtn.setBounds (getLocalBounds().removeFromRight (44).reduced (4, 14));
+    favBtn.setBounds (getLocalBounds().removeFromLeft (40).withSizeKeepingCentre (
+        RememberUI::recordingRowActionSize, RememberUI::recordingRowActionSize));
+    actionsBtn.setBounds (getLocalBounds().removeFromRight (44).withSizeKeepingCentre (
+        RememberUI::recordingRowActionSize, RememberUI::recordingRowActionSize));
+
+    statusBtn.setBounds (getWidth() - 150, (getHeight() - 32) / 2, 104, 32);
 
     if (renaming)
     {
-        auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (48).reduced (0, 14);
+        auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (156).reduced (0, RememberUI::recordingRowPadding);
         renameEditor.setBounds (bounds.removeFromTop (22));
     }
 }
@@ -291,11 +317,14 @@ ProjectListComponent::ProjectListComponent()
     searchBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
     RememberUI::bindColour (searchBox, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
     searchBox.setTitle ("Search library");
+    searchBox.setTooltip (RememberUI::shortcutTooltip ("Search library", "Ctrl+F"));
     searchBox.setIndents (10, 7);
     searchBox.onTextChange = [this] { scheduleSearchDebounce(); };
     addAndMakeVisible (searchBox);
 
     favFilterBtn.setClickingTogglesState (true);
+    favFilterBtn.setTitle ("Filter favorites");
+    favFilterBtn.setTooltip (RememberUI::shortcutTooltip ("Filter favorites", "Ctrl+Shift+F"));
     RememberUI::bindColour (favFilterBtn, juce::TextButton::buttonColourId, Pal::Elevated);
     RememberUI::bindColour (favFilterBtn, juce::TextButton::buttonOnColourId, Pal::Action);
     RememberUI::bindColour (favFilterBtn, juce::TextButton::textColourOffId, Pal::Subtext);
@@ -319,6 +348,12 @@ ProjectListComponent::ProjectListComponent()
     RememberUI::bindColour (libraryStatus, juce::Label::textColourId, Pal::Subtext);
     RememberUI::bindColour (libraryStatus, juce::Label::backgroundColourId, Pal::Elevated);
     addChildComponent (libraryStatus);
+
+    itemCount.setTitle ("Recording count");
+    itemCount.setFont (RememberUI::font (12));
+    itemCount.setJustificationType (juce::Justification::centredRight);
+    RememberUI::bindColour (itemCount, juce::Label::textColourId, Pal::Subtext);
+    addAndMakeVisible (itemCount);
 
     configureWorkflow();
     ProjectScanner::addLibraryListener (this);
@@ -412,6 +447,7 @@ void ProjectListComponent::applyFilter()
     // Normal publications already arrive newest first; preserve that order
     // instead of sorting the whole library again on every search/favorite edit.
     if (view == 3 || filter.sort != LibraryFilter::Latest) filter.order (filtered);
+    itemCount.setText (juce::String (filtered.size()) + (filtered.size() == 1 ? " item" : " items"), juce::dontSendNotification);
     listBox.updateContent();
     juce::SparseSet<int> selection;
     for (int i = 0; i < filtered.size(); ++i)
@@ -441,13 +477,9 @@ void ProjectListComponent::paint (juce::Graphics& g)
     g.setColour (RememberUI::colour (Pal::Text));
     const auto title = folderFilter.isEmpty() ? juce::String ("All recordings") : folderFilter.fromLastOccurrenceOf ("/", false, false);
     juce::ignoreUnused (title);
-    g.setFont (RememberUI::font (12));
-    g.setColour (RememberUI::colour (Pal::Subtext));
-    g.drawText (juce::String (filtered.size()) + (filtered.size() == 1 ? " item" : " items"),
-                getWidth() - 100, 94, 84, 28, juce::Justification::centredRight);
     if (filtered.isEmpty() && ! allEntries.isEmpty())
     {
-        auto empty = getLocalBounds().withTrimmedTop (kToolbarH).reduced (24);
+        auto empty = getLocalBounds().withTrimmedTop (toolbarHeight()).reduced (24);
         if (libraryStatus.isVisible()) empty.removeFromTop (48);
         g.setFont (RememberUI::font (16, true));
         g.setColour (RememberUI::colour (Pal::Text));
@@ -467,14 +499,27 @@ void ProjectListComponent::resized()
     toolbar.removeFromRight (8);
     searchBox.setBounds (toolbar);
     auto workflow = juce::Rectangle<int> (16, 54, getWidth() - 32, 32);
-    actionsBtn.setBounds (workflow.removeFromRight (84)); workflow.removeFromRight (8);
-    filtersBtn.setBounds (workflow.removeFromLeft (70)); workflow.removeFromLeft (6);
-    collectionCombo.setBounds (workflow.removeFromLeft (juce::jmin (180, juce::jmax (80, workflow.getWidth() - 38)))); workflow.removeFromLeft (6);
+    const bool compact = workflow.getWidth() < 650;
+    if (compact)
+    {
+        auto actions = juce::Rectangle<int> (16, 94, getWidth() - 32, 32);
+        filtersBtn.setBounds (actions.removeFromLeft (70));
+        itemCount.setBounds (actions.removeFromRight (84));
+    }
+    else
+    {
+        itemCount.setBounds (workflow.removeFromRight (84)); workflow.removeFromRight (8);
+        filtersBtn.setBounds (workflow.removeFromLeft (70)); workflow.removeFromLeft (6);
+    }
+    // Keep the saved filter, add action, library view and sort in one row.
+    const int comboSpace = workflow.getWidth() - 32 - 18;
+    const int collectionWidth = juce::jmin (180, comboSpace / 3);
+    const int viewWidth = juce::jmin (145, (comboSpace - collectionWidth) / 2);
+    collectionCombo.setBounds (workflow.removeFromLeft (collectionWidth)); workflow.removeFromLeft (6);
     collectionBtn.setBounds (workflow.removeFromLeft (32)); workflow.removeFromLeft (6);
-    auto views = juce::Rectangle<int> (16, 94, getWidth() - 136, 30);
-    viewCombo.setBounds (views.removeFromLeft (juce::jmin (145, views.getWidth() / 2))); views.removeFromLeft (6);
-    sortCombo.setBounds (views.removeFromLeft (juce::jmin (220, views.getWidth())));
-    auto listArea = getLocalBounds().withTrimmedTop (kToolbarH).reduced (12, 0);
+    viewCombo.setBounds (workflow.removeFromLeft (viewWidth)); workflow.removeFromLeft (6);
+    sortCombo.setBounds (workflow.removeFromLeft (juce::jmin (220, workflow.getWidth())));
+    auto listArea = getLocalBounds().withTrimmedTop (toolbarHeight()).reduced (12, 0);
     if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (32).reduced (4, 2));
     listBox.setBounds (listArea);
     listBox.setVisible (! filtered.isEmpty());
@@ -512,16 +557,16 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         listBox.selectRowsBasedOnModifierKeys (row, modifiers, false);
         if (! modifiers.isCtrlDown() && ! modifiers.isShiftDown() && view != 3 && onEntrySelected && row < filtered.size()) onEntrySelected (filtered[row]);
     };
-    comp->onPlay = [this, row]
-    {
-        listBox.selectRow (row);
-        if (view != 3 && onEntryPlay && row >= 0 && row < filtered.size())
-            onEntryPlay (filtered.getReference (row));
-    };
 
     // Mutation lambdas capture `metadataFile` so a stale `row` after a sort/filter
     // cannot make the action target the wrong entry.
     auto safe = juce::Component::SafePointer<ProjectListComponent> (this);
+    comp->onPlay = [safe, entry]
+    {
+        if (safe == nullptr || entry.trashed) return;
+        safe->selectEntry (entry);
+        if (safe->onEntryPlay) safe->onEntryPlay (entry);
+    };
     auto persist = [safe] (ProjectEntry edited, juce::StringArray intents = {})
     {
         ProjectScanner::editAsync ([edited, intents] { return edited.save (intents); }, [safe] (juce::Result result)
@@ -531,6 +576,10 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
                                                                         "Cannot edit entry", result.getErrorMessage());
         });
     };
+    comp->onActions = [safe, entry] (ProjectRowComponent* rowComponent)
+    { if (safe != nullptr) safe->showActions (entry, rowComponent); };
+    comp->onStatusChanged = [entry, persist] (juce::String value) mutable
+    { entry.status = value; persist (entry, { "status" }); };
     comp->onDetails = [safe, entry] { if (safe != nullptr) safe->editDetails (entry); };
     comp->onRestore = [safe, entry] { if (safe != nullptr) safe->restoreRecording (entry); };
     comp->onFavoriteToggle = [safe, entry, persist] (bool fav) mutable
@@ -717,11 +766,18 @@ void ProjectListComponent::playSelected()
     if (onEntryPlay) onEntryPlay (filtered.getReference (row));
 }
 
+void ProjectListComponent::toggleFavoritesFilter()
+{
+    favFilterBtn.setToggleState (! favFilterBtn.getToggleState(), juce::dontSendNotification);
+    favFilterBtn.onClick();
+}
+
 void ProjectListComponent::openSelectedInDaw()
 {
     int row = listBox.getSelectedRow();
     if (row < 0 || row >= filtered.size()) return;
     const auto entry = filtered.getReference (row);
+    if (! entry.projectAvailable || entry.trashed || entry.storageError.isNotEmpty()) return;
     ProjectScanner::openProjectAsync (entry, false,
         [safe = juce::Component::SafePointer<ProjectListComponent> (this)] (juce::Result result)
         {

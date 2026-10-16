@@ -29,6 +29,7 @@ private:
     RememberUI::Style uiStyle { *this };
     void pickPreviews();
     void addProjectFolder();
+    void searchProjectFolders();
     void commit();
     void refreshLabels();
     void rebuildFoldersList();
@@ -46,6 +47,11 @@ private:
 
     bool firstRun { false };
     bool appearanceSaving = false;
+    bool zoomSaving = false;
+    void saveZoom();
+    juce::Label zoomCaption { {}, "Interface zoom" };
+    juce::Label zoomHint { {}, "Text and controls in the app. Saved immediately." };
+    juce::ComboBox zoomCombo;
     juce::Label appearanceCaption { {}, "Appearance" };
     juce::Label appearanceHint { {}, "Saved immediately for the app and plugin" };
     juce::ComboBox appearanceCombo;
@@ -77,6 +83,9 @@ private:
     std::unique_ptr<FoldersListModel> foldersModel;
     juce::ListBox    foldersList;
     juce::TextButton addProjectsBtn { "+ Add folder" };
+    juce::TextButton refreshProjectsBtn { "Search folders" };
+    juce::Label searchStatus;
+    std::shared_ptr<std::atomic<uint64_t>> searchGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
 
     juce::TextButton okBtn     { "OK"     };
     juce::TextButton cancelBtn { "Cancel" };

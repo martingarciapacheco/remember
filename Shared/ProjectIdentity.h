@@ -44,6 +44,11 @@ namespace ProjectIdentity
     };
     HostProject parseTitle (const juce::String& title, const juce::String& daw);
     HostProject detectHostProject();
+    // DAW-specific backup folders below a folder containing primary projects
+    // of the same format must never be associated. Redirect to its sole
+    // primary, or return empty if ambiguous. Backup-only formats are rejected.
+    // Other files (including standalone folders with no primary) are unchanged.
+    juce::File preferredProjectFile (const juce::File& file);
     juce::String fileId (const juce::File& file);
     juce::String fingerprint (const juce::File& file, const std::function<bool()>& cancelled = {});
     juce::String resolve (const juce::String& name, const juce::String& daw,

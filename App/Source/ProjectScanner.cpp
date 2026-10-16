@@ -30,9 +30,12 @@ juce::Result ProjectEntry::save (const juce::StringArray& scalarIntents, const s
     const auto pathChanged = scalarIntents.contains ("projectPath") || projectPath != old.getProperty ("projectPath", "").toString();
     const auto nameChanged = scalarIntents.contains ("projectName") || name != old.getProperty ("projectName", "").toString();
     juce::String fileId, fingerprint;
+    auto associatedPath = projectPath;
     if (pathChanged && projectPath.isNotEmpty())
     {
-        const juce::File file (projectPath);
+        const auto file = ProjectIdentity::preferredProjectFile (juce::File (projectPath));
+        if (file == juce::File{}) return juce::Result::fail ("Select a primary DAW project outside its backup folder");
+        associatedPath = file.getFullPathName();
         if (! file.existsAsFile()) return juce::Result::fail ("Project file does not exist: " + projectPath);
         fileId = ProjectIdentity::fileId (file);
         fingerprint = ProjectIdentity::fingerprint (file, cancelled);
@@ -44,10 +47,10 @@ juce::Result ProjectEntry::save (const juce::StringArray& scalarIntents, const s
             return juce::Result::fail ("The selected entry changed; refresh the library");
         if (pathChanged)
         {
-            object.setProperty ("projectPath", projectPath);
+            object.setProperty ("projectPath", associatedPath);
             object.setProperty ("projectFileId", fileId);
             object.setProperty ("projectFingerprint", fingerprint);
-            if (projectPath.isNotEmpty()) object.setProperty ("projectName", juce::File (projectPath).getFileNameWithoutExtension());
+            if (associatedPath.isNotEmpty()) object.setProperty ("projectName", juce::File (associatedPath).getFileNameWithoutExtension());
         }
         if (scalarIntents.contains ("favorite") || favorite != (bool) old.getProperty ("favorite", false)) object.setProperty ("favorite", favorite);
         if (nameChanged)
@@ -333,6 +336,7 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
     snapshot.result = result; snapshot.fingerprint = fingerprint; snapshot.canRebuild = result.failed() && readable;
     snapshot.capture = CaptureOptions::fromJson (config);
     snapshot.darkAppearance = config.getProperty ("appearance", "light").toString() == "dark";
+    snapshot.interfaceZoom = (int) config.getProperty ("appZoom", 100);
     return snapshot;
 }
 juce::File ProjectScanner::getPreviewsFolder() { return previewsFromConfig (loadConfig()); }
@@ -670,6 +674,8 @@ void ProjectScanner::openProjectAsync (const ProjectEntry& entry, bool reveal,
         if (! juce::File::isAbsolutePath (entry.projectPath)) return juce::Result::fail ("This entry has no project file");
         const juce::File file (entry.projectPath);
         if (! file.existsAsFile()) return juce::Result::fail ("Project file is unavailable: " + entry.projectPath);
+        if (ProjectIdentity::preferredProjectFile (file) != file)
+            return juce::Result::fail ("Refresh the library to associate the primary DAW project outside its backup folder");
         if (entry.projectFileId.isNotEmpty() && ProjectIdentity::fileId (file) != entry.projectFileId)
             return juce::Result::fail ("The project file was replaced. Refresh and verify its association before opening it");
         if (entry.projectFileId.isEmpty() && entry.projectFingerprint.isNotEmpty()
@@ -685,6 +691,35 @@ void ProjectScanner::openProjectAsync (const ProjectEntry& entry, bool reveal,
         if (reveal) { file.revealToUser(); return juce::Result::ok(); }
         return file.startAsProcess() ? juce::Result::ok() : juce::Result::fail ("Cannot open project: " + entry.projectPath);
     }, std::move (completion));
+}
+
+void ProjectScanner::searchDirectoriesAsync (const juce::File& previews, const juce::Array<juce::File>& roots,
+    std::function<bool()> cancelled, std::function<void(juce::Result, DirectorySearchResult)> completion)
+{
+    auto summary = std::make_shared<DirectorySearchResult>();
+    queryAsync ([previews, roots, cancelled = std::move (cancelled), summary]
+    {
+        const auto begun = juce::Time::getMillisecondCounterHiRes();
+        const auto stop = [&] { return libraryClosing.load() || (cancelled && cancelled()); };
+        ProjectIdentity::CandidateIndex index;
+        if (! index.rebuild (roots, stop))
+            return juce::Result::fail (stop() ? "Directory search cancelled" : index.getLastError());
+        summary->candidates = index.getCandidateCount();
+        ScanMetrics metrics;
+        const auto entries = scan (previews, roots, &index, stop, &metrics);
+        if (stop()) return juce::Result::fail ("Directory search cancelled");
+        if (metrics.error.isNotEmpty()) return juce::Result::fail (metrics.error);
+        for (const auto& entry : entries)
+            if (! entry.pending && entry.storageError.isEmpty())
+            {
+                if (entry.projectAvailable) ++summary->available;
+                else ++summary->missing;
+            }
+        summary->elapsedMs = juce::Time::getMillisecondCounterHiRes() - begun;
+        libraryIndex().refresh();
+        return juce::Result::ok();
+    }, [summary, completion = std::move (completion)] (juce::Result result)
+    { if (completion) completion (result, *summary); });
 }
 
 juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
@@ -750,7 +785,11 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
        #endif
         auto found = projectObservations.find (key.toStdString());
         if (found == projectObservations.end())
-            found = projectObservations.emplace (key.toStdString(), ProjectObservation { juce::File (entry.projectPath).existsAsFile() }).first;
+        {
+            const juce::File file (entry.projectPath);
+            found = projectObservations.emplace (key.toStdString(), ProjectObservation {
+                file.existsAsFile() && ProjectIdentity::preferredProjectFile (file) == file }).first;
+        }
         auto& observation = found->second;
         if (observation.exists && entry.projectFileId.isNotEmpty() && ! observation.idRead)
         { observation.id = ProjectIdentity::fileId (juce::File (entry.projectPath)); observation.idRead = true; }

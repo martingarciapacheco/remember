@@ -17,9 +17,13 @@ public:
     // asynchronous edit path; preparation applies it to future capture banks.
     void applyOutputFolder (const juce::File&);
     void applyAppearance (bool dark);
+    void applyZoom (int percent);
 
 private:
     RememberUI::Style uiStyle { *this };
+    int zoomPercent = 100;
+    float zoomScale() const { return zoomPercent / 100.0f; }
+    int logicalWidth() const { return juce::roundToInt (getWidth() / zoomScale()); }
     void showSettingsPanel();
     void chooseOutputFolder();
     void showAssociationMenu();

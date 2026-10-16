@@ -30,6 +30,7 @@ public:
         juce::int64 revision = 0, modifiedMs = 0;
         juce::String fingerprint;
         bool darkAppearance = false;
+        int interfaceZoom = 100;
         CaptureOptions capture;
     };
     using Reader = std::function<Snapshot()>;
@@ -51,6 +52,7 @@ public:
     static std::shared_ptr<Request> readSnapshotAsync (Reader);
     std::shared_ptr<Request> setPreviewsFolderAsync (const juce::File&) const;
     std::shared_ptr<Request> setAppearanceAsync (bool dark) const;
+    std::shared_ptr<Request> setZoomAsync (int percent) const;
     // Only shared lock/replacement; manualCapture is the app's creation default.
     std::shared_ptr<Request> setCaptureOptionsAsync (CaptureOptions) const;
 

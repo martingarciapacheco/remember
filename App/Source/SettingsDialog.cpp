@@ -3,6 +3,7 @@
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/AppearanceSettings.h"
+#include "../../Shared/ZoomSettings.h"
 
 // ── ListBoxModel for the project folders list ────────────────────────────────
 class SettingsDialog::FoldersListModel : public juce::ListBoxModel
@@ -63,6 +64,7 @@ public:
                 owner.projectsFolders.remove (row);
                 owner.rebuildFoldersList();
                 owner.refreshLabels();
+                owner.searchProjectFolders();
             }
         };
         return component;
@@ -85,7 +87,7 @@ static constexpr double kMonoSizeFactor = 0.6;
 
 SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner::SettingsSnapshot()> reader) : firstRun (firstRunFlag)
 {
-    setSize (680, 760);
+    setSize (680, 804);
     for (auto* toggle : { &manualToggle, &lockToggle, &replaceToggle })
     { toggle->setTitle (toggle->getButtonText()); addAndMakeVisible (*toggle); }
     manualToggle.setTooltip ("Default for new Remember instances. Existing instances and saved DAW projects keep their own setting.");
@@ -111,6 +113,14 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     addAndMakeVisible (appearanceCaption);
     addAndMakeVisible (appearanceHint);
     addAndMakeVisible (appearanceCombo);
+    styleLabel (zoomCaption, 13.0f, Pal::Text, true);
+    styleLabel (zoomHint, 11.0f, Pal::Subtext);
+    RememberUI::populateZoom (zoomCombo);
+    zoomCombo.setSelectedId (RememberUI::appZoom().percent, juce::dontSendNotification);
+    zoomCombo.onChange = [this] { saveZoom(); };
+    addAndMakeVisible (zoomCaption);
+    addAndMakeVisible (zoomHint);
+    addAndMakeVisible (zoomCombo);
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
     styleLabel (previewsHint,    11.0f, Pal::Subtext);
@@ -203,6 +213,14 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
     styleBtn (previewsBrowse,  Pal::Elevated, Pal::Text);
     styleBtn (addProjectsBtn,  Pal::Elevated, Pal::Text);
+    styleBtn (refreshProjectsBtn, Pal::Elevated, Pal::Text);
+    styleLabel (searchStatus, 12.0f, Pal::Subtext);
+    searchStatus.setTitle ("Project folder search status");
+    searchStatus.setMinimumHorizontalScale (1.0f);
+    refreshProjectsBtn.setTitle ("Search project folders");
+    refreshProjectsBtn.setTooltip ("Search every listed folder and subfolder now. Folder settings are saved with OK.");
+    projectsHint.setText ("Searches matching project names in these folders and all subfolders", juce::dontSendNotification);
+    refreshProjectsBtn.onClick = [this] { searchProjectFolders(); };
     styleBtn (okBtn, Pal::Action,   Pal::OnAction);
     styleBtn (cancelBtn,       Pal::Elevated, Pal::Subtext);
     styleBtn (retrySettings,   Pal::Elevated, Pal::Text);
@@ -224,6 +242,8 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
     addAndMakeVisible (previewsBrowse);
     addAndMakeVisible (addProjectsBtn);
+    addAndMakeVisible (refreshProjectsBtn);
+    addAndMakeVisible (searchStatus);
     addAndMakeVisible (okBtn);
     if (firstRun)
         cancelBtn.setVisible (false);   // explicit so resized() skips it
@@ -235,7 +255,33 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     loadSettings (std::move (reader));
 }
 
-SettingsDialog::~SettingsDialog() { storageGeneration->fetch_add (1); validationGeneration->fetch_add (1); }
+SettingsDialog::~SettingsDialog() { searchGeneration->fetch_add (1); storageGeneration->fetch_add (1); validationGeneration->fetch_add (1); }
+
+void SettingsDialog::saveZoom()
+{
+    if (! settingsLoaded || zoomSaving) return;
+    const int percent = zoomCombo.getSelectedId();
+    zoomSaving = true;
+    zoomCombo.setEnabled (false);
+    okBtn.setEnabled (false);
+    ProjectScanner::editAsync ([percent] { return ZoomSettings::save (percent, false); },
+        [safe = juce::Component::SafePointer<SettingsDialog> (this), percent] (juce::Result result)
+        {
+            if (result.wasOk()) RememberUI::appZoom().set (percent);
+            if (safe == nullptr) return;
+            safe->zoomSaving = false;
+            safe->zoomCombo.setEnabled (true);
+            safe->zoomCombo.setSelectedId (RememberUI::appZoom().percent, juce::dontSendNotification);
+            if (result.failed())
+            {
+                safe->settingsProblem.setText ("Cannot save zoom: " + result.getErrorMessage(), juce::dontSendNotification);
+                safe->settingsProblem.setVisible (true);
+                safe->retrySettings.setVisible (true);
+                safe->resized();
+            }
+            safe->refreshLabels();
+        });
+}
 
 void SettingsDialog::saveAppearance()
 {
@@ -266,6 +312,8 @@ void SettingsDialog::saveAppearance()
 void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapshot()> reader)
 {
     settingsLoaded = false;
+    searchGeneration->fetch_add (1);
+    searchStatus.setText ({}, juce::dontSendNotification);
     validationGeneration->fetch_add (1); storageGeneration->fetch_add (1); measuredFolder = {};
     for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
     previewsPath.setText ("Loading settings...", juce::dontSendNotification);
@@ -298,6 +346,9 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             if (result.wasOk()) RememberUI::setDark (settings->darkAppearance);
             safe->appearanceCombo.setSelectedId (RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
             safe->appearanceCombo.setEnabled (result.wasOk());
+            if (result.wasOk()) RememberUI::appZoom().set (settings->interfaceZoom);
+            safe->zoomCombo.setSelectedId (RememberUI::appZoom().percent, juce::dontSendNotification);
+            safe->zoomCombo.setEnabled (result.wasOk());
             // Preserve all supported config values, rather than silently
             // overwriting a non-preset value when saving an unrelated setting.
             if (safe->durationCombo.indexOfItemId (settings->seconds) < 0)
@@ -342,7 +393,7 @@ void SettingsDialog::refreshLabels()
         return juce::Result::ok();
     }, [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation, valid] (juce::Result result)
     {
-        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid && ! safe->appearanceSaving);
+        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid && ! safe->appearanceSaving && ! safe->zoomSaving);
     });
 }
 
@@ -432,12 +483,36 @@ void SettingsDialog::addProjectFolder()
             safe->projectsFolders.add (picked);
             safe->rebuildFoldersList();
             safe->refreshLabels();
+            safe->searchProjectFolders();
+        });
+}
+
+void SettingsDialog::searchProjectFolders()
+{
+    if (! settingsLoaded) return;
+    const auto token = searchGeneration;
+    const auto generation = token->fetch_add (1) + 1;
+    refreshProjectsBtn.setEnabled (false);
+    searchStatus.setText ("Searching folders and subfolders...", juce::dontSendNotification);
+    ProjectScanner::searchDirectoriesAsync (previewsFolder, projectsFolders,
+        [token, generation] { return token->load() != generation; },
+        [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation]
+        (juce::Result result, ProjectScanner::DirectorySearchResult summary)
+        {
+            if (safe == nullptr || token->load() != generation) return;
+            safe->refreshProjectsBtn.setEnabled (true);
+            const auto text = result.failed() ? result.getErrorMessage()
+                : juce::String ((juce::int64) summary.candidates) + " project files; "
+                    + juce::String (summary.available) + " linked, " + juce::String (summary.missing)
+                    + " missing (" + juce::String (summary.elapsedMs / 1000.0, 1) + " s)";
+            safe->searchStatus.setText (text, juce::dontSendNotification);
+            safe->searchStatus.setTooltip (text);
         });
 }
 
 void SettingsDialog::commit()
 {
-    if (appearanceSaving) return;
+    if (appearanceSaving || zoomSaving) return;
     validationGeneration->fetch_add (1);
     for (auto* child : getChildren()) child->setEnabled (false);
     auto originalBackup = std::make_shared<juce::File>();
@@ -504,6 +579,12 @@ void SettingsDialog::resized()
     appearanceRow.removeFromLeft (16);
     appearanceHint.setBounds (appearanceRow);
     area.removeFromTop (12);
+    auto zoomRow = area.removeFromTop (32);
+    zoomCaption.setBounds (zoomRow.removeFromLeft (110));
+    zoomCombo.setBounds (zoomRow.removeFromLeft (150));
+    zoomRow.removeFromLeft (16);
+    zoomHint.setBounds (zoomRow);
+    area.removeFromTop (12);
 
     // ── Previews block ──────────────────────────────────────────────────────
     auto block1 = area.removeFromTop (78);
@@ -560,6 +641,8 @@ void SettingsDialog::resized()
     area = area.withTrimmedBottom (52 + problemHeight);
     auto addBtnRow   = area.removeFromBottom (32);
     addProjectsBtn.setBounds (addBtnRow.removeFromLeft (120));
+    refreshProjectsBtn.setBounds (addBtnRow.removeFromRight (140));
+    searchStatus.setBounds (area.removeFromBottom (24));
 
     foldersList.setBounds (area);
     settingsProblem.setBounds (16, getHeight() - 52 - problemHeight, getWidth() - 32, problemHeight);

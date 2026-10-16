@@ -40,6 +40,26 @@ limita ganancia para dejar 1 dB de margen de pico de muestra decodificada. No es
 una certificación true-peak ni implementa el limitador del modo Loud de Spotify.
 El audio guardado y la señal del DAW no se alteran por los controles de escucha.
 
+La miniatura de la app en la barra de tareas de Windows ofrece Previous,
+Play/Pause y Next, usando la misma cola e historial que el reproductor. Los
+controles siguen disponibles al minimizar y se deshabilitan cuando no hay
+preview o cola. La integración se registra de nuevo cuando Explorer recrea
+el botón de la barra de tareas.
+
+El clic izquierdo en Repeat recorre circularmente Off, All, One, Single y Off;
+el clic derecho abre el menú. Off recorre la cola una vez, All repite la cola,
+One (repite la preview actual) y Single (reproduce la preview actual una vez
+y se detiene). Single no avanza automáticamente, incluso con Shuffle activado;
+Previous/Next manuales siguen disponibles. La opción persiste al reabrir la app.
+
+Settings incluye Search folders a la derecha bajo la lista de directorios.
+Busca en todos los directorios y subdirectorios, y muestra archivos encontrados,
+grabaciones enlazadas, proyectos pendientes de localizar y tiempo transcurrido.
+Añadir un directorio inicia la búsqueda automáticamente. La búsqueda ocurre en
+segundo plano y también puede usar la lista pendiente de guardar con OK: no
+guarda las opciones del diálogo, pero sí las asociaciones verificadas. Los
+nombres duplicados requieren una identidad previa o asignación manual.
+
 Referencias: [Spotify: normalización](https://support.spotify.com/us/artists/article/loudness-normalization/),
 [ITU-R BS.1770-5](https://www.itu.int/rec/R-REC-BS.1770-5-202311-I/en).
 

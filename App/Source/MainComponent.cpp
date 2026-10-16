@@ -9,13 +9,14 @@ MainComponent::MainComponent()
 {
     setSize (960, 680);
     setWantsKeyboardFocus (true);
+    list.addSearchKeyListener (this);
 
     settingsButton.setTooltip ("Open settings (previews & projects folders)");
     RememberUI::bindColour (settingsButton, juce::TextButton::buttonColourId, Pal::Elevated);
     RememberUI::bindColour (settingsButton, juce::TextButton::textColourOffId, Pal::Subtext);
     settingsButton.onClick = [this] { showSettingsDialog(); };
     settingsButton.setTitle ("Settings");
-    settingsButton.setTooltip (juce::String ("Open settings (previews and project folders)\n") + REMEMBER_VERSION_LINE);
+    settingsButton.setTooltip (RememberUI::shortcutTooltip ("Open settings", "Ctrl+,", REMEMBER_VERSION_LINE));
     addAndMakeVisible (settingsButton);
 
     // Clicking a row loads AND auto-plays the preview
@@ -29,6 +30,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (sidebar);
     addAndMakeVisible (list);
     addAndMakeVisible (player);
+    addAndMakeVisible (dawLauncher);
 
     // Sidebar selects a folder → list filters by it
     sidebar.onFolderSelected = [this] (juce::String path)
@@ -71,8 +73,30 @@ MainComponent::MainComponent()
     // missing projects from that publication without a second scan or dialogs.
 }
 
+bool MainComponent::libraryShortcut (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress ('F', juce::ModifierKeys::ctrlModifier, 0)) { list.focusSearch(); return true; }
+    if (key == juce::KeyPress (',', juce::ModifierKeys::ctrlModifier, 0)) { showSettingsDialog(); return true; }
+    if (key == juce::KeyPress ('O', juce::ModifierKeys::ctrlModifier, 0)) { list.openSelectedInDaw(); return true; }
+    if (key == juce::KeyPress ('F', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0))
+    { list.toggleFavoritesFilter(); return true; }
+    return false;
+}
+
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
+    if (libraryShortcut (key)) return true;
+    // Text editors own typing and cursor movement; only explicit library
+    // commands above may change the app while the user is entering text.
+    if (auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        dynamic_cast<juce::TextEditor*> (focused) != nullptr && isParentOf (focused)) return false;
+    if (key == juce::KeyPress ('M')) { player.toggleMute(); return true; }
+    if (key == juce::KeyPress ('S')) { player.toggleShuffle(); return true; }
+    if (key == juce::KeyPress ('L')) { player.cycleRepeat(); return true; }
+    if (key == juce::KeyPress (juce::KeyPress::leftKey, juce::ModifierKeys::altModifier, 0))
+    { player.seekBySeconds (-5); return true; }
+    if (key == juce::KeyPress (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier, 0))
+    { player.seekBySeconds (5); return true; }
     if (key.getModifiers().isCtrlDown() && key.getKeyCode() == 'Z')
     {
         ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); },
@@ -120,7 +144,8 @@ void MainComponent::checkFirstRun()
 {
     auto needsSetup = std::make_shared<bool> (false);
     auto dark = std::make_shared<bool> (false);
-    ProjectScanner::queryAsync ([needsSetup, dark]
+    auto zoom = std::make_shared<int> (100);
+    ProjectScanner::queryAsync ([needsSetup, dark, zoom]
     {
         const auto settings = ProjectScanner::readSettings();
         if (settings.result.failed()) return settings.result;
@@ -128,12 +153,14 @@ void MainComponent::checkFirstRun()
         // error offers Settings/Refresh; it is not a new profile to initialise.
         *needsSetup = settings.previews == juce::File{};
         *dark = settings.darkAppearance;
+        *zoom = settings.interfaceZoom;
         return juce::Result::ok();
     },
-        [safe = juce::Component::SafePointer<MainComponent> (this), needsSetup, dark] (juce::Result result)
+        [safe = juce::Component::SafePointer<MainComponent> (this), needsSetup, dark, zoom] (juce::Result result)
         {
             if (safe == nullptr || result.failed()) return;
             RememberUI::setDark (*dark);
+            RememberUI::appZoom().set (*zoom);
             if (! *needsSetup) return;
             SettingsDialog::launch (true, [safe]
             { if (safe != nullptr) safe->list.refresh(); });
@@ -172,6 +199,8 @@ void MainComponent::resized()
     auto header = area.removeFromTop (80);
     settingsButton.setBounds (header.removeFromRight (104).reduced (12, 23));
     player.setBounds (area.removeFromBottom (kPlayerHeight));
-    sidebar.setBounds (area.removeFromLeft (kSidebarWidth));
+    auto sidebarArea = area.removeFromLeft (kSidebarWidth);
+    dawLauncher.setBounds (sidebarArea.removeFromBottom (44).reduced (16, 6));
+    sidebar.setBounds (sidebarArea);
     list.setBounds (area);
 }

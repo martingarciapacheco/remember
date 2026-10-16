@@ -36,12 +36,11 @@ void report (juce::Component::SafePointer<ProjectListComponent> safe, juce::Resu
 
 void ProjectListComponent::configureWorkflow()
 {
-    for (auto* button : { &filtersBtn, &collectionBtn, &actionsBtn }) addAndMakeVisible (*button);
+    for (auto* button : { &filtersBtn, &collectionBtn }) addAndMakeVisible (*button);
     for (auto* combo : { &collectionCombo, &sortCombo, &viewCombo }) addAndMakeVisible (*combo);
     filtersBtn.setTitle ("Filter projects"); filtersBtn.onClick = [this] { showFilters(); };
     collectionBtn.setTitle ("Save or remove smart collection"); collectionBtn.setTooltip ("Save the current filters as a smart collection");
     collectionBtn.onClick = [this] { saveCollection(); };
-    actionsBtn.setTitle ("Actions for selected projects"); actionsBtn.onClick = [this] { showActions(); };
     sortCombo.setTitle ("Sort projects");
     sortCombo.addItemList ({ "Latest capture", "Oldest capture", "Name", "BPM ascending", "BPM descending" }, 1);
     sortCombo.setSelectedId (1, juce::dontSendNotification);
@@ -159,8 +158,7 @@ void ProjectListComponent::editDetails (ProjectEntry entry)
     form->choice ("status", "Status", statuses(), entry.status);
     form->text ("notes", "Notes", entry.notes, true);
     form->text ("bpm", "Manual BPM", entry.bpmOverride > 0 ? juce::String (entry.bpmOverride) : "").setTooltip ("Leave empty to use DAW/analyzed tempo");
-    auto values = keys(); values.set (0, "Automatic key");
-    form->choice ("key", "Manual key", values, entry.keyOverride.isEmpty() ? "Automatic key" : entry.keyOverride);
+    form->musicalKey (entry.keyOverride);
     form->information ("Current BPM: " + juce::String (entry.bpm, 1) + " (" + entry.bpmSource + ") | Key: " + entry.key
         + (entry.keyOverride.isEmpty() ? " | analysis score " + juce::String (entry.keyConfidence, 2) + " (heuristic)" : " | manual"));
     form->toggle ("locked", "Lock this project's preview", entry.previewLocked);
@@ -169,7 +167,7 @@ void ProjectListComponent::editDetails (ProjectEntry entry)
     {
         const auto bpm = f.textValue ("bpm"); if (! validNumber (bpm, 1, 999)) return juce::Result::fail ("Enter BPM between 1 and 999, or leave empty");
         entry.status = f.choiceValue ("status"); entry.notes = f.textValue ("notes"); entry.bpmOverride = bpm.getDoubleValue();
-        entry.keyOverride = f.choiceValue ("key") == "Automatic key" ? "" : f.choiceValue ("key"); entry.previewLocked = f.toggleValue ("locked");
+        entry.keyOverride = f.manualKeyValue(); entry.previewLocked = f.toggleValue ("locked");
         ProjectScanner::editAsync ([entry] { return entry.save ({ "status", "notes", "bpmOverride", "keyOverride", "previewLocked" }); },
             [safe] (juce::Result r) { report (safe, r); }); return juce::Result::ok();
     };
@@ -189,11 +187,23 @@ void ProjectListComponent::selectEntry (const ProjectEntry& entry)
         if (entry.projectId.isNotEmpty() ? filtered[i].projectId == entry.projectId : filtered[i].metadataFile == entry.metadataFile)
         { listBox.selectRow (i); return; }
 }
-void ProjectListComponent::showActions()
+void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponent* row)
 {
-    const auto selection = selectedEntries(); juce::PopupMenu menu;
+    auto selection = selectedEntries();
+    bool containsClicked = false;
+    for (const auto& item : selection) if (item.metadataFile == clicked.metadataFile) containsClicked = true;
+    if (! containsClicked) selection = { clicked };
+    juce::PopupMenu menu;
+    menu.addItem (12, "Play preview", ! clicked.trashed && clicked.storageError.isEmpty());
+    menu.addItem (13, "Rename recording (R)", ! clicked.trashed && clicked.storageError.isEmpty() && (clicked.pending || clicked.projectPath.isEmpty()));
+    menu.addItem (14, "Open in DAW", clicked.projectAvailable && ! clicked.trashed);
+    menu.addItem (15, "Show project file in Explorer", clicked.projectAvailable && ! clicked.pending && ! clicked.trashed);
+    const bool canRecover = ! clicked.trashed && (! clicked.pending || clicked.pendingOwner != LibraryStore::OwnerState::Active);
+    menu.addItem (16, "Check and repair recording", canRecover);
+    if (clicked.pending) menu.addItem (17, "Keep recording", canRecover && clicked.storageError.isEmpty());
+    menu.addSeparator();
     const bool selected = ! selection.isEmpty(), trash = view == 3;
-    menu.addItem (1, "Project details", selected && selection.size() == 1 && ! trash);
+    menu.addItem (1, "Project details", ! trash && clicked.storageError.isEmpty());
     menu.addItem (2, "Add tags...", selected && ! trash); menu.addItem (3, "Remove tags...", selected && ! trash);
     menu.addItem (4, "Add to folder...", selected && ! trash); menu.addItem (5, "Remove from folder...", selected && ! trash);
     menu.addItem (6, "Mark as favorite", selected && ! trash); menu.addItem (7, "Remove favorite", selected && ! trash);
@@ -202,9 +212,16 @@ void ProjectListComponent::showActions()
     menu.addSeparator(); menu.addItem (10, "Clear filters");
     menu.addItem (11, "Undo organization change (Ctrl+Z)", ProjectScanner::canUndoOrganization());
     auto safe = juce::Component::SafePointer<ProjectListComponent> (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&actionsBtn), [safe, selection, trash] (int r)
+    const auto play = row->onPlay, rename = row->onRenameRequested, open = row->onOpenInDaw;
+    const auto recover = row->onRecover;
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (row->actionsAnchor()), [safe, selection, trash, clicked, play, rename, open, recover] (int r)
     {
         if (safe == nullptr || r == 0) return;
+        if (r == 12) { if (play) play(); return; }
+        if (r == 13) { if (rename) rename(); return; }
+        if (r == 14) { if (open) open(); return; }
+        if (r == 15) { ProjectScanner::openProjectAsync (clicked, true, [safe] (juce::Result result) { report (safe, result); }); return; }
+        if (r == 16 || r == 17) { if (recover) recover (r == 17); return; }
         if (r == 11)
         {
             ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); }, [safe] (juce::Result result) { report (safe, result); }); return;
@@ -215,7 +232,7 @@ void ProjectListComponent::showActions()
             safe->favFilterBtn.setToggleState (false, juce::dontSendNotification); safe->sortCombo.setSelectedId (1, juce::dontSendNotification);
             safe->collectionCombo.setSelectedId (1, juce::dontSendNotification); safe->applyFilter(); return;
         }
-        if (r == 1 && ! selection.isEmpty()) { safe->editDetails (selection[0]); return; }
+        if (r == 1 && ! selection.isEmpty()) { safe->editDetails (clicked); return; }
         const char* actions[] = { "", "", "addTags", "removeTags", "addFolder", "removeFolder", "favorite", "unfavorite", "status", "trash" };
         if (r == 9 && trash) { for (const auto& e : selection) safe->restoreRecording (e); return; }
         if (r < 10) safe->bulkEdit (selection, actions[r]);

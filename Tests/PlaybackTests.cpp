@@ -45,6 +45,58 @@ struct Unblock { std::shared_ptr<Control> state; ~Unblock() { state->release.sig
 
 void testPlayback (const juce::File&)
 {
+    // A large audio block must still yield a distinct, correctly timed cursor
+    // on every 60/120 Hz frame, across sample rates and callback boundaries.
+    for (const auto rate : { 44100.0, 48000.0, 96000.0, 192000.0 })
+        for (const auto fps : { 60, 120 })
+        {
+            PlaybackCursorClock clock;
+            check (! clock.position (100, 0, rate), "Unstarted audio supplied a presentation position");
+            const double blockSeconds = 8192.0 / rate;
+            int previousBlock = -1;
+            double previousPosition = -1;
+            for (int frame = 0; frame < fps * 2; ++frame)
+            {
+                const double elapsed = (frame + 0.5) / fps;
+                const int block = (int) (elapsed / blockSeconds);
+                if (block != previousBlock)
+                {
+                    clock.publish (block * 8192.0, (block + 1) * 8192.0, 2, 100 + block * blockSeconds);
+                    previousBlock = block;
+                }
+                const auto visual = clock.position (100 + elapsed, 2, rate);
+                check (visual && std::abs (*visual - elapsed) < 0.000001 && *visual > previousPosition,
+                       "Large audio blocks caused a stalled, inaccurate or backwards presentation frame");
+                previousPosition = *visual;
+            }
+            const auto stopped = clock.position (200, 2, rate);
+            check (stopped && *stopped == (previousBlock + 1) * 8192.0 / rate,
+                   "Cursor advanced beyond the supplied audio during a stall");
+            check (! clock.position (200, 4, rate), "Seek reused an obsolete presentation block");
+            clock.publish (0, 100, 4, 201);
+            check (clock.position (202, 4, rate) == std::optional<double> (100 / rate),
+                   "Short final/partial audio block let the cursor overshoot");
+        }
+    for (const auto hz : { 30, 60, 120, 144, 240 })
+    {
+        PlaybackFramePacer pacer;
+        int frames = 0;
+        for (int frame = 0; frame < hz * 2; ++frame)
+            if (pacer.advance (100 + (double) frame / hz)) ++frames;
+        const int expected = juce::jmin (hz, 120) * 2;
+        check (frames == expected, "Cursor frame pacing missed display frames or exceeded its 120 Hz limit");
+        check (! pacer.advance (100 + (double) (hz * 2 - 1) / hz), "A duplicate display event repainted the same frame");
+        pacer.reset();
+        check (pacer.advance (0), "Changing display clocks retained obsolete frame pacing");
+    }
+    {
+        PlaybackFramePacer pacer;
+        for (int frame = 0; frame < 240; ++frame)
+            check (pacer.advance (100 + frame / 120.0 + (frame % 2 == 0 ? 0.0001 : -0.0001)),
+                   "Slight display timestamp jitter halved 120 Hz cursor updates");
+        check (pacer.advance (200) && ! pacer.advance (200.001), "A delayed display frame caused catch-up repaints");
+    }
+    std::cout << "PASS: 60/120 Hz sub-block cursor interpolation, stalled/partial audio, seeks, and 30/60/120/144/240 Hz display pacing\n";
     const auto baseline = ReadAheadSource::processBufferBytes();
     double maximumCallbackMs = 0;
     std::vector<double> callbackTimes;
@@ -120,8 +172,12 @@ void testPlayback (const juce::File&)
         const auto missMs = juce::Time::getMillisecondCounterHiRes() - begun;
         check (missMs < 50 && audio.getMagnitude (0, 2048) == 0 && source.underruns() == 1
                && source.getNextReadPosition() == 16384, "A disk stall blocked audio, hid an underrun or advanced past missing samples");
+        check (source.presentationPosition (juce::Time::getMillisecondCounterHiRes() * 0.001)
+                   == std::optional<double> (16384.0 / 48000), "A storage underrun advanced the visual cursor");
         begun = juce::Time::getMillisecondCounterHiRes();
         source.setNextReadPosition (300019);
+        check (! source.presentationPosition (juce::Time::getMillisecondCounterHiRes() * 0.001),
+               "A seek retained the old block's interpolated cursor");
         check (juce::Time::getMillisecondCounterHiRes() - begun < 50, "Seeking waited for disk I/O");
         source.getNextAudioBlock ({ &audio, 0, 2048 });
         check (audio.getMagnitude (0, 2048) == 0 && source.getNextReadPosition() == 300019, "Seek replayed a stale cache page");

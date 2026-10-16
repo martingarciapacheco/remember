@@ -4,21 +4,31 @@
 #include "ProjectListComponent.h"
 #include "WaveformPlayerComponent.h"
 #include "FoldersSidebarComponent.h"
+#include "DawLauncher.h"
 
 class MainComponent : public juce::Component,
-                      public juce::DragAndDropContainer
+                      public juce::DragAndDropContainer,
+                      private juce::KeyListener
 {
 public:
     MainComponent();
-    ~MainComponent() override = default;
+    ~MainComponent() override { list.removeSearchKeyListener (this); }
 
     void paint (juce::Graphics& g) override;
     void resized() override;
 
     bool keyPressed (const juce::KeyPress& key) override;
     void setUiActive (bool active) { player.setUiActive (active); }
+    void taskbarPrevious() { player.previous(); }
+    void taskbarTogglePlay() { player.togglePlay(); }
+    void taskbarNext() { player.next(); }
+    bool taskbarPlaying() const { return player.isPlaying(); }
+    bool taskbarCanPlay() const { return player.canTogglePlayback(); }
+    bool taskbarHasQueue() const { return ! list.visibleEntries().isEmpty(); }
 
 private:
+    bool libraryShortcut (const juce::KeyPress& key);
+    bool keyPressed (const juce::KeyPress& key, juce::Component*) override { return libraryShortcut (key); }
     RememberUI::Style uiStyle { *this };
     void showSettingsDialog();
     void checkFirstRun();
@@ -26,6 +36,7 @@ private:
     FoldersSidebarComponent sidebar;
     ProjectListComponent    list;
     WaveformPlayerComponent player;
+    DawLauncher dawLauncher;
 
     juce::TextButton settingsButton { "Settings" };
 

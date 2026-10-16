@@ -47,13 +47,13 @@ public:
         g.setColour (RememberUI::colour (sel ? Pal::Accent : Pal::Text));
         g.setFont (RememberUI::font (13.0f, fullPath.isEmpty()));
         RememberUI::icon (g, "folder", juce::Rectangle<float> (6, 0, 20, (float) h));
-        g.drawText (displayName, 32, 0, w - 76, h, juce::Justification::centredLeft, true);
+        g.drawText (displayName, 32, 0, w - 86, h, juce::Justification::centredLeft, true);
 
         if (entryCount > 0)
         {
             g.setColour (RememberUI::colour (Pal::Subtext).withAlpha (1.0f));
             g.setFont (RememberUI::font (10.5f));
-            g.drawText (juce::String (entryCount), w - 40, 0, 34, h,
+            g.drawText (juce::String (entryCount), w - 50, 0, 34, h,
                         juce::Justification::centredRight, false);
         }
     }

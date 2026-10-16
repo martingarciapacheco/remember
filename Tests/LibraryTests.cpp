@@ -143,6 +143,7 @@ ProjectEntry byMetadata (const juce::Array<ProjectEntry>& entries, const juce::F
 
 void testLibraryCache (const juce::File& fixtureRoot)
 {
+    testFlStudioBackups (fixtureRoot);
     const auto root = fixtureRoot.getChildFile ("cache-library");
     const auto projects = fixtureRoot.getChildFile ("cache-projects");
     check (projects.createDirectory().wasOk(), "Cannot create project root");
@@ -364,6 +365,116 @@ void testLibraryCache (const juce::File& fixtureRoot)
        #endif
     }
     std::cout << "PASS: parsed-metadata cache, same-time/size replacement, corrupt/missing/exclusive manifests, missing audio, repair placeholders, replaced-directory identity, deletion and cancellation\n";
+}
+
+void testFlStudioBackups (const juce::File& fixtureRoot)
+{
+    struct BackupCase { const char* daw; const char* extension; const char* folder; };
+    const BackupCase cases[] {
+        { "Ableton Live", ".als", "Backup" }, { "Ableton Live", ".als", "Bakup" },
+        { "Studio One", ".song", "History" }, { "Pro Tools", ".ptx", "Session File Backups" },
+        { "Bitwig Studio", ".bwproject", "auto-backup" }, { "REAPER", ".rpp", "Backups" },
+        { "REAPER", ".rpp", "Auto-Saves" }, { "REAPER", ".rpp", "AutoSaves" },
+        { "Cubase", ".cpr", "Auto Saves" }, { "Nuendo", ".npr", "Auto Saves" }
+    };
+    int fixture = 0;
+    for (const auto& scenario : cases)
+    {
+        const auto project = fixtureRoot.getChildFile ("daw-backups/" + juce::String (++fixture));
+        const auto folder = project.getChildFile (scenario.folder);
+        check (folder.getChildFile ("nested").createDirectory().wasOk(), "Cannot create DAW backup fixture");
+        const auto primary = project.getChildFile ("Song" + juce::String (scenario.extension).toUpperCase());
+        const auto backup = folder.getChildFile ("Song [2026-10-15 120000]" + juce::String (scenario.extension));
+        const auto copy = folder.getChildFile ("nested/Song" + juce::String (scenario.extension));
+        check (primary.replaceWithText ("official") && backup.replaceWithText ("autosave")
+               && copy.replaceWithText ("official"), "Cannot seed DAW backups");
+        ProjectIdentity::CandidateIndex lookup;
+        check (lookup.rebuild ({ project, folder }) && lookup.getCandidateCount() == 1
+               && lookup.resolve ("Song", scenario.daw) == primary.getFullPathName(),
+               "DAW backups entered title inventory or an explicit backup search root");
+        check (lookup.resolve ("Song", scenario.daw, {}, {}, ProjectIdentity::fingerprint (primary)) == primary.getFullPathName()
+               && lookup.resolve ("Song", scenario.daw, backup.getFullPathName(), ProjectIdentity::fileId (backup),
+                                  ProjectIdentity::fingerprint (backup)) == primary.getFullPathName(),
+               "DAW backup fingerprint or historical path bypassed the primary rule");
+        const auto library = fixtureRoot.getChildFile ("daw-backup-previews/" + juce::String (fixture));
+        const auto entry = library.getChildFile ("preview");
+        makeEntry (entry, backup);
+        juce::var dawPatch (new juce::DynamicObject());
+        dawPatch.getDynamicObject()->setProperty ("daw", scenario.daw);
+        check (LibraryStore::patchJson (entry.getChildFile ("metadata.json"), dawPatch).wasOk(), "Cannot set fixture DAW");
+        auto repaired = byMetadata (ProjectScanner::scan (library, { project }, &lookup), entry.getChildFile ("metadata.json"));
+        check (repaired.projectAvailable && repaired.projectPath == primary.getFullPathName()
+               && repaired.projectFileId == ProjectIdentity::fileId (primary), "DAW preview backup association was not repaired");
+        repaired.projectPath = backup.getFullPathName();
+        check (repaired.save ({ "projectPath" }).wasOk()
+               && juce::JSON::parse (repaired.metadataFile.loadFileAsString()).getProperty ("projectPath", "").toString() == primary.getFullPathName(),
+               "Manual DAW backup association bypassed the primary rule");
+        const auto alternative = project.getChildFile ("Song_v2" + juce::String (scenario.extension));
+        check (alternative.replaceWithText ("valid separate version") && lookup.rebuild ({ project })
+               && lookup.getCandidateCount() == 2 && lookup.resolve ("Song_v2", scenario.daw) == alternative.getFullPathName()
+               && lookup.resolve ("Song", scenario.daw, backup.getFullPathName()).isEmpty(),
+               "DAW backup repair guessed between primaries or excluded an ordinary saved version");
+        check (primary.deleteFile() && alternative.deleteFile()
+               && ProjectIdentity::preferredProjectFile (backup) == backup, "A standalone folder was excluded solely by its name");
+        check (primary.replaceWithText ("restored primary") && lookup.resolve ("Song", scenario.daw).isNotEmpty(),
+               "Cannot restore DAW primary fixture");
+        check (ProjectIdentity::preferredProjectFile (project.getChildFile ("History/Unrelated.flp"))
+                   == project.getChildFile ("History/Unrelated.flp"), "A backup folder rule leaked to another DAW format");
+    }
+    for (const auto* suffix : { ".rpp-bak", ".bak", ".autosave" })
+    {
+        const auto backup = fixtureRoot.getChildFile ("backup-only" + juce::String (suffix));
+        check (backup.replaceWithText ("backup-only format") && ProjectIdentity::preferredProjectFile (backup) == juce::File{}
+               && ProjectIdentity::resolve ("backup-only", {}, {}, backup.getFullPathName(), ProjectIdentity::fileId (backup)).isEmpty(),
+               "A backup-only extension bypassed filtering through an existing absolute path");
+    }
+    std::cout << "PASS: Ableton Backup/Bakup, Studio One History, Pro Tools session backups, Bitwig auto-backup, REAPER and Steinberg backups\n";
+    {
+        const auto songFolder = fixtureRoot.getChildFile ("fl-backup/LOVIN YOU");
+        const auto backup = songFolder.getChildFile ("bAcKuP");
+        check (backup.getChildFile ("nested").createDirectory().wasOk(), "Cannot create FL backup fixture");
+        const auto primary = songFolder.getChildFile ("LOVIN YOU.FLP");
+        const auto autosave = backup.getChildFile ("LOVIN YOU (autosaved).flp");
+        const auto homonym = backup.getChildFile ("nested/LOVIN YOU.flp");
+        const auto otherDaw = backup.getChildFile ("Other.als");
+        check (primary.replaceWithText ("primary") && autosave.replaceWithText ("autosave")
+               && homonym.replaceWithText ("primary") && otherDaw.replaceWithText ("ableton"), "Cannot seed FL backup fixture");
+        ProjectIdentity::CandidateIndex lookup;
+        check (lookup.rebuild ({ songFolder, backup }) && lookup.getCandidateCount() == 2,
+               "FL backups entered inventory, including through an explicit Backup root");
+        check (lookup.resolve ("LOVIN YOU", "FL Studio") == primary.getFullPathName()
+               && lookup.resolve ("LOVIN YOU (autosaved)", "FL Studio").isEmpty()
+               && lookup.resolve ("Other", "Ableton Live") == otherDaw.getFullPathName(),
+               "FL backup exclusion broke title resolution or another DAW");
+        check (lookup.resolve ("LOVIN YOU", "FL Studio", {}, {}, ProjectIdentity::fingerprint (primary)) == primary.getFullPathName(),
+               "A backup copy made the primary fingerprint ambiguous");
+        check (lookup.resolve ("LOVIN YOU (autosaved)", "FL Studio", autosave.getFullPathName(),
+                              ProjectIdentity::fileId (autosave), ProjectIdentity::fingerprint (autosave)) == primary.getFullPathName(),
+               "Historical backup identity bypassed the primary project rule");
+        const auto library = fixtureRoot.getChildFile ("fl-backup-library");
+        const auto recording = library.getChildFile ("preview");
+        makeEntry (recording, autosave);
+        auto migrated = byMetadata (ProjectScanner::scan (library, { songFolder }, &lookup), recording.getChildFile ("metadata.json"));
+        check (migrated.projectPath == primary.getFullPathName() && migrated.projectAvailable
+               && migrated.projectFileId == ProjectIdentity::fileId (primary)
+               && juce::JSON::parse (migrated.metadataFile.loadFileAsString()).getProperty ("projectPath", "").toString() == primary.getFullPathName(),
+               "A previously associated backup was not repaired and persisted to the primary");
+        migrated.projectPath = autosave.getFullPathName();
+        check (migrated.save ({ "projectPath" }).wasOk()
+               && juce::JSON::parse (migrated.metadataFile.loadFileAsString()).getProperty ("projectPath", "").toString() == primary.getFullPathName(),
+               "Manual app association persisted an excluded backup");
+        const auto second = songFolder.getChildFile ("Alternative.flp");
+        check (second.replaceWithText ("alternative") && lookup.rebuild ({ songFolder })
+               && lookup.resolve ("LOVIN YOU", "FL Studio", autosave.getFullPathName()).isEmpty()
+               && lookup.wasLastResolutionAmbiguous(), "Multiple primary FLPs caused an arbitrary backup reassociation");
+        check (primary.deleteFile() && second.deleteFile() && lookup.rebuild ({ backup })
+               && lookup.resolve ("LOVIN YOU (autosaved)", "FL Studio") == autosave.getFullPathName(),
+               "A standalone Backup folder without a primary FLP was excluded");
+        check (primary.replaceWithText ("primary restored")
+               && lookup.resolve ("LOVIN YOU (autosaved)", "FL Studio").isEmpty(),
+               "A stale inventory selected a backup after a primary appeared");
+        std::cout << "PASS: FL Studio primary project selection, Backup exclusion, historical/manual repair, ambiguity and standalone backups\n";
+    }
 }
 
 void testLibraryFailureRecovery (const juce::File& root)
@@ -599,6 +710,51 @@ void testSettingsLoad (const juce::File& root)
     }
     awaitUi ([] { return ProjectScanner::pendingJobs() == 0; });
     std::cout << "PASS: asynchronous coherent settings, live dispatch while blocked, non-preset preservation and 100 immediate closes; constructor=" << constructMs << " ms\n";
+
+    const auto searchLibrary = root.getChildFile ("manual-search-library");
+    const auto searchRoot = root.getChildFile ("draft-search-root");
+    const auto nested = searchRoot.getChildFile ("nested/deep");
+    check (nested.createDirectory().wasOk(), "Cannot create draft recursive search root");
+    const auto project = nested.getChildFile ("Recursive match.flp");
+    check (project.replaceWithText ("unique draft project"), "Cannot create recursive project");
+    const auto recording = searchLibrary.getChildFile ("recording");
+    makeEntry (recording, project);
+    const auto manifest = recording.getChildFile ("metadata.json");
+    auto unlink = [&]
+    {
+        check (LibraryStore::updateJson (manifest, [] (juce::DynamicObject& object)
+        {
+            object.setProperty ("projectPath", ""); object.setProperty ("projectFileId", "");
+            object.setProperty ("projectFingerprint", ""); return juce::Result::ok();
+        }).wasOk(), "Cannot unlink recursive fixture");
+    };
+    unlink();
+    const auto configBefore = LibraryStore::configFile().loadFileAsString();
+    bool finished = false, succeeded = false;
+    ProjectScanner::DirectorySearchResult summary;
+    const auto search = [&](std::function<bool()> cancelled)
+    {
+        finished = succeeded = false;
+        ProjectScanner::searchDirectoriesAsync (searchLibrary, { searchRoot }, std::move (cancelled),
+            [&](juce::Result result, ProjectScanner::DirectorySearchResult value)
+            { succeeded = result.wasOk(); summary = value; finished = true; });
+        awaitUi ([&] { return finished; });
+    };
+    search ([] { return false; });
+    check (succeeded && summary.candidates == 1 && summary.available == 1 && summary.missing == 0
+           && LibraryStore::readJson (manifest)["projectPath"].toString() == project.getFullPathName(),
+           "Draft search did not associate a uniquely named project in a deep subfolder");
+    const auto duplicate = searchRoot.getChildFile ("Recursive match.flp");
+    check (duplicate.replaceWithText ("different homonym"), "Cannot create ambiguous draft project");
+    unlink(); search ([] { return false; });
+    check (succeeded && summary.candidates == 2 && summary.available == 0 && summary.missing == 1
+           && LibraryStore::readJson (manifest)["projectPath"].toString().isEmpty(),
+           "Draft search guessed between same-name projects");
+    const auto beforeCancel = manifest.loadFileAsString();
+    search ([] { return true; });
+    check (! succeeded && manifest.loadFileAsString() == beforeCancel, "Cancelled directory search modified an association");
+    check (LibraryStore::configFile().loadFileAsString() == configBefore, "Draft search saved settings");
+    std::cout << "PASS: draft recursive search associates a unique name, rejects homonyms, cancels without writes, preserves settings\n";
 }
 
 void testSettingsRecovery (const juce::File& root)

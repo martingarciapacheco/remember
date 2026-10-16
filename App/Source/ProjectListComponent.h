@@ -24,6 +24,9 @@ public:
     std::function<void(juce::ModifierKeys)> onSelectionGesture;
     std::function<void()>                 onDetails, onRestore;
     std::function<void()>                 onPlay;
+    std::function<void(ProjectRowComponent*)> onActions;
+    std::function<void(juce::String)>      onStatusChanged;
+    juce::Component* actionsAnchor() { return &actionsBtn; }
     std::function<void(bool)>             onFavoriteToggle;
     std::function<void(juce::String)>     onRenameCommitted;
     std::function<void()>                 onRenameRequested;
@@ -40,7 +43,8 @@ private:
     std::function<void(juce::String)> renameCommit;
 
     juce::TextButton favBtn   { "" };
-    juce::TextButton playBtn  { ">" };
+    juce::TextButton actionsBtn { "..." };
+    juce::TextButton statusBtn;
     juce::TextEditor renameEditor;
 };
 
@@ -67,6 +71,10 @@ public:
     void editTagsForSelected();
     void toggleFavoriteForSelected();
     void deleteSelected();
+    void focusSearch() { searchBox.grabKeyboardFocus(); searchBox.selectAll(); }
+    void toggleFavoritesFilter();
+    void addSearchKeyListener (juce::KeyListener* listener) { searchBox.addKeyListener (listener); }
+    void removeSearchKeyListener (juce::KeyListener* listener) { searchBox.removeKeyListener (listener); }
     const juce::Array<ProjectEntry>& visibleEntries() const { return filtered; }
     juce::Array<ProjectEntry> selectedEntries() const;
     void selectEntry (const ProjectEntry&);
@@ -99,14 +107,14 @@ private:
     void applyFilter();
     void configureWorkflow();
     void showFilters();
-    void showActions();
+    void showActions (ProjectEntry, ProjectRowComponent*);
     void editDetails (ProjectEntry);
     void saveCollection();
     void restoreRecording (ProjectEntry);
     void bulkEdit (juce::Array<ProjectEntry>, juce::String operation);
     LibraryFilter filter;
     juce::ComboBox collectionCombo, sortCombo, viewCombo;
-    juce::TextButton filtersBtn { "Filters" }, collectionBtn { "+" }, actionsBtn { "Actions" };
+    juce::TextButton filtersBtn { "Filters" }, collectionBtn { "+" };
     juce::var collections;
     int view = 1;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -118,6 +126,7 @@ private:
     juce::TextButton  refreshBtn   { "Refresh" };
     juce::ListBox     listBox;
     juce::Label       libraryStatus;
+    juce::Label       itemCount;
     juce::SharedResourcePointer<juce::TooltipWindow> tooltips;
     juce::Component::SafePointer<juce::DialogWindow> recoveryWindow;
 
@@ -127,6 +136,6 @@ private:
     bool         showFavOnly       { false };
     juce::String folderFilter;            // empty = no filter
 
-    static constexpr int kToolbarH = 132;
-    static constexpr int kRowH     = 64;
+    int toolbarHeight() const { return getWidth() - 32 < 650 ? 134 : 94; }
+    static constexpr int kRowH     = RememberUI::recordingRowHeight;
 };

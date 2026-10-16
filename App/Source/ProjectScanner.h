@@ -61,6 +61,7 @@ public:
         juce::String fingerprint;
         bool canRebuild = false;
         bool darkAppearance = false;
+        int interfaceZoom = 100;
         CaptureOptions capture;
     };
     enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc };
@@ -94,6 +95,17 @@ public:
     // UI reads the last immutable publication. All disk work belongs to the
     // index worker; Refresh invalidates its candidate/negative cache.
     static void refreshAsync();
+    struct DirectorySearchResult
+    {
+        size_t candidates = 0;
+        int available = 0, missing = 0;
+        double elapsedMs = 0;
+    };
+    // Searches draft settings without saving them. Verified associations are
+    // persisted by scan(), then the normal library worker publishes them.
+    static void searchDirectoriesAsync (const juce::File& previews, const juce::Array<juce::File>& roots,
+        std::function<bool()> cancelled,
+        std::function<void(juce::Result, DirectorySearchResult)> completion);
     static void addLibraryListener (juce::ChangeListener*);
     static void removeLibraryListener (juce::ChangeListener*);
     static void setLibraryVisible (bool);

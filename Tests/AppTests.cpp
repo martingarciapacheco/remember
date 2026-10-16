@@ -58,6 +58,18 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+        if (argc == 2 && juce::String (argv[1]) == "--playback")
+        {
+            testPlayback (root);
+            ProjectEntry entry;
+            entry.name = "Device preview"; entry.previewOgg = root.getChildFile ("device.ogg");
+            entry.metadataFile = root.getChildFile ("device.json");
+            writeOgg (entry.previewOgg, 0.2f);
+            testDevice (entry);
+            ProjectScanner::beginShutdown();
+            awaitUi ([] { return ProjectScanner::shutdownReady(); });
+            return 0;
+        }
         if (argc == 2 && juce::String (argv[1]) == "--scene")
         {
             testLibraryScene (root);
@@ -70,6 +82,11 @@ int main (int argc, char** argv)
             testWorkflowFeatures (root);
             ProjectScanner::beginShutdown();
             awaitUi ([] { return ProjectScanner::shutdownReady(); });
+            return 0;
+        }
+        if (argc == 2 && (juce::String (argv[1]) == "--fl-studio-backups" || juce::String (argv[1]) == "--daw-backups"))
+        {
+            testFlStudioBackups (root);
             return 0;
         }
         if (argc == 2 && juce::String (argv[1]) == "--frontend")

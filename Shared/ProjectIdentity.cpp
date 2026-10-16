@@ -188,6 +188,39 @@ HostProject ProjectIdentity::detectHostProject()
 #endif
 }
 
+juce::File ProjectIdentity::preferredProjectFile (const juce::File& file)
+{
+    // Keep backup-only formats out of direct host and historical paths too.
+    if (file.hasFileExtension ("bak;rpp-bak;autosave")) return {};
+    const auto extension = file.getFileExtension().toLowerCase();
+    const auto backupFolder = [&] (const juce::String& name)
+    {
+        const auto folder = name.toLowerCase();
+        if (extension == ".flp" || extension == ".als") return folder == "backup" || folder == "bakup";
+        if (extension == ".song") return folder == "history";
+        if (extension == ".ptx") return folder == "session file backups";
+        if (extension == ".bwproject") return folder == "auto-backup";
+        if (extension == ".rpp") return folder == "backups" || folder == "auto-saves" || folder == "autosaves";
+        if (extension == ".cpr" || extension == ".npr") return folder == "auto saves";
+        return false;
+    };
+    for (auto folder = file.getParentDirectory(); folder != folder.getParentDirectory(); folder = folder.getParentDirectory())
+    {
+        if (! backupFolder (folder.getFileName())) continue;
+        juce::File primary;
+        int count = 0;
+        for (const auto& item : juce::RangedDirectoryIterator (folder.getParentDirectory(), false, "*", juce::File::findFiles))
+        {
+            const auto candidate = item.getFile();
+            if (! candidate.getFileExtension().equalsIgnoreCase (extension)) continue;
+            primary = candidate;
+            ++count;
+        }
+        if (count > 0) return count == 1 ? preferredProjectFile (primary) : juce::File{};
+    }
+    return file;
+}
+
 juce::String ProjectIdentity::fileId (const juce::File& file)
 {
 #if JUCE_WINDOWS
@@ -328,7 +361,8 @@ bool ProjectIdentity::CandidateIndex::rebuild (const juce::Array<juce::File>& ro
             }
             const auto regular = iterator->is_regular_file (error);
             if (error) return fail (file, error.message());
-            if (regular && extensions.contains (file.getFileExtension().toLowerCase()))
+            if (regular && extensions.contains (file.getFileExtension().toLowerCase())
+                && preferredProjectFile (file) == file)
             {
                 auto key = file.getFullPathName();
                #if JUCE_WINDOWS
@@ -362,6 +396,15 @@ juce::String ProjectIdentity::CandidateIndex::resolve (const juce::String& name,
     lastAmbiguous = false;
     if (cancelled && cancelled()) return {};
     const auto previous = previousPath.isNotEmpty() ? juce::File (previousPath) : juce::File{};
+    if (previousPath.isNotEmpty())
+    {
+        const auto preferred = preferredProjectFile (previous);
+        if (preferred != previous)
+        {
+            lastAmbiguous = preferred == juce::File{};
+            return preferred.existsAsFile() ? preferred.getFullPathName() : juce::String{};
+        }
+    }
     const bool pathExists = previous.existsAsFile();
     if (pathExists && ((previousFileId.isEmpty() && previousFingerprint.isEmpty())
                       || (previousFileId.isNotEmpty() && fileId (previous) == previousFileId)))
@@ -373,7 +416,7 @@ juce::String ProjectIdentity::CandidateIndex::resolve (const juce::String& name,
         if (it->second.path.isEmpty()) { lastAmbiguous = it->second.ambiguous; return {}; }
         const juce::File cached (it->second.path);
         // A positive cache entry is evidence only while its identity holds.
-        if (cached.existsAsFile()
+        if (cached.existsAsFile() && preferredProjectFile (cached) == cached
             && ((! previousFileId.isEmpty() && fileId (cached) == previousFileId)
                 || (! previousFingerprint.isEmpty() && fingerprint (cached, cancelled) == previousFingerprint)))
             return it->second.path;
@@ -389,6 +432,7 @@ juce::String ProjectIdentity::CandidateIndex::resolve (const juce::String& name,
             auto& candidate = candidates[choice];
             if (cancelled && cancelled()) return {};
             if (! extensions.contains (candidate.extension)) continue;
+            if (preferredProjectFile (candidate.file) != candidate.file) continue;
             if (matches (candidate))
             {
                 if (found.isNotEmpty()) { ambiguous = true; return {}; }

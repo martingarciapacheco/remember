@@ -10,8 +10,9 @@ juce::Result WaveformEnvelope::read (const juce::File& file, const std::function
         || reader->lengthInSamples <= 0 || reader->numChannels == 0)
         return juce::Result::fail ("Cannot read waveform: " + file.getFullPathName());
     const auto length = reader->lengthInSamples;
-    const auto bins = (int) juce::jlimit ((juce::int64) 1, (juce::int64) 2048, (length + 511) / 512);
-    for (auto& channel : channels) channel.resize ((size_t) bins);
+    // Keep enough detail for enlarged/high-DPI editors without decoding on paint.
+    const auto bins = (int) juce::jlimit ((juce::int64) 1, (juce::int64) 32768, (length + 63) / 64);
+    for (auto& channel : channels) channel.assign ((size_t) bins, {});
     juce::AudioBuffer<float> audio (2, 8192);
     LoudnessMeter meter (reader->sampleRate, (int) reader->numChannels);
     for (juce::int64 position = 0; position < length;)

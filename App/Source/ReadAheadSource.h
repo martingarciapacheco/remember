@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <memory>
+#include "PlaybackCursor.h"
 
 // Reader I/O belongs exclusively to a retained worker. Control/audio operations
 // use atomic requests and bounded cache pages; they never join or call a reader.
@@ -21,6 +22,9 @@ public:
     bool readFailed() const;
     juce::String error() const;
     double sampleRate() const;
+    // UI probe using Time::getMillisecondCounterHiRes() * 0.001. Empty until
+    // audio is supplied after a seek, or if a concurrent snapshot is incomplete.
+    std::optional<double> presentationPosition (double seconds) const;
     uint64_t underruns() const;
     size_t bufferBytes() const;
     static size_t processBufferBytes();
@@ -35,5 +39,6 @@ private:
     // a new request, so a concurrent seek cannot overwrite callback state.
     uint64_t callbackGeneration = ~uint64_t{};
     juce::int64 callbackPosition = 0;
+    PlaybackCursorClock cursorClock;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ReadAheadSource)
 };

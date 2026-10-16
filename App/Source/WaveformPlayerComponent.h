@@ -7,6 +7,7 @@
 #include "PlaybackQueue.h"
 
 class WaveformPlayerComponent : public juce::Component,
+                                public juce::SettableTooltipClient,
                                 public juce::ChangeListener,
                                 public juce::Timer
 {
@@ -23,6 +24,10 @@ public:
     std::function<void (const ProjectEntry&)> onEntryLoaded;
     void next (bool automatic = false);
     void previous();
+    void toggleMute();
+    void toggleShuffle();
+    void cycleRepeat();
+    void seekBySeconds (double seconds);
     void setVolume (double value);
     double getVolume() const { return volumeSlider.getValue(); }
     void setMuted (bool);
@@ -32,12 +37,15 @@ public:
     bool autoplaySelection() const { return autoplay; }
     void togglePlay();   // public wrapper for keyboard shortcut
     bool hasLoadedEntry() const noexcept { return isLoaded; }
+    bool canTogglePlayback() const noexcept { return isLoaded || isLoading; }
     juce::String getPlaybackError() const { return playbackError; }
     bool isAudioDeviceOpen() const noexcept { return audioDeviceOpen; }
     uint64_t getUnderruns() const noexcept { return readerSource ? readerSource->underruns() : 0; }
     static int pendingLoads();
     bool isPlaying() const { return transport.isPlaying(); }
     void setUiActive (bool);
+    void visibilityChanged() override;
+    void parentHierarchyChanged() override;
 
     void paint     (juce::Graphics& g) override;
     void resized   () override;
@@ -48,22 +56,31 @@ public:
     void timerCallback() override;
 
 private:
+    friend struct PlaybackCursorTestAccess;
     RememberUI::Style uiStyle { *this };
     PlaybackQueue queue;
-    juce::TextButton previousBtn, nextBtn, shuffleBtn, repeatBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
+    juce::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
+    RememberUI::ContextMenuButton repeatBtn;
     juce::Slider volumeSlider;
     bool normalize = false, autoplay = true, applyingPreferences = false, preferencesTouched = false;
     void applyOutputGain();
     void savePlaybackPreferences();
     void showPlaybackOptions();
+    void showRepeatOptions();
+    void updateRepeatButton();
     void   seekTo (double normalizedPos);
     double getPositionNormalized() const;
     void   updateTimeLabel();
     void   updatePathLabel();
+    void   setOpenProjectAvailable (bool available);
     bool   ensureAudioDevice();
     void   detachSource();
     void   releaseAudioDevice();
     void   armIdleRelease();
+    void   updatePlaybackUpdates();
+    void   drawPlaybackFrame();
+    void   resetCursor();
+    void   repaintCursor (double seconds);
     void   showAudioSettings();
     void   handleDeviceFailure (const juce::String&);
     void   clearDeviceError();
@@ -107,6 +124,9 @@ private:
 
     // Waveform area cached bounds (set in resized)
     juce::Rectangle<int> waveArea;
+    juce::VBlankAttachment cursorVBlank;
+    PlaybackFramePacer cursorPacer;
+    double cursorSeconds = 0, lastVBlankTime = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformPlayerComponent)
 };

@@ -3,6 +3,7 @@
 #include "ProjectScanner.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/BackgroundRetirement.h"
+#include "WindowsTaskbarTransport.h"
 
 class AppShell::MainWindow : public juce::DocumentWindow, private juce::Timer
 {
@@ -13,7 +14,7 @@ public:
                           DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new MainComponent(), true);
+        setContentOwned (new RememberUI::ZoomView (std::make_unique<MainComponent>()), true);
         setResizable (true, false);
         setResizeLimits (640, 480, 4096, 4096);
         centreWithSize (960, 680);
@@ -25,7 +26,28 @@ public:
         // Native frame adjustments during the first show are initialisation,
         // not a user move. Read saved bounds against the final shown geometry.
         setVisible (true);
-        if (auto* content = dynamic_cast<MainComponent*> (getContentComponent())) content->setUiActive (true);
+       #if JUCE_WINDOWS
+        if (! taskbar && getPeer() != nullptr)
+        {
+            auto safe = juce::Component::SafePointer<MainComponent> (mainContent());
+            taskbar = std::make_unique<WindowsTaskbarTransport> (static_cast<HWND> (getPeer()->getNativeHandle()),
+                [safe]
+                {
+                    return safe == nullptr ? WindowsTaskbarTransport::State{}
+                        : WindowsTaskbarTransport::State { safe->taskbarPlaying(), safe->taskbarCanPlay(), safe->taskbarHasQueue() };
+                }, [safe] (int command)
+                {
+                    juce::MessageManager::callAsync ([safe, command]
+                    {
+                        if (safe == nullptr) return;
+                        if (command == 0) safe->taskbarPrevious();
+                        else if (command == 1) safe->taskbarTogglePlay();
+                        else safe->taskbarNext();
+                    });
+                });
+        }
+       #endif
+        if (auto* content = mainContent()) content->setUiActive (true);
         setMinimised (false);
         toFront (true);
         if (! firstShow) return;
@@ -52,7 +74,22 @@ public:
         });
     }
 
-    ~MainWindow() override { stopTimer(); persistBounds(); }
+    bool hasTaskbarButtons() const
+    {
+       #if JUCE_WINDOWS
+        return taskbar && taskbar->hasButtons();
+       #else
+        return false;
+       #endif
+    }
+
+    ~MainWindow() override
+    {
+       #if JUCE_WINDOWS
+        taskbar.reset();
+       #endif
+        stopTimer(); persistBounds();
+    }
     void moved() override
     {
         DocumentWindow::moved(); // retain the latest visible position before hiding
@@ -67,10 +104,15 @@ public:
     void closeButtonPressed() override
     {
         ProjectScanner::setLibraryVisible (false);
-        if (auto* content = dynamic_cast<MainComponent*> (getContentComponent())) content->setUiActive (false);
+        if (auto* content = mainContent()) content->setUiActive (false);
         setVisible (false);
     }
 private:
+    MainComponent* mainContent() const
+    {
+        auto* zoom = dynamic_cast<RememberUI::ZoomView*> (getContentComponent());
+        return zoom ? dynamic_cast<MainComponent*> (zoom->getContent()) : nullptr;
+    }
     void boundsChanged()
     {
         if (! boundsReady || isMinimised() || lastObservedBounds == getBounds()) return;
@@ -94,6 +136,9 @@ private:
         });
     }
     bool boundsReady = false;
+   #if JUCE_WINDOWS
+    std::unique_ptr<WindowsTaskbarTransport> taskbar;
+   #endif
     bool boundsEdited = false;
     bool boundsReadSucceeded = false;
     juce::Rectangle<int> lastObservedBounds;
@@ -197,6 +242,7 @@ void AppShell::requestQuit()
     trayIcon->setIconTooltip ("Remember - finishing background work");
     startTimer (50);
 }
+bool AppShell::hasTaskbarButtons() const { return mainWindow && mainWindow->hasTaskbarButtons(); }
 void AppShell::timerCallback()
 {
     if (ProjectScanner::shutdownReady() && WaveformPlayerComponent::pendingLoads() == 0

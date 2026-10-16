@@ -62,6 +62,34 @@ void testPluginFrontend (const juce::File& root)
                 throw std::runtime_error ("Cannot render plugin frontend");
         };
         save ("apple-plugin.png", 1); save ("apple-plugin-2x.png", 2);
+        for (auto percent : RememberUI::zoomPercentages)
+        {
+            editor->applyZoom (percent); ready();
+            editor->setVisible (true); // Offscreen snapshots do not require this; hit testing does.
+            const auto scale = percent / 100.0f;
+            if (editor->getWidth() != juce::roundToInt (440 * scale)
+                || editor->getHeight() != juce::roundToInt (496 * scale))
+                throw std::runtime_error ("Plugin zoom did not resize its editor");
+            for (auto* child : editor->getChildren())
+            {
+                const auto bounds = editor->getLocalArea (child, child->getLocalBounds());
+                if (! editor->getLocalBounds().contains (bounds)) throw std::runtime_error ("Plugin zoom clipped a control");
+                const auto centre = bounds.getCentre();
+                auto* hit = editor->getComponentAt (centre);
+                const bool interactive = dynamic_cast<juce::Button*> (child) != nullptr
+                    || dynamic_cast<juce::TextEditor*> (child) != nullptr;
+                if (interactive && child->isVisible() && hit != child && ! child->isParentOf (hit))
+                    throw std::runtime_error (("Plugin zoom lost control hit testing: " + child->getTitle()
+                        + " at " + juce::String (percent) + "% bounds=" + bounds.toString()
+                        + " hit=" + (hit ? hit->getTitle() : "null")).toStdString());
+            }
+            const auto filename = "zoom-plugin-" + juce::String (percent) + ".png";
+            save (filename.toRawUTF8(), 1);
+        }
+        editor.reset();
+        editor.reset (static_cast<RememberEditor*> (processor.createEditor())); ready();
+        if (editor->getWidth() != 880) throw std::runtime_error ("Plugin reopen lost saved zoom");
+        editor->applyZoom (100); ready();
        #if JUCE_WINDOWS
         for (auto* child : editor->getChildren())
             if (auto* button = dynamic_cast<juce::TextButton*> (child);

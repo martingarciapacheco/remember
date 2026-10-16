@@ -49,6 +49,17 @@ public:
         label->setFont (RememberUI::font (12)); RememberUI::bindColour (*label, juce::Label::textColourId, Pal::Subtext);
         label->setTooltip (value); add ({}, std::move (label), 46);
     }
+    void musicalKey (const juce::String& value)
+    {
+        auto control = std::make_unique<KeyControls> (value);
+        keyControls = control.get();
+        add ("Manual key", std::move (control), 36);
+    }
+    juce::String manualKeyValue() const
+    {
+        if (keyControls == nullptr || keyControls->automatic.getToggleState()) return {};
+        return keyControls->note.getText() + " " + keyControls->scale.getText().toLowerCase();
+    }
     juce::String textValue (const juce::String& id) const { return texts.at (id)->getText().trim(); }
     juce::String choiceValue (const juce::String& id) const { return choices.at (id)->getText(); }
     bool toggleValue (const juce::String& id) const { return toggles.at (id)->getToggleState(); }
@@ -83,6 +94,37 @@ public:
         options.resizable = true; options.launchAsync();
     }
 private:
+    struct KeyControls : juce::Component
+    {
+        explicit KeyControls (const juce::String& value)
+        {
+            automatic.getProperties().set ("rememberCheckbox", true);
+            automatic.setTitle ("Automatic key recognition");
+            automatic.setTooltip ("Recognize key automatically. Uncheck to choose a manual key.");
+            automatic.setToggleState (value.isEmpty(), juce::dontSendNotification);
+            note.setTitle ("Key note"); scale.setTitle ("Key scale");
+            note.addItemList ({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
+            juce::StringArray scales { "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian",
+                "Harmonic minor", "Melodic minor", "Major pentatonic", "Minor pentatonic", "Blues", "Whole tone", "Chromatic" };
+            auto savedScale = value.fromFirstOccurrenceOf (" ", false, false);
+            int scaleIndex = scales.indexOf (savedScale, true);
+            if (savedScale.isNotEmpty() && scaleIndex < 0) { scales.add (savedScale); scaleIndex = scales.size() - 1; }
+            scale.addItemList (scales, 1);
+            note.setText (value.isEmpty() ? "C" : value.upToFirstOccurrenceOf (" ", false, false), juce::dontSendNotification);
+            scale.setSelectedId (scaleIndex < 0 ? 2 : scaleIndex + 1, juce::dontSendNotification);
+            addAndMakeVisible (automatic); addAndMakeVisible (note); addAndMakeVisible (scale);
+            automatic.onClick = [this] { update(); }; update();
+        }
+        void update() { note.setEnabled (! automatic.getToggleState()); scale.setEnabled (! automatic.getToggleState()); }
+        void resized() override
+        {
+            auto area = getLocalBounds(); automatic.setBounds (area.removeFromLeft (32)); area.removeFromLeft (4);
+            note.setBounds (area.removeFromLeft (64)); area.removeFromLeft (8); scale.setBounds (area);
+        }
+        juce::ToggleButton automatic;
+        juce::ComboBox note, scale;
+    };
+    KeyControls* keyControls = nullptr;
     RememberUI::Style style { *this };
     struct Row { std::unique_ptr<juce::Label> label; std::unique_ptr<juce::Component> control; int height; };
     void add (juce::String caption, std::unique_ptr<juce::Component> control, int height)

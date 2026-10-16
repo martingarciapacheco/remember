@@ -24,7 +24,7 @@ inline void testAppearanceContrast()
             for (auto foreground : { Pal::Text, Pal::Subtext, Pal::Accent }) checkPair (foreground, background);
         checkPair (Pal::Error, Pal::BgDeep); checkPair (Pal::Success, Pal::BgDeep);
         checkPair (Pal::OnAction, Pal::Action);
-        if (dark && (RememberUI::colour (Pal::BgDeep).getARGB() != 0xff1c1c1e
+        if (dark && (RememberUI::colour (Pal::BgDeep).getARGB() != 0xff141416
             || RememberUI::colour (Pal::Content).getBrightness() <= RememberUI::colour (Pal::BgDeep).getBrightness()))
             throw std::runtime_error ("Dark appearance lost charcoal base or elevated surface");
     }

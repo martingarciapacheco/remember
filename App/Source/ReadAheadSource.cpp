@@ -147,6 +147,12 @@ bool ReadAheadSource::ready (int samples) const { return core->ready (samples); 
 bool ReadAheadSource::readFailed() const { return core->failed.load(); }
 juce::String ReadAheadSource::error() const { return core->initialError.isNotEmpty() ? core->initialError : (readFailed() ? "Decoder/storage read failed" : ""); }
 double ReadAheadSource::sampleRate() const { return core->rate; }
+std::optional<double> ReadAheadSource::presentationPosition (double seconds) const
+{
+    Core::Request command;
+    if (! core->request (command)) return {};
+    return cursorClock.position (seconds, command.generation, core->rate);
+}
 juce::int64 ReadAheadSource::getTotalLength() const { return core->length; }
 uint64_t ReadAheadSource::underruns() const { return core->underruns.load(); }
 size_t ReadAheadSource::bufferBytes() const { return core->reservedBytes; }
@@ -170,12 +176,14 @@ void ReadAheadSource::setNextReadPosition (juce::int64 position)
 }
 void ReadAheadSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
 {
+    const auto blockTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
     info.clearActiveBufferRegion();
     if (! valid()) return;
     Core::Request command;
     if (! core->request (command)) { core->underruns.fetch_add (1); return; }
     if (callbackGeneration != command.generation)
     { callbackGeneration = command.generation; callbackPosition = command.position; }
+    const auto blockStart = callbackPosition;
     int copied = 0;
     while (copied < info.numSamples && callbackPosition < core->length)
     {
@@ -199,4 +207,5 @@ void ReadAheadSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& inf
     if (copied < info.numSamples && callbackPosition < core->length) core->underruns.fetch_add (1);
     core->consumedPosition.store (callbackPosition);
     core->consumedGeneration.store (command.generation, std::memory_order_release);
+    cursorClock.publish ((double) blockStart, (double) callbackPosition, command.generation, blockTime);
 }

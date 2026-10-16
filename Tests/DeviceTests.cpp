@@ -3,6 +3,14 @@
 #include <iostream>
 #include <stdexcept>
 
+struct PlaybackCursorTestAccess
+{
+    static bool displaySynced (const WaveformPlayerComponent& player) { return ! player.cursorVBlank.isEmpty(); }
+    static double position (const WaveformPlayerComponent& player) { return player.cursorSeconds; }
+    static double lastFrame (const WaveformPlayerComponent& player) { return player.lastVBlankTime; }
+    static void draw (WaveformPlayerComponent& player) { player.drawPlaybackFrame(); }
+};
+
 namespace
 {
 void check (bool value, const char* error) { if (! value) throw std::runtime_error (error); }
@@ -75,6 +83,9 @@ void testDevice (const ProjectEntry& entry)
     State state;
     Manager manager (state);
     WaveformPlayerComponent player (&manager, false);
+    player.setSize (700, 260);
+    player.addToDesktop (juce::ComponentPeer::windowIsTemporary);
+    player.setVisible (true);
     check (state.opens == 0, "An idle player opened its device");
     player.loadEntry (entry);
     await ([&] { return player.hasLoadedEntry(); }, "load");
@@ -82,11 +93,52 @@ void testDevice (const ProjectEntry& entry)
     player.play();
     await ([&] { if (player.getPlaybackError().isNotEmpty()) throw std::runtime_error (player.getPlaybackError().toStdString()); return player.isPlaying(); }, "initial play");
     check (state.opens == 1 && state.device && state.device->render() > 0.001f, "Ready playback produced no audio");
+    juce::TextButton* playbackAudioButton = nullptr;
+    for (auto* child : player.getChildren())
+        if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "Audio")
+            playbackAudioButton = button;
+    check (playbackAudioButton && playbackAudioButton->onClick, "Playback Audio button is not reachable");
+    check (PlaybackCursorTestAccess::displaySynced (player), "Visible playback has no display-synchronised cursor");
+    const auto initialFrame = PlaybackCursorTestAccess::lastFrame (player);
+    await ([&]
+    {
+        state.device->render();
+        return PlaybackCursorTestAccess::lastFrame (player) > initialFrame && PlaybackCursorTestAccess::position (player) > 0;
+    }, "native display frame moves cursor");
+    playbackAudioButton->onClick();
+    juce::Component::SafePointer<juce::DialogWindow> playbackDialog;
+    for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
+        if (auto* dialog = dynamic_cast<juce::DialogWindow*> (juce::Desktop::getInstance().getComponent (i));
+            dialog && dialog->getName() == "Audio output") playbackDialog = dialog;
+    check (playbackDialog != nullptr, "Audio settings did not open during playback");
+    check (player.isPlaying() && PlaybackCursorTestAccess::displaySynced (player)
+           && state.device->render() > 0.001f,
+           "Opening Audio settings slowed the playhead or interrupted playback");
+    playbackDialog->exitModalState (0);
+    await ([&] { return playbackDialog == nullptr; }, "close Audio settings during playback");
+    check (player.isPlaying() && PlaybackCursorTestAccess::displaySynced (player),
+           "Closing Audio settings slowed the playhead or interrupted playback");
+    player.setVisible (false);
+    check (player.isPlaying() && ! PlaybackCursorTestAccess::displaySynced (player) && player.getTimerInterval() == 250,
+           "Hiding the native component retained display-rate cursor work");
+    player.setVisible (true);
+    check (PlaybackCursorTestAccess::displaySynced (player), "Showing the native component did not restore its frame callback");
+    player.seekBySeconds (0.4);
+    check (PlaybackCursorTestAccess::position (player) >= 0.4, "Seeking did not update the cursor immediately");
+    await ([&] { return state.device->render() > 0.001f; }, "output after seek prefill");
+    PlaybackCursorTestAccess::draw (player);
+    const auto cursorBeforeHide = PlaybackCursorTestAccess::position (player);
     player.setUiActive (false);
-    check (player.isPlaying() && player.getTimerInterval() == 250 && state.device->render() > 0.001f,
+    check (player.isPlaying() && ! PlaybackCursorTestAccess::displaySynced (player)
+           && player.getTimerInterval() == 250 && state.device->render() > 0.001f,
            "Hiding the app interrupted playback or retained visual-rate polling");
+    PlaybackCursorTestAccess::draw (player);
+    check (PlaybackCursorTestAccess::position (player) == cursorBeforeHide, "Hidden playback still updates its cursor");
+    player.setUiActive (true);
+    check (PlaybackCursorTestAccess::displaySynced (player) && player.getTimerInterval() == 50,
+           "Restoring the app did not restore display-synchronised playback");
     player.togglePlay();
-    check (! player.isPlaying(), "Pause did not stop transport");
+    check (! player.isPlaying() && ! PlaybackCursorTestAccess::displaySynced (player), "Pause retained playback or its frame callback");
     await ([&] { return ! player.isAudioDeviceOpen(); }, "idle release after pause");
     check (state.closes >= 1, "Pause did not release the device after its idle delay");
     player.setUiActive (true);
@@ -100,7 +152,38 @@ void testDevice (const ProjectEntry& entry)
     await ([&] { return player.isPlaying(); }, "recover");
     check (state.opens == 3 && state.device->render() > 0.001f, "Playback failed to recover after disconnect");
     player.stop();
+    check (PlaybackCursorTestAccess::position (player) == 0 && ! PlaybackCursorTestAccess::displaySynced (player),
+           "Stop did not reset the cursor or detach its display callback");
     await ([&] { return ! player.isAudioDeviceOpen(); }, "idle release after stop");
+    juce::TextButton* repeat = nullptr;
+    for (auto* child : player.getChildren())
+        if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "Repeat: off") repeat = button;
+    check (repeat != nullptr, "Device fixture has no Repeat options");
+    auto* repeatContext = dynamic_cast<RememberUI::ContextMenuButton*> (repeat);
+    check (repeatContext && repeatContext->onContextMenu, "Device Repeat button lacks context options");
+    repeatContext->onContextMenu();
+    auto* menu = juce::Component::getCurrentlyModalComponent();
+    check (menu != nullptr, "Device fixture Repeat menu did not open");
+    menu->exitModalState (4);
+    await ([&] { return repeat->getTitle() == "Repeat: single"; }, "choose Single");
+    auto following = entry; following.projectId = "single-following";
+    int loads = 0;
+    player.onEntryLoaded = [&](const ProjectEntry&) { ++loads; };
+    player.setQueue ({ entry, following }); player.loadEntry (entry);
+    await ([&] { return player.hasLoadedEntry(); }, "load Single preview");
+    player.play(); await ([&] { return player.isPlaying(); }, "play Single preview");
+    const auto deadline = juce::Time::getMillisecondCounter() + 10000;
+    while (player.isPlaying())
+    {
+        check (state.device != nullptr && juce::Time::getMillisecondCounter() < deadline, "Single did not finish its preview");
+        state.device->render();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (2);
+    }
+    await ([&] { check (loads == 1, "Single repeated or advanced after audio finished"); return ! player.isAudioDeviceOpen(); }, "Single releases idle device");
+    player.next(); await ([&] { return loads == 2 && player.hasLoadedEntry(); }, "manual Next in Single");
+    check (! player.isPlaying(), "Single manual Next unexpectedly started playback while stopped");
+    player.onEntryLoaded = {};
+    std::cout << "PASS: Single renders to the end once, stops, releases the fake device and retains manual Next\n";
     state.fail = true;
     player.play();
     await ([&] { return player.getPlaybackError().contains ("Fixture output unavailable"); }, "open error");

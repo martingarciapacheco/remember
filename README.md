@@ -115,10 +115,24 @@ Processor creation queues output-folder loading and logger initialization. Savin
 |-----|--------|
 | Space | Play/pause loaded preview |
 | Enter | Play selected row |
+| Ctrl + Left / Right | Previous / next preview (previous restarts after 3 seconds) |
+| Ctrl + F | Focus search and select its text |
+| Ctrl + , | Open settings |
+| Ctrl + O | Open the selected project in the DAW |
+| Ctrl + Shift + F | Toggle the favourites filter |
+| M | Mute / unmute, restoring the last audible volume if volume is zero |
+| S | Toggle shuffle |
+| L | Cycle repeat: off, all, one, single |
+| Alt + Left / Right | Seek backward / forward 5 seconds, bounded by the preview |
+| Ctrl + Z | Undo the last organization action |
 | F | Toggle favourite |
 | R | Rename selected entry when no existing DAW file is associated |
 | T | Edit tags |
 | Delete / Backspace | Delete entry (with confirmation) |
+
+Single-letter transport shortcuts and seeking are inactive while editing text.
+Search accepts the explicit Ctrl shortcuts without inserting their characters.
+Hover a control to see its name and shortcut in parentheses.
 
 ## Regression checks
 

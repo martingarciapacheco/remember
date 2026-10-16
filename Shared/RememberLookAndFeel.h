@@ -6,11 +6,77 @@
 namespace Pal
 {
     enum Token : uint32_t { BgDeep, Surface, Elevated, Border, Accent, Text,
-        Subtext, Star, Success, Error, Content, Selected, Action, OnAction, Count };
+        Subtext, Star, Success, Error, Content, Selected, Action, OnAction, WaveLeft, WaveRight, Count };
 }
 
 namespace RememberUI
 {
+inline constexpr int recordingRowHeight = 48;
+inline constexpr int recordingRowPadding = 6;
+inline constexpr int recordingRowActionSize = 32;
+inline constexpr int zoomPercentages[] = { 50, 75, 90, 100, 125, 150, 200 };
+inline int validZoom (int percent)
+{
+    for (auto value : zoomPercentages) if (value == percent) return value;
+    return 100;
+}
+inline void populateZoom (juce::ComboBox& combo)
+{
+    combo.setTitle ("Interface zoom");
+    combo.setTooltip ("Scale text and controls. 100% restores the default size.");
+    for (auto value : zoomPercentages)
+        combo.addItem (juce::String (value) + (value == 100 ? "% (default)" : "%"), value);
+}
+struct AppZoom final : juce::ChangeBroadcaster
+{
+    int percent = 100;
+    void set (int value)
+    {
+        value = validZoom (value);
+        if (percent == value) return;
+        percent = value;
+        sendSynchronousChangeMessage();
+    }
+};
+inline AppZoom& appZoom() { static AppZoom zoom; return zoom; }
+
+// Scale logical JUCE geometry, retaining scroll access when a large zoom does
+// not fit a small native window. The platform frame is never transformed.
+class ZoomView final : public juce::Component, private juce::ChangeListener
+{
+public:
+    explicit ZoomView (std::unique_ptr<juce::Component> component) : content (std::move (component))
+    {
+        setLookAndFeel (&content->getLookAndFeel());
+        stage.addAndMakeVisible (*content);
+        viewport.setViewedComponent (&stage, false);
+        viewport.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::never);
+        addAndMakeVisible (viewport);
+        appZoom().addChangeListener (this);
+        setSize (960, 680);
+    }
+    ~ZoomView() override { appZoom().removeChangeListener (this); viewport.setViewedComponent (nullptr, false); setLookAndFeel (nullptr); }
+    juce::Component* getContent() const { return content.get(); }
+    void resized() override
+    {
+        const float scale = appZoom().percent / 100.0f;
+        viewport.setBounds (getLocalBounds());
+        const int bar = viewport.getScrollBarThickness();
+        const bool vertical = getHeight() < juce::roundToInt (480 * scale);
+        const bool horizontal = getWidth() - (vertical ? bar : 0) < juce::roundToInt (640 * scale);
+        const bool needsVertical = getHeight() - (horizontal ? bar : 0) < juce::roundToInt (480 * scale);
+        content->setTopLeftPosition (0, 0);
+        content->setTransform (juce::AffineTransform::scale (scale));
+        content->setSize (juce::jmax (640, (int) std::floor ((getWidth() - (needsVertical ? bar : 0)) / scale)),
+                          juce::jmax (480, (int) std::floor ((getHeight() - (horizontal ? bar : 0)) / scale)));
+        stage.setSize (juce::roundToInt (content->getWidth() * scale), juce::roundToInt (content->getHeight() * scale));
+    }
+private:
+    void changeListenerCallback (juce::ChangeBroadcaster*) override { resized(); repaint(); }
+    std::unique_ptr<juce::Component> content;
+    juce::Component stage;
+    juce::Viewport viewport;
+};
 // Message-thread state, shared by Remember roots in this process, never the host.
 inline bool darkAppearance = false;
 inline bool isDark() { return darkAppearance; }
@@ -18,10 +84,10 @@ inline juce::Colour colour (uint32_t token)
 {
     static constexpr uint32_t light[] = { 0xfff5f5f7, 0xffededf0, 0xffe4e5ea,
         0xffd1d3da, 0xff0060c0, 0xff1d1d1f, 0xff62626b, 0xff916000,
-        0xff247343, 0xffb42318, 0xffffffff, 0xffe5effb, 0xff0066cc, 0xffffffff };
-    static constexpr uint32_t dark[] = { 0xff1c1c1e, 0xff242426, 0xff343438,
-        0xff4b4b50, 0xff64a9ff, 0xfff5f5f7, 0xffb8b8c0, 0xffffd60a,
-        0xff66d98a, 0xffff8f86, 0xff2c2c2e, 0xff243a52, 0xff0066cc, 0xffffffff };
+        0xff247343, 0xffb42318, 0xffffffff, 0xffe5effb, 0xff0066cc, 0xffffffff, 0xc00060c0, 0x995a9fe6 };
+    static constexpr uint32_t dark[] = { 0xff141416, 0xff1c1c1e, 0xff2c2c30,
+        0xff414146, 0xff64a9ff, 0xfff5f5f7, 0xffb8b8c0, 0xffffd60a,
+        0xff66d98a, 0xffff8f86, 0xff242426, 0xff1c3048, 0xff0066cc, 0xffffffff, 0xc064a9ff, 0x99a9d0ff };
     static_assert (std::size (light) == Pal::Count && std::size (dark) == Pal::Count);
     return juce::Colour (token < Pal::Count ? (darkAppearance ? dark[token] : light[token]) : token);
 }
@@ -96,11 +162,15 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
         p.clear(); p.addTriangle (x + 12, y, x + 12, y + 6, x + 16, y + 3);
         p.addTriangle (x + 12, y + 10, x + 12, y + 16, x + 16, y + 13); g.fillPath (p);
     }
-    else if (kind == "repeat")
+    else if (kind == "repeat" || kind == "repeat-single")
     {
         g.drawRoundedRectangle (b.reduced (1, 3), 3, 1.5f);
         p.addTriangle (x + 9, y, x + 9, y + 6, x + 14, y + 3); g.fillPath (p);
-        if (filled) { g.setFont (font (10, true)); g.drawText ("1", b.reduced (5, 3), juce::Justification::centred); }
+        if (filled || kind == "repeat-single")
+        {
+            g.setFont (font (10, true));
+            g.drawText (kind == "repeat-single" ? "S" : "1", b.reduced (4, 3), juce::Justification::centred);
+        }
     }
     else if (kind == "volume" || kind == "mute")
     {
@@ -159,6 +229,12 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
         for (int i = 0; i < 3; ++i) g.fillEllipse (x + 2.0f + i * 5, y + 7, 2, 2);
 }
 
+inline juce::String shortcutTooltip (const juce::String& title, const juce::String& shortcut,
+                                     const juce::String& details = {})
+{
+    return title + " (" + shortcut + ")" + (details.isEmpty() ? juce::String{} : "\n" + details);
+}
+
 inline void iconButton (juce::TextButton& button, const juce::String& kind, const juce::String& title)
 {
     button.getProperties().set ("rememberIcon", kind);
@@ -166,6 +242,32 @@ inline void iconButton (juce::TextButton& button, const juce::String& kind, cons
     button.setDescription (title);
     button.setTooltip (title);
 }
+
+// Normal activation retains JUCE's press/release and keyboard behaviour.
+// A context click is handled separately and never activates the main action.
+class ContextMenuButton : public juce::TextButton
+{
+public:
+    using juce::TextButton::TextButton;
+    std::function<void()> onContextMenu;
+    void mouseDown (const juce::MouseEvent& event) override
+    {
+        contextPressed = event.mods.isPopupMenu();
+        if (! contextPressed) juce::TextButton::mouseDown (event);
+    }
+    void mouseDrag (const juce::MouseEvent& event) override
+    {
+        if (! contextPressed) juce::TextButton::mouseDrag (event);
+    }
+    void mouseUp (const juce::MouseEvent& event) override
+    {
+        if (! contextPressed) { juce::TextButton::mouseUp (event); return; }
+        contextPressed = false;
+        if (isEnabled() && getLocalBounds().toFloat().contains (event.position) && onContextMenu) onContextMenu();
+    }
+private:
+    bool contextPressed = false;
+};
 
 class LookAndFeel final : public juce::LookAndFeel_V4
 {
@@ -265,6 +367,22 @@ public:
 
     void drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool over, bool down) override
     {
+        if ((bool) button.getProperties()["rememberCheckbox"])
+        {
+            const auto box = juce::Rectangle<float> (6, button.getHeight() * 0.5f - 9, 18, 18);
+            g.setColour (RememberUI::colour (button.getToggleState() ? Pal::Action : (over || down ? Pal::Elevated : Pal::Content)));
+            g.fillRoundedRectangle (box, 4);
+            g.setColour (RememberUI::colour (button.hasKeyboardFocus (false) ? Pal::Accent : Pal::Border));
+            g.drawRoundedRectangle (box, 4, button.hasKeyboardFocus (false) ? 2.0f : 1.0f);
+            if (button.getToggleState())
+            {
+                g.setColour (RememberUI::colour (Pal::OnAction));
+                juce::Path tick; tick.startNewSubPath (box.getX() + 4, box.getY() + 9);
+                tick.lineTo (box.getX() + 8, box.getY() + 13); tick.lineTo (box.getX() + 14, box.getY() + 5);
+                g.strokePath (tick, juce::PathStrokeType (2, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            return;
+        }
         auto track = juce::Rectangle<float> (2, (float) button.getHeight() / 2 - 9, 32, 18);
         const auto opacity = button.isEnabled() ? 1.0f : 0.4f;
         auto colour = RememberUI::colour (button.getToggleState() ? Pal::Action : Pal::Subtext);
