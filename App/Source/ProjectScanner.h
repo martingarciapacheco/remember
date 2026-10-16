@@ -64,7 +64,7 @@ public:
         int interfaceZoom = 100;
         CaptureOptions capture;
     };
-    enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc };
+    enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc, Manual };
     struct LibrarySnapshot
     {
         juce::Array<ProjectEntry> entries, trash;
@@ -186,6 +186,9 @@ public:
     // Sidebar sort mode (persisted to config.json).
     static SidebarSort getSidebarSort();
     static void        setSidebarSort (SidebarSort s);
+    // Worker-only: move/reorder amongst siblings; empty beforePath appends.
+    static juce::Result positionFolder (const juce::String& path, const juce::String& parent,
+                                       const juce::String& beforePath = {});
 
     // ── Plugin recording parameters (live in config.json, read by the plugin
     //    at prepareToPlay time). Defaults preserve the previous hard-coded

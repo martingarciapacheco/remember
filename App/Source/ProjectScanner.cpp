@@ -355,6 +355,7 @@ juce::Array<juce::File> ProjectScanner::getProjectsRootFolders() { return rootsF
 
 static ProjectScanner::SidebarSort sortFromConfig (const juce::var& json)
 {
+    if (json.getProperty ("sidebarSort", "").toString() == "manual") return ProjectScanner::SidebarSort::Manual;
     const auto sort = json.getProperty ("sidebarSort", "name_asc").toString();
     if (sort == "name_desc") return ProjectScanner::SidebarSort::NameDesc;
     if (sort == "date_desc") return ProjectScanner::SidebarSort::DateDesc;
@@ -521,7 +522,7 @@ public:
                     + (entry.projectAvailable ? "\n1" : "\n0") + "\n" + juce::String ((int) entry.pendingOwner) + "\n" + entry.storageError + "\n" + entry.projectProblem);
                 for (const auto& path : entry.folders) addPath (path);
             }
-            paths.sort (true);
+            if (sortFromConfig (config) != ProjectScanner::SidebarSort::Manual) paths.sort (true);
             const bool changed = configSignature != previousConfig || signature != previousSignature
                 || snapshot()->error.isNotEmpty() || snapshot()->loading;
             if (changed)
@@ -1081,12 +1082,15 @@ static juce::Result transformEntryFolders (const std::function<juce::String(cons
         {
             before = object.getProperty ("folders"); identity = object.getProperty ("projectId").toString();
             juce::StringArray transformed;
+            bool changedMembership = false;
             if (auto* folders = object.getProperty ("folders").getArray())
                 for (const auto& value : *folders)
                 {
                     auto changed = transform (value.toString());
+                    changedMembership = changedMembership || changed != value.toString();
                     if (changed.isNotEmpty()) transformed.addIfNotAlreadyThere (changed);
                 }
+            if (! changedMembership) { after = before; return juce::Result::ok(); }
             juce::Array<juce::var> folders;
             for (const auto& folder : transformed) folders.add (folder);
             object.setProperty ("folders", folders);
@@ -1172,8 +1176,50 @@ void ProjectScanner::setSidebarSort (SidebarSort s)
         case SidebarSort::NameDesc:  str = "name_desc";  break;
         case SidebarSort::DateDesc:  str = "date_desc";  break;
         case SidebarSort::CountDesc: str = "count_desc"; break;
+        case SidebarSort::Manual:    str = "manual";     break;
     }
     saveConfigField ("sidebarSort", juce::String (str));
+}
+
+juce::Result ProjectScanner::positionFolder (const juce::String& path, const juce::String& parent,
+                                            const juce::String& beforePath)
+{
+    OrganizationUndo::Batch undoBatch;
+    auto paths = getAllFolderPaths();
+    // Include edits accepted since the last index publication.
+    const auto config = loadConfig();
+    if (auto* values = config.getProperty ("explicitFolders", {}).getArray())
+        for (const auto& value : *values) paths.addIfNotAlreadyThere (value.toString());
+    if (path.isEmpty() || ! paths.contains (path)) return juce::Result::fail ("Folder no longer exists");
+    if (parent == path || parent.startsWith (path + "/")) return juce::Result::fail ("Cannot move a folder inside itself");
+    if (parent.isNotEmpty() && ! paths.contains (parent)) return juce::Result::fail ("Destination no longer exists");
+    const auto destination = parent.isEmpty() ? path.fromLastOccurrenceOf ("/", false, false)
+        : parent + "/" + path.fromLastOccurrenceOf ("/", false, false);
+    if (destination != path && paths.contains (destination)) return juce::Result::fail ("A folder with this name already exists at the destination");
+    if (beforePath == path) return juce::Result::ok();
+    const auto beforeSlash = beforePath.lastIndexOfChar ('/');
+    if (beforePath.isNotEmpty() && (! paths.contains (beforePath)
+        || (beforeSlash < 0 ? juce::String{} : beforePath.substring (0, beforeSlash)) != parent))
+        return juce::Result::fail ("Destination order changed; retry the move");
+    if (destination != path)
+        if (auto result = renameFolder (path, destination); result.failed()) return result;
+    for (auto& value : paths)
+        if (value == path || value.startsWith (path + "/")) value = destination + value.substring (path.length());
+    juce::StringArray subtree { destination };
+    for (int i = 0; i < paths.size();)
+        if (paths[i] == destination || paths[i].startsWith (destination + "/"))
+        { subtree.addIfNotAlreadyThere (paths[i]); paths.remove (i); }
+        else ++i;
+    auto index = beforePath.isEmpty() ? paths.size() : paths.indexOf (beforePath);
+    for (const auto& value : subtree) paths.insert (index++, value);
+    auto result = editExplicitFolders ([&] (juce::StringArray& list) { list = paths; });
+    if (result.failed()) return result;
+    result = LibraryStore::updateJson (configFilePath(), [&] (juce::DynamicObject& object)
+    {
+        object.setProperty ("sidebarSort", "manual");
+        return juce::Result::ok();
+    }, true);
+    return result;
 }
 
 // ── Plugin recording parameters ─────────────────────────────────────────────

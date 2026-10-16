@@ -42,7 +42,10 @@ public:
                         if (safe == nullptr) return;
                         if (command == 0) safe->taskbarPrevious();
                         else if (command == 1) safe->taskbarTogglePlay();
-                        else safe->taskbarNext();
+                        else if (command == 2) safe->taskbarNext();
+                        else if (command == 3) safe->mediaPlay();
+                        else if (command == 4) safe->mediaPause();
+                        else if (command == 5) safe->mediaStop();
                     });
                 });
         }

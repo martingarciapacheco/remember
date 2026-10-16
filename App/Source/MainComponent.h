@@ -22,6 +22,9 @@ public:
     void taskbarPrevious() { player.previous(); }
     void taskbarTogglePlay() { player.togglePlay(); }
     void taskbarNext() { player.next(); }
+    void mediaPlay() { player.play(); }
+    void mediaPause() { if (player.isPlaying()) player.togglePlay(); }
+    void mediaStop() { player.stop(); }
     bool taskbarPlaying() const { return player.isPlaying(); }
     bool taskbarCanPlay() const { return player.canTogglePlayback(); }
     bool taskbarHasQueue() const { return ! list.visibleEntries().isEmpty(); }

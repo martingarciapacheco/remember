@@ -92,6 +92,17 @@ reduced motion; use critically damped springs for manipulation where appropriate
 
 ## Validation
 
+Folder dragging uses JUCE's insertion indicator: drop between rows to reorder,
+at a folder centre to nest, or in the empty tree area to return to the top level.
+Dragging selects persistent manual ordering; the Sort menu still offers automatic
+orders. New folder creates a sibling of the selection; New subfolder is explicit.
+Contextual folder menus appear at the pointer. Organization edits wake the existing
+index without forcing a DAW inventory rebuild or rewriting unaffected memberships.
+The navigation surface has rounded lower corners without a vertical divider;
+preview surfaces and selection share full-width eight-pixel corner contours.
+Windows media keyboard commands use the native app window transport, including
+when minimized, without changing native window controls or claiming volume keys.
+
 Interface zoom offers 50%, 75%, 90%, 100% (default), 125%, 150% and 200% in Settings.
 Persist `appZoom` and `pluginZoom` independently with worker-only atomic patches.
 Scale text, icons, spacing and controls together in logical JUCE coordinates,

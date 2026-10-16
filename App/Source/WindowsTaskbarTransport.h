@@ -15,13 +15,13 @@ public:
     WindowsTaskbarTransport (HWND window, std::function<State()> readState, std::function<void(int)> command)
         : hwnd (window), state (std::move (readState)), action (std::move (command))
     {
+        hooked = SetWindowSubclass (hwnd, procedure, reinterpret_cast<UINT_PTR> (this),
+                                   reinterpret_cast<DWORD_PTR> (this)) != FALSE;
+        if (! hooked) return;
         apartment = CoInitializeEx (nullptr, COINIT_APARTMENTTHREADED);
         if (FAILED (CoCreateInstance (CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
                                      IID_PPV_ARGS (&taskbar)))) return;
         if (FAILED (taskbar->HrInit())) return;
-        hooked = SetWindowSubclass (hwnd, procedure, reinterpret_cast<UINT_PTR> (this),
-                                   reinterpret_cast<DWORD_PTR> (this)) != FALSE;
-        if (! hooked) return;
         startTimer (250);
     }
     ~WindowsTaskbarTransport() override
@@ -44,6 +44,18 @@ private:
         {
             self.added = false; self.ready = true;
             self.timerCallback();
+        }
+        else if (message == WM_APPCOMMAND)
+        {
+            const auto command = GET_APPCOMMAND_LPARAM (lParam);
+            int action = -1;
+            if (command == APPCOMMAND_MEDIA_PREVIOUSTRACK) action = 0;
+            else if (command == APPCOMMAND_MEDIA_PLAY_PAUSE) action = 1;
+            else if (command == APPCOMMAND_MEDIA_NEXTTRACK) action = 2;
+            else if (command == APPCOMMAND_MEDIA_PLAY) action = 3;
+            else if (command == APPCOMMAND_MEDIA_PAUSE) action = 4;
+            else if (command == APPCOMMAND_MEDIA_STOP) action = 5;
+            if (action >= 0) { self.action (action); return TRUE; }
         }
         else if (message == WM_COMMAND && HIWORD (wParam) == THBN_CLICKED)
         {

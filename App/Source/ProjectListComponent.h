@@ -124,7 +124,7 @@ private:
     juce::TextEditor  searchBox;
     juce::TextButton  favFilterBtn { "Favorites" };
     juce::TextButton  refreshBtn   { "Refresh" };
-    juce::ListBox     listBox;
+    RememberUI::RecordingListBox listBox;
     juce::Label       libraryStatus;
     juce::Label       itemCount;
     juce::SharedResourcePointer<juce::TooltipWindow> tooltips;

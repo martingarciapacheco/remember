@@ -14,6 +14,8 @@ namespace RememberUI
 inline constexpr int recordingRowHeight = 48;
 inline constexpr int recordingRowPadding = 6;
 inline constexpr int recordingRowActionSize = 32;
+inline constexpr float surfaceRadius = 12.0f;
+inline constexpr float recordingRowRadius = 8.0f;
 inline constexpr int zoomPercentages[] = { 50, 75, 90, 100, 125, 150, 200 };
 inline int validZoom (int percent)
 {
@@ -57,6 +59,7 @@ public:
     }
     ~ZoomView() override { appZoom().removeChangeListener (this); viewport.setViewedComponent (nullptr, false); setLookAndFeel (nullptr); }
     juce::Component* getContent() const { return content.get(); }
+    void paint (juce::Graphics& g) override;
     void resized() override
     {
         const float scale = appZoom().percent / 100.0f;
@@ -67,9 +70,10 @@ public:
         const bool needsVertical = getHeight() - (horizontal ? bar : 0) < juce::roundToInt (480 * scale);
         content->setTopLeftPosition (0, 0);
         content->setTransform (juce::AffineTransform::scale (scale));
-        content->setSize (juce::jmax (640, (int) std::floor ((getWidth() - (needsVertical ? bar : 0)) / scale)),
-                          juce::jmax (480, (int) std::floor ((getHeight() - (horizontal ? bar : 0)) / scale)));
-        stage.setSize (juce::roundToInt (content->getWidth() * scale), juce::roundToInt (content->getHeight() * scale));
+        content->setSize (juce::jmax (640, (int) std::ceil ((getWidth() - (needsVertical ? bar : 0)) / scale)),
+                          juce::jmax (480, (int) std::ceil ((getHeight() - (horizontal ? bar : 0)) / scale)));
+        stage.setSize (juce::jmax (getWidth() - (needsVertical ? bar : 0), juce::roundToInt (640 * scale)),
+                       juce::jmax (getHeight() - (horizontal ? bar : 0), juce::roundToInt (480 * scale)));
     }
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override { resized(); repaint(); }
@@ -91,6 +95,25 @@ inline juce::Colour colour (uint32_t token)
     static_assert (std::size (light) == Pal::Count && std::size (dark) == Pal::Count);
     return juce::Colour (token < Pal::Count ? (darkAppearance ? dark[token] : light[token]) : token);
 }
+
+inline void ZoomView::paint (juce::Graphics& g) { g.fillAll (colour (Pal::BgDeep)); }
+
+// The list and selected rows share a full-width contour. Mask only the four
+// outer corners after children paint, including native viewport scrolling.
+class RecordingListBox : public juce::ListBox
+{
+public:
+    using juce::ListBox::ListBox;
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        juce::Path corners;
+        corners.setUsingNonZeroWinding (false);
+        corners.addRectangle (getLocalBounds().toFloat());
+        corners.addRoundedRectangle (getLocalBounds().toFloat(), recordingRowRadius);
+        g.setColour (colour (Pal::BgDeep));
+        g.fillPath (corners);
+    }
+};
 
 // Remember semantic overrides so existing/recycled controls can change live.
 inline void bindColour (juce::Component& component, int id, uint32_t token, float alpha = 1.0f)

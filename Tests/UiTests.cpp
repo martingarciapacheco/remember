@@ -146,6 +146,15 @@ void testFrontendDesign (const juce::File& root)
         saveImage (*scene, size.x == 640 ? "apple-app-unselected-minimum.png" : "apple-app-unselected.png", true);
         rows->selectRow (0);
         saveImage (*scene, size.x == 640 ? "apple-app-minimum.png" : "apple-app.png", true);
+        const auto listImage = rows->createComponentSnapshot (rows->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+        check (listImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Preview surface retained a square outer corner");
+        if (auto* row = rows->getComponentForRowNumber (0))
+        {
+            const auto image = row->createComponentSnapshot (row->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+            check (image.getPixelAt (0, row->getHeight() / 2) == RememberUI::colour (Pal::Selected)
+                && image.getPixelAt (row->getWidth() - 1, row->getHeight() / 2) == RememberUI::colour (Pal::Selected),
+                "Selection does not cover both horizontal edges of the preview surface");
+        }
         // Capture the native tooltip with the same semantic look and feel.
         auto tips = juce::SharedResourcePointer<juce::TooltipWindow>::getSharedObjectWithoutCreating();
         if (tips.has_value())
@@ -455,6 +464,59 @@ void testSidebarUi (const juce::File& root)
     juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
     check (tree->getNumRowsInTree() >= 103, "Folder rows are not visible after publication/layout dispatch");
     saveImage (*sidebar, "folders-large.png");
+
+    const auto originalMetadata = LibraryStore::readJson (entry.getChildFile ("metadata.json"));
+    const auto folderDrag = [&](const juce::String& path)
+    { return juce::DragAndDropTarget::SourceDetails ("folder:" + path, sidebar.get(), {}); };
+    check (tree->getRootItem()->isInterestedInDragSource (folderDrag ("A/B")), "Empty tree area rejects folder extraction");
+    tree->getRootItem()->itemDropped (folderDrag ("A/B"), 1);
+    awaitUi ([] { return ProjectScanner::getAllFolderPaths().contains ("B") && ! ProjectScanner::getAllFolderPaths().contains ("A/B"); });
+    sidebar->refresh();
+    check (sidebar->getSelectedFolder() == "B", "Extraction lost the selected folder");
+    check (tree->getRootItem()->getSubItem (1)->getUniqueName() == "B", "Root drop did not preserve insertion position");
+    check (ProjectScanner::getSidebarSort() == ProjectScanner::SidebarSort::Manual, "Drag did not persist manual ordering");
+    tree->getRootItem()->itemDropped (folderDrag ("A"), 1);
+    awaitUi ([] { return ProjectScanner::getAllFolderPaths()[0] == "A"; });
+    sidebar->refresh();
+    check (tree->getRootItem()->getSubItem (1)->getUniqueName() == "A"
+        && tree->getRootItem()->getSubItem (2)->getUniqueName() == "B", "Sibling reorder nested a folder instead");
+    ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); });
+    awaitUi ([] { return ProjectScanner::getAllFolderPaths()[0] == "B"; });
+    sidebar->refresh();
+    tree->getRootItem()->itemDropped (folderDrag ("A"), 1);
+    awaitUi ([] { return ProjectScanner::getAllFolderPaths()[0] == "A"; });
+    sidebar->refresh();
+    auto* destination = tree->getRootItem()->getSubItem (3);
+    const auto destinationPath = destination->getUniqueName();
+    check (destination->isInterestedInDragSource (folderDrag ("B")), "Folder centre rejects nesting");
+    destination->itemDropped (folderDrag ("B"), 0);
+    awaitUi ([&] { return ProjectScanner::getAllFolderPaths().contains (destinationPath + "/B"); });
+    sidebar->refresh();
+    check (sidebar->getSelectedFolder() == destinationPath + "/B", "Nesting lost selected identity");
+    const auto movedMetadata = LibraryStore::readJson (entry.getChildFile ("metadata.json"));
+    check (movedMetadata.getProperty ("folders", {}).getArray()->contains (destinationPath + "/B"), "Move lost recording memberships");
+    check (movedMetadata.getProperty ("projectId", {}) == originalMetadata.getProperty ("projectId", {}), "Move changed recording identity");
+    auto checkedInvalid = std::make_shared<bool> (false);
+    ProjectScanner::queryAsync ([destinationPath]
+    {
+        return ProjectScanner::positionFolder (destinationPath, destinationPath + "/B");
+    }, [checkedInvalid] (juce::Result result) { check (result.failed(), "Cycle was accepted"); *checkedInvalid = true; });
+    awaitUi ([&] { return *checkedInvalid; });
+
+    // The header creates a sibling of the selection, with an explicit child
+    // action retained in the contextual menu.
+    for (auto* child : sidebar->getChildren())
+        if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "New folder")
+        {
+            button->onClick();
+            auto* dialog = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+            check (dialog != nullptr, "New sibling dialog did not open");
+            dialog->getTextEditor ("name")->setText ("Sibling");
+            dialog->exitModalState (1);
+            awaitUi ([&] { return ProjectScanner::getAllFolderPaths().contains (destinationPath + "/Sibling"); });
+            check (! ProjectScanner::getAllFolderPaths().contains (destinationPath + "/B/Sibling"), "New folder was created inside the selection");
+        }
+    saveImage (*sidebar, "folders-manual-order.png");
 
     // Measure content construction with no native peer before measuring launch.
     // Each profile runs cold-to-warm in this order; do not attribute native peer

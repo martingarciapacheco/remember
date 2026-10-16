@@ -213,7 +213,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     if (selected)
     {
         g.setColour (RememberUI::colour (Pal::Selected));
-        g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2, 2), 8);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), RememberUI::recordingRowRadius);
     }
 
     g.setColour (RememberUI::colour (Pal::Border));

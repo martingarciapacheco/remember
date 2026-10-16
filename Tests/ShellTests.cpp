@@ -219,6 +219,16 @@ void testShellCase (const juce::File& root, const juce::String& mode)
             awaitUi ([&] { return selected == second.projectId; });
             click (WindowsTaskbarTransport::previousId);
             awaitUi ([&] { return selected == first.projectId; });
+            const auto media = [&](int command)
+            { return SendMessageW (windowHandle, WM_APPCOMMAND, reinterpret_cast<WPARAM> (windowHandle),
+                                   MAKELPARAM (0, command)); };
+            check (media (APPCOMMAND_MEDIA_NEXTTRACK) == TRUE, "Media next was not consumed");
+            awaitUi ([&] { return selected == second.projectId; });
+            check (media (APPCOMMAND_MEDIA_PREVIOUSTRACK) == TRUE, "Media previous was not consumed");
+            awaitUi ([&] { return selected == first.projectId; });
+            for (auto command : { APPCOMMAND_MEDIA_PLAY_PAUSE, APPCOMMAND_MEDIA_PAUSE,
+                                  APPCOMMAND_MEDIA_PLAY, APPCOMMAND_MEDIA_STOP })
+                check (media (command) == TRUE, "Media transport command was not consumed");
             click (WindowsTaskbarTransport::playId);
             auto dispatched = std::make_shared<bool> (false);
             juce::MessageManager::callAsync ([dispatched] { *dispatched = true; });

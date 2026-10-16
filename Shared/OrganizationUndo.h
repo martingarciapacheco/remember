@@ -55,8 +55,14 @@ inline juce::Result undo()
             if (change.identity.isNotEmpty() && object.getProperty ("projectId").toString() != change.identity)
                 return juce::Result::fail ("Recording identity changed; organization was preserved");
             auto latest = strings (object.getProperty (change.field));
-            for (const auto& item : change.after) if (! change.before.contains (item)) latest.removeString (item);
-            for (const auto& item : change.before) if (! change.after.contains (item)) latest.addIfNotAlreadyThere (item);
+            // An unchanged array can restore its exact sibling order. If
+            // another writer edited it afterwards, retain the inverse deltas.
+            if (latest == change.after) latest = change.before;
+            else
+            {
+                for (const auto& item : change.after) if (! change.before.contains (item)) latest.removeString (item);
+                for (const auto& item : change.before) if (! change.after.contains (item)) latest.addIfNotAlreadyThere (item);
+            }
             juce::Array<juce::var> values; for (const auto& item : latest) values.add (item);
             object.setProperty (change.field, values); return juce::Result::ok();
         });

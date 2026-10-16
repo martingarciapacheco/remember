@@ -56,12 +56,11 @@ MainComponent::MainComponent()
                 break;
             }
         }
-        list.refresh();
-        sidebar.refresh();
     };
 
     // Folder structure changed (create/rename/delete) → main list may need re-filter
-    sidebar.onFoldersChanged = [this] { list.refresh(); };
+    // editAsync wakes the index once. Its publication updates both views;
+    // forcing Refresh here would also rebuild the DAW project inventory.
 
     // When the main list reloads (e.g. plugin saved a new entry), recompute
     // sidebar counts.
@@ -177,7 +176,10 @@ void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (RememberUI::colour (Pal::BgDeep));
     g.setColour (RememberUI::colour (Pal::Surface));
-    g.fillRect (0, 0, kSidebarWidth, getHeight() - kPlayerHeight);
+    juce::Path navigation;
+    navigation.addRoundedRectangle (0, 0, (float) kSidebarWidth, (float) (getHeight() - kPlayerHeight),
+                                    RememberUI::surfaceRadius, RememberUI::surfaceRadius, false, false, true, true);
+    g.fillPath (navigation);
     g.setFont (RememberUI::font (22, true));
     g.setColour (RememberUI::colour (Pal::Text));
     g.drawText ("Remember", 20, 14, kSidebarWidth - 32, 28, juce::Justification::centredLeft);

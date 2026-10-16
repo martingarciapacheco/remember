@@ -50,6 +50,8 @@ public:
     // No-op on invalid combinations (cycle, same parent, name collision).
     void moveFolderUnder (const juce::String& srcPath,
                           const juce::String& newParentPath);
+    void positionFolder (const juce::String& srcPath, const juce::String& parentPath,
+                         const juce::String& beforePath = {});
 
 private:
     RememberUI::Style uiStyle { *this };
@@ -59,6 +61,7 @@ private:
     void rebuildTree();
     void runFolderEdit (std::function<juce::Result()>);
     juce::String              selectedFolder;
+    std::vector<std::pair<juce::String, juce::String>> pendingMoves;
     std::unique_ptr<TreeRootItem> rootItem;
 
     juce::Label      header { {}, "Folders" };
