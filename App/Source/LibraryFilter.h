@@ -6,6 +6,7 @@ struct LibraryFilter
 {
     enum Sort { Latest = 1, Oldest, Name, BpmAscending, BpmDescending };
     juce::String query, folder, daw, key, tags, status, dateFrom, dateTo;
+    juce::StringArray folders;
     double bpmFrom = 0, bpmTo = 0;
     bool favorites = false, missing = false, untagged = false;
     int sort = Latest;
@@ -24,11 +25,16 @@ struct LibraryFilter
         if (dateTo.isNotEmpty() && date > dateTo) return false;
         for (auto tag : juce::StringArray::fromTokens (tags, ",", {}))
             if (! entry.tags.contains (tag.trim(), true)) return false;
-        if (folder.isNotEmpty())
+        if (folder.isNotEmpty() || ! folders.isEmpty())
         {
             bool found = false;
             for (const auto& item : entry.folders)
-                if (item == folder || item.startsWith (folder + "/")) { found = true; break; }
+            {
+                if (folders.isEmpty()) found = item == folder || item.startsWith (folder + "/");
+                else for (const auto& path : folders)
+                    if (item == path || item.startsWith (path + "/")) { found = true; break; }
+                if (found) break;
+            }
             if (! found) return false;
         }
         return true;
@@ -37,6 +43,8 @@ struct LibraryFilter
     {
         juce::var value (new juce::DynamicObject()); auto& o = *value.getDynamicObject();
         o.setProperty ("query", query); o.setProperty ("folder", folder);
+        juce::Array<juce::var> paths; for (const auto& path : folders) paths.add (path);
+        o.setProperty ("folders", paths);
         o.setProperty ("daw", daw); o.setProperty ("key", key); o.setProperty ("tags", tags);
         o.setProperty ("status", status); o.setProperty ("dateFrom", dateFrom); o.setProperty ("dateTo", dateTo);
         o.setProperty ("bpmFrom", bpmFrom); o.setProperty ("bpmTo", bpmTo);
@@ -47,6 +55,8 @@ struct LibraryFilter
     {
         LibraryFilter f;
         f.query = v.getProperty ("query", "").toString(); f.folder = v.getProperty ("folder", "").toString();
+        if (auto* paths = v.getProperty ("folders", {}).getArray())
+            for (const auto& path : *paths) f.folders.addIfNotAlreadyThere (path.toString());
         f.daw = v.getProperty ("daw", "").toString(); f.key = v.getProperty ("key", "").toString();
         f.tags = v.getProperty ("tags", "").toString(); f.status = v.getProperty ("status", "").toString();
         f.dateFrom = v.getProperty ("dateFrom", "").toString(); f.dateTo = v.getProperty ("dateTo", "").toString();

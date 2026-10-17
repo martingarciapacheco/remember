@@ -1,13 +1,53 @@
 # Remember
 
+**Current beta: 1.0.0-beta5 · Windows x64 · standalone app + VST3.**
+
+## Install and record your first preview
+
+1. Download `Remember-1.0.0-beta5-setup.exe` from the [beta release](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta5). The installer includes both the app and plugin.
+2. Close Remember and your DAW before installing. Setup requests administrator access to install the system VST3. This beta is unsigned; Windows may show an unknown-publisher warning.
+3. Open Remember from the Start menu. Choose a previews folder and add the folders containing your DAW projects in Settings. Existing recordings stay in their original library if you change that destination.
+4. Load Remember as a VST3 insert on your DAW master bus. Save the project, then play from exactly the beginning. The default capture lasts up to 60 seconds; stopping earlier keeps a capture of at least one second.
+5. Open the browser to listen, organise the recording or reopen its project. If automatic association is ambiguous, use the plugin's **Associate → Select project file** action. For a permanent idea without a saved project, choose **Keep recording without a file**.
+
+Setup installs the app under `C:\Program Files\Remember` and the plugin under
+`C:\Program Files\Common Files\VST3\Remember.vst3`. Rescan VST3 plugins in your
+DAW if Remember does not appear. Settings and logs live in `%APPDATA%\Remember`;
+recordings live in your selected previews folder. Closing the app window keeps it
+in the tray; choose **Exit** from the tray menu to quit.
+
+## Features at a glance
+
+- **Capture:** automatic recording from transport zero, manual capture, preview locking and replacement options. Audio passes through unchanged. Shorter recaptures preserve the existing tail.
+- **Library:** search, favourites, tags, nested folders, multiple folder selection, filters, smart collections, notes, bulk organisation and a recoverable 30-day trash. Project associations follow verified file moves and renames; backups are excluded where recognised.
+- **Playback:** seekable waveform, queue, shuffle, repeat Off/All/One/Single, loudness normalization, volume/mute, output-device selection, media keys and Windows taskbar controls.
+- **Musical tools:** BPM/key analysis with manual corrections and a BPM-synchronised metronome with its own saved volume.
+- **Used sounds for FL Studio:** inspect samples, MIDI patterns and generators from the last saved `.flp`; filter by playlist usage, audition samples/MIDI and drag or save copies of samples and `.mid` files. MIDI audition offers piano, saw, square and sine sounds; supported sample channels use their source sample.
+- **Appearance:** System, Light and Dark themes, interface zoom, shared typography and keyboard shortcuts.
+- **Recovery:** recording integrity checks, repair and revision audition/restoration when complete recoverable audio survives.
+
+Used sounds currently reads saved FL Studio projects only. It cannot see unsaved
+edits or samples inside opaque instrument/plugin states. MIDI audition does not
+reproduce the DAW's effects, automation or every FL-specific note property. Other
+VST3 hosts can use preview recording and the library; Pro Tools needs an AAX
+version, which is not included. BPM/key estimates can be unknown or incorrect.
+
+See [BETA_NOTES.md](BETA_NOTES.md) for changes, limitations and bug-report details.
+When reporting a problem, include your DAW/version, sample rate, buffer size,
+Remember version, reproduction steps and the relevant `app.log` or `plugin.log`
+from `%APPDATA%\Remember\logs`. Real DAW/device testing and Windows installation,
+upgrade and uninstallation remain part of beta acceptance.
+
+## Technical reference
+
 Two-piece JUCE 8 project for Windows that auto-captures 60-second audio previews from a DAW master bus and organises them in a standalone browser app.
 
 The selected workflow improvements are documented in [FUNCIONALIDADES.md](FUNCIONALIDADES.md): shared manual capture, preview locking and replacement options; filters and smart collections; bulk organisation, notes and musical corrections; playback queue, shuffle and loudness normalization; and a recoverable 30-day trash.
 
 ## Interface design
 
-The app, plugin and dialogs use a shared Apple-inspired interface with Light and
-Dark options in Settings (the plugin's gear menu): shared
+The app, plugin and dialogs use a shared Apple-inspired interface with System,
+Light and Dark options in Settings (the plugin's gear menu): shared
 typography (embedded Inter on Windows, native San Francisco on macOS), a neutral
 sidebar, layered surfaces, blue selection and primary
 actions, vector icons, rounded controls and visible keyboard focus. All future UI
@@ -29,6 +69,77 @@ waveform and no-results states, settings/tags/recovery dialogs, and the plugin a
 painting; visual acceptance inside a real DAW remains a separate check.
 
 ## Components
+
+### Used sounds (FL Studio first)
+
+The waveform button beside each recording's ellipsis opens the saved `.flp`:
+Samples (original-file playback/copy), MIDI (one piano-roll preview and `.mid`
+per pattern/channel), and Generators (channel instrument names, including VST
+wrapper names). In playlist filters by references in all saved arrangements;
+All loaded sounds also includes unused patterns and rack channels. This is a
+snapshot of the last saved project, independent of the recorded master preview.
+Refresh rereads it; it cannot see unsaved DAW edits. Ableton readers are planned.
+
+MIDI and samples can be dragged to Explorer directly from their row, sample name
+or piano-roll preview, as well as the Drag button, or saved with Save copy. MIDI export
+names include project, channel sound name, pattern/channel identifiers, BPM and
+the library's key (Unknown if unavailable). MIDI contains notes and a tempo event,
+not the instrument/audio. Export includes the complete pattern. Clicking a sample
+or MIDI row auditions it; dragging exports without starting playback. Sample rows
+are compact with Drag and Save copy side by side. MIDI audition synthesizes its
+first 30 seconds during playback, without generated WAVs or stored PCM previews.
+Only the selected sound has a small read-ahead ring (96 KiB); sample-backed MIDI
+streams through bounded interpolation windows (about 513 KiB for 64 voices).
+Live MIDI uses its instrument level rather than premeasured loudness normalization. Settings > MIDI audition chooses Simple piano, Saw, Square
+or Sine for plugin-backed notes. Sample-backed notes use the original sample and
+its root note; missing samples must be located explicitly (for the current session).
+Used sounds has its own compact player with a seekable waveform (samples) or
+piano roll (MIDI). Click or scrub this timeline while playing to move through the
+sound. The main project's controls and waveform remain visible and loaded.
+An audition pauses the main output and releases its audio device, keeping its
+project and position. Closing Used sounds only unloads the audition player.
+MIDI auditions have about 4 dB more instrument gain; sample gain is unchanged.
+Generator rows use a compact 52-pixel layout.
+
+The button immediately right of Repeat enables the metronome (off on startup).
+It uses the supplied `Metronome4.wav`, embedded in the executable, and follows
+the project BPM and transport position through seeks/repeats. Right-click opens
+its separate volume slider. The volume is saved; the enabled state is not.
+Master volume and mute also affect the metronome. Unknown BPM disables it.
+It only sounds during playback and never opens an audio device on its own.
+
+This initial reader supports modern FLP event/note/playlist layouts and rejects
+malformed event data. It supports the FL 25/26 three-byte project flag and
+32/60/80/88-byte playlist records, validating record boundaries rather than
+guessing from length divisibility. Unknown playlist layouts retain the inventory
+and show all loaded sounds. Existing previews work through their associated saved
+FLP; no new capture or metadata migration is required. Read failures display an
+explicit error, and a failed MIDI export never hides samples or generators.
+It reads direct sampler/audio-clip references,
+not samples hidden inside Kontakt, Patcher or other opaque plugin states. Audition
+does not reproduce FL mixer effects, automation, stretching, slice/multisample
+mapping or slide/fine-pitch behavior. Standard MIDI cannot express FL-specific
+note properties exactly. Factory sample tokens resolve against local FL installs;
+other missing paths can use Locate. No project files are modified. Resource limits:
+256 MB/project, 500,000 notes, 64 audition voices and a 30-second audition limit.
+
+FLP field/layout references: [PyFLP format documentation](https://pyflp.readthedocs.io/en/stable/architecture/flp-format.html),
+[channel](https://github.com/demberto/PyFLP/blob/master/pyflp/channel.py),
+[pattern](https://github.com/demberto/PyFLP/blob/master/pyflp/pattern.py),
+[arrangement](https://github.com/demberto/PyFLP/blob/master/pyflp/arrangement.py)
+and [wrapper fields](https://github.com/demberto/PyFLP/blob/master/pyflp/plugin.py).
+FL 25 format exceptions were cross-checked against the
+[FLP format specification](https://github.com/dawhubapp/flpdiff/blob/main/docs/fl-format/flp-format-spec.md);
+FL 26's 88-byte playlist records were verified against local saved projects.
+The reader is native C++ and has no Python/PyFLP runtime dependency.
+
+`RememberAppTests --used-sounds` checks FLP parsing, associations and playlist scope,
+malformed/cancelled input, exported MIDI pitch/timing/tempo, four audition voices,
+sample audition, and native component snapshots at 640 × 480 and 1024 × 768.
+It also checks Image-Line's bundled NewStuff/LIVE projects when installed.
+`RememberAppTests --inspect-used-sounds <FLP-or-library-directory>` provides a
+read-only compatibility report. `--inspect-used-sounds-ui` also checks publication
+and prepares temporary MIDI exports without modifying the library or projects.
 
 ### Plugin (`Plugin/`)
 A transparent VST3 that hooks the master bus, records up to 60 s (configurable) when the transport plays exactly from zero, detects BPM and musical key, and writes a preview per project. Recording and project discovery keep running with the editor closed, including offline exports. Captures shorter than one second are discarded; shorter re-recordings replace the beginning and preserve the existing tail, with a 5 ms crossfade inside the end of the replaced prefix. Float 32-bit WAV retains headroom for later merges. Each new OGG is fully decoded before publication: if its sample peaks exceed unity, it is encoded again from the unchanged PCM with a lower gain, for up to three attempts. Failure preserves the previous preview. Metadata records the final gain, decoded peak and number of attempts; recovery restores these together. This controls decoded sample peaks; it does not measure intersample true peaks. Mono stores one channel; supported input/output buses must match and be mono or stereo.

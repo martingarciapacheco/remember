@@ -8,7 +8,8 @@
 class ReadAheadSource final : public juce::PositionableAudioSource
 {
 public:
-    explicit ReadAheadSource (std::unique_ptr<juce::AudioFormatReader>);
+    // Zero selects the normal two-second cache; live synthesis uses a smaller ring.
+    explicit ReadAheadSource (std::unique_ptr<juce::AudioFormatReader>, int cacheFrames = 0);
     ~ReadAheadSource() override;
     void prepareToPlay (int, double) override {}
     void releaseResources() override {}

@@ -92,7 +92,7 @@ static constexpr double kMonoSizeFactor = 0.6;
 
 SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner::SettingsSnapshot()> reader) : firstRun (firstRunFlag)
 {
-    setSize (680, 804);
+    setSize (680, 848);
     for (auto* toggle : { &manualToggle, &lockToggle, &replaceToggle })
     { toggle->setTitle (toggle->getButtonText()); addAndMakeVisible (*toggle); }
     manualToggle.setTooltip ("Default for new Remember instances. Existing instances and saved DAW projects keep their own setting.");
@@ -107,6 +107,11 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
                     juce::dontSendNotification);
     styleLabel (header, 22.0f, Pal::Text, true);
     addAndMakeVisible (header);
+
+    styleLabel (signature, 12.0f, Pal::Subtext);
+    signature.setJustificationType (juce::Justification::centred);
+    signature.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (signature);
 
     styleLabel (appearanceCaption, 13.0f, Pal::Text, true);
     styleLabel (appearanceHint, 11.0f, Pal::Subtext);
@@ -127,6 +132,13 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     addAndMakeVisible (zoomCaption);
     addAndMakeVisible (zoomHint);
     addAndMakeVisible (zoomCombo);
+    styleLabel (midiCaption, 13.0f, Pal::Text, true);
+    styleLabel (midiHint, 11.0f, Pal::Subtext);
+    midiVoiceCombo.setTitle ("Default MIDI audition instrument");
+    midiVoiceCombo.addItem ("Simple piano", 1); midiVoiceCombo.addItem ("Saw", 2);
+    midiVoiceCombo.addItem ("Square", 3); midiVoiceCombo.addItem ("Sine", 4);
+    midiVoiceCombo.setSelectedId (1, juce::dontSendNotification);
+    addAndMakeVisible (midiCaption); addAndMakeVisible (midiHint); addAndMakeVisible (midiVoiceCombo);
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
     styleLabel (previewsHint,    11.0f, Pal::Subtext);
@@ -348,6 +360,7 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             safe->recordSeconds = settings->seconds;
             safe->oggQuality = settings->quality;
             safe->recordMono = settings->mono;
+            safe->midiVoiceCombo.setSelectedId (settings->midiPreviewVoice, juce::dontSendNotification);
             // JUCE Button::setToggleState ignores changes while disabled.
             for (auto* child : safe->getChildren()) child->setEnabled (true);
             if (result.wasOk()) RememberUI::setAppearanceMode (settings->appearance);
@@ -524,15 +537,15 @@ void SettingsDialog::commit()
     for (auto* child : getChildren()) child->setEnabled (false);
     auto originalBackup = std::make_shared<juce::File>();
     ProjectScanner::editAsync ([previews = previewsFolder, roots = projectsFolders, fingerprint = rebuildFingerprint, originalBackup,
-                               seconds = recordSeconds, quality = oggQuality, mono = recordMono,
+                               seconds = recordSeconds, quality = oggQuality, mono = recordMono, midiVoice = midiVoiceCombo.getSelectedId(),
                                capture = CaptureOptions { manualToggle.getToggleState(), lockToggle.getToggleState(), replaceToggle.getToggleState() }]
     {
         bool validRoot = false;
         for (const auto& root : roots) if (root.isDirectory()) { validRoot = true; break; }
         if (! previews.isDirectory() || ! validRoot)
             return juce::Result::fail ("Select an existing previews folder and at least one accessible project search folder");
-        return fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture)
-            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture);
+        return fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice)
+            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice);
     }, [safe = juce::Component::SafePointer<SettingsDialog> (this), originalBackup] (juce::Result result)
     {
         if (safe == nullptr) return;
@@ -592,6 +605,10 @@ void SettingsDialog::resized()
     zoomRow.removeFromLeft (16);
     zoomHint.setBounds (zoomRow);
     area.removeFromTop (12);
+    auto midiRow = area.removeFromTop (32);
+    midiCaption.setBounds (midiRow.removeFromLeft (110));
+    midiVoiceCombo.setBounds (midiRow.removeFromLeft (150)); midiRow.removeFromLeft (16);
+    midiHint.setBounds (midiRow); area.removeFromTop (12);
 
     // ── Previews block ──────────────────────────────────────────────────────
     auto block1 = area.removeFromTop (78);
@@ -622,7 +639,7 @@ void SettingsDialog::resized()
 
     area.removeFromTop (8);
 
-    monoToggle.setBounds (area.removeFromTop (22));
+    monoToggle.setBounds (area.removeFromTop (30));
     manualToggle.setBounds (area.removeFromTop (30));
     lockToggle.setBounds (area.removeFromTop (30));
     replaceToggle.setBounds (area.removeFromTop (30));
@@ -662,6 +679,7 @@ void SettingsDialog::resized()
         cancelBtn.setBounds (bottom.removeFromRight (90));
     }
     retrySettings.setBounds (bottom.removeFromLeft (128));
+    signature.setBounds (bottom.reduced (8, 0));
 }
 
 void SettingsDialog::launch (bool firstRun, std::function<void()> onDone)

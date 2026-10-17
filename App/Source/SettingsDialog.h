@@ -52,11 +52,15 @@ private:
     juce::Label zoomCaption { {}, "Interface zoom" };
     juce::Label zoomHint { {}, "Text and controls in the app. Saved immediately." };
     juce::ComboBox zoomCombo;
+    juce::Label midiCaption { {}, "MIDI audition" };
+    juce::Label midiHint { {}, "Default instrument for Used sounds" };
+    juce::ComboBox midiVoiceCombo;
     juce::Label appearanceCaption { {}, "Appearance" };
     juce::Label appearanceHint { {}, "System follows light and dark automatically" };
     juce::ComboBox appearanceCombo;
 
     juce::Label  header;
+    juce::Label  signature { {}, "Created by WABII" };
     juce::Label  previewsCaption { {}, "Previews folder" };
     juce::Label  previewsHint    { {}, "Where the plugin saves recordings" };
     juce::Label  previewsPath;

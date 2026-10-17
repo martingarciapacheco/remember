@@ -151,6 +151,15 @@ void testDevice (const ProjectEntry& entry)
     player.play();
     await ([&] { return player.isPlaying(); }, "recover");
     check (state.opens == 3 && state.device->render() > 0.001f, "Playback failed to recover after disconnect");
+    const auto beforeAudition = PlaybackCursorTestAccess::position (player);
+    player.suspendOutput();
+    check (! player.isPlaying() && ! player.isAudioDeviceOpen() && player.hasLoadedEntry() && player.isVisible()
+           && PlaybackCursorTestAccess::position (player) >= beforeAudition,
+           "Audition suspension clears the main project or keeps its exclusive audio device open");
+    player.play();
+    await ([&] { return player.isPlaying(); }, "resume main project after audition suspension");
+    check (state.opens == 4 && state.device->render() > 0.001f, "Main project cannot resume after audition suspension");
+
     player.stop();
     check (PlaybackCursorTestAccess::position (player) == 0 && ! PlaybackCursorTestAccess::displaySynced (player),
            "Stop did not reset the cursor or detach its display callback");

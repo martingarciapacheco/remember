@@ -102,6 +102,12 @@ void testWorkflowFeatures (const juce::File& root)
     check (matches == 1, "Combined musical/date/tag filters are not ANDed");
     const auto roundtrip = LibraryFilter::fromJson (filter.json());
     check (juce::JSON::toString (filter.json()) == juce::JSON::toString (roundtrip.json()), "Smart collection lost filters");
+    LibraryFilter folderGroup; folderGroup.folders = { "Ideas", "Other" };
+    auto groupedEntry = entries[0]; groupedEntry.folders = { "Other/Child" };
+    check (folderGroup.matches (groupedEntry), "Selected folder union omitted the second subtree");
+    check (LibraryFilter::fromJson (folderGroup.json()).matches (groupedEntry), "Smart collection lost multiple folders");
+    groupedEntry.folders = { "Ideas elsewhere" };
+    check (! folderGroup.matches (groupedEntry), "Folder union matched a shared name prefix outside its subtree");
     filter = {}; filter.sort = LibraryFilter::BpmAscending; filter.order (entries);
     check (entries[0].bpm == 120 && entries[3].bpm == 135, "BPM sorting failed");
     filter.missing = true; matches = 0; for (const auto& e : entries) if (filter.matches (e)) ++matches;

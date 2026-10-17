@@ -11,6 +11,7 @@ struct LoadTicket
     ~LoadTicket() { source.reset(); activeLoads.fetch_sub (1); }
     std::unique_ptr<ReadAheadSource> source;
     std::shared_ptr<WaveformEnvelope> envelope;
+    int low = 127, high = 0;
 };
 }
 int WaveformPlayerComponent::pendingLoads() { return activeLoads.load(); }
@@ -50,6 +51,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
                 safePlayer->queue.setShuffle ((bool) preferences->getProperty ("shufflePlayback", false));
                 safePlayer->shuffleBtn.setToggleState (safePlayer->queue.shuffle, juce::dontSendNotification);
                 safePlayer->queue.repeat = (PlaybackQueue::Repeat) juce::jlimit (0, 3, (int) preferences->getProperty ("repeatPlayback", 0));
+                safePlayer->metronome.setVolume ((float) juce::jlimit (0.0, 1.0, (double) preferences->getProperty ("metronomeVolume", 0.5)));
                 safePlayer->updateRepeatButton();
                 safePlayer->applyOutputGain(); safePlayer->applyingPreferences = false;
             }
@@ -63,10 +65,15 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     RememberUI::iconButton (shuffleBtn, "shuffle", "Shuffle previews");
     shuffleBtn.setTooltip (RememberUI::shortcutTooltip (shuffleBtn.getTitle(), "S"));
     RememberUI::iconButton (repeatBtn, "repeat", "Repeat: off");
+    RememberUI::iconButton (metronomeBtn, "metronome", "Metronome");
+    metronomeBtn.setTooltip ("Metronome follows the project BPM. Right-click to adjust its volume.");
+    metronomeBtn.setClickingTogglesState (true); metronomeBtn.setEnabled (false);
+    metronomeBtn.onClick = [this] { setMetronomeEnabled (metronomeBtn.getToggleState()); };
+    metronomeBtn.onContextMenu = [this] { showMetronomeVolume(); };
     RememberUI::iconButton (muteBtn, "volume", "Mute volume");
     muteBtn.setTooltip (RememberUI::shortcutTooltip (muteBtn.getTitle(), "M"));
     RememberUI::iconButton (normalizeBtn, "normalize", "Normalize preview loudness to -14 LUFS");
-    for (auto* button : std::initializer_list<juce::TextButton*> { &previousBtn, &nextBtn, &shuffleBtn, static_cast<juce::TextButton*> (&repeatBtn), &muteBtn, &normalizeBtn, &playbackOptionsBtn })
+    for (auto* button : std::initializer_list<juce::TextButton*> { &previousBtn, &nextBtn, &shuffleBtn, static_cast<juce::TextButton*> (&repeatBtn), static_cast<juce::TextButton*> (&metronomeBtn), &muteBtn, &normalizeBtn, &playbackOptionsBtn })
     {
         button->setWantsKeyboardFocus (false);
         RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
@@ -218,6 +225,7 @@ WaveformPlayerComponent::~WaveformPlayerComponent()
 {
     stopTimer();
     cursorVBlank = {};
+    if (metronomePopup != nullptr) metronomePopup->dismiss();
     loadGeneration->fetch_add (1);
     outputManager.removeChangeListener (this);
     if (audioDialog != nullptr)
@@ -230,12 +238,27 @@ WaveformPlayerComponent::~WaveformPlayerComponent()
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+void WaveformPlayerComponent::suspendOutput()
+{
+    if (transport.isPlaying()) togglePlay();
+    playWhenLoaded = false; waitingForBuffer = false;
+    if (readerSource) readerSource->setActive (false);
+    releaseAudioDevice(); updatePlaybackUpdates();
+}
+
+void WaveformPlayerComponent::clearPreview()
+{
+    const auto file = currentEntry.metadataFile;
+    releaseEntry (file);
+}
+
 void WaveformPlayerComponent::releaseEntry (const juce::File& metadataFile)
 {
     if (currentEntry.metadataFile != metadataFile) return;
     loadGeneration->fetch_add (1);
     stop(); detachSource();
     currentEntry = {}; waveform.reset();
+    metronome.setTempo (0); metronomeBtn.setEnabled (false);
     isLoaded = false; isLoading = false; playWhenLoaded = false;
     playbackError.clear(); previewError.clear(); playbackErrorFromDevice = false;
     playBtn.setEnabled (false); setOpenProjectAvailable (false); assignBtn.setEnabled (false);
@@ -252,6 +275,9 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     const auto request = loadGeneration->fetch_add (1) + 1;
     currentEntry = entry;
     queue.select (entry);
+    const auto tempo = entry.bpmOverride > 0 ? entry.bpmOverride : entry.bpm;
+    metronome.setTempo (tempo);
+    metronomeBtn.setEnabled (std::isfinite (tempo) && tempo >= 10 && tempo <= 1000);
     if (onEntryLoaded) onEntryLoaded (entry);
     isLoaded     = false;
     isLoading = true;
@@ -262,6 +288,8 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     reportedUnderruns = 0;
     pathLabel.setTooltip ({});
     waveform.reset();
+    normalizeBtn.setEnabled (! entry.auditionReader);
+    applyOutputGain();
     playBtn.setEnabled (false);
     repaint();
 
@@ -288,11 +316,13 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     loaders.addJob ([safe, generation, request, entry, ticket]
     {
         if (generation->load() != request) return;
+        if (entry.auditionNotes) for (const auto& note : *entry.auditionNotes)
+        { ticket->low = juce::jmin (ticket->low, note.key); ticket->high = juce::jmax (ticket->high, note.key); }
         juce::AudioFormatManager formats;
         formats.registerBasicFormats();
-        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (entry.previewOgg));
+        std::unique_ptr<juce::AudioFormatReader> reader (entry.auditionReader ? entry.auditionReader() : std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (entry.previewOgg)));
         if (generation->load() != request) return;
-        if (reader) ticket->source = std::make_unique<ReadAheadSource> (std::move (reader));
+        if (reader) ticket->source = std::make_unique<ReadAheadSource> (std::move (reader), entry.auditionReader ? 8192 : 0);
         if (generation->load() != request) return;
         juce::MessageManager::callAsync ([safe, generation, request, ticket, entry]
         {
@@ -308,6 +338,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
                 safe->repaint();
                 return;
             }
+            safe->midiLow = ticket->low; safe->midiHigh = ticket->high;
             safe->readerSource = std::move (ticket->source);
             safe->transport.setSource (safe->readerSource.get(), 0, nullptr, safe->readerSource->sampleRate());
             safe->isLoaded = true;
@@ -317,6 +348,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
             if (safe->playWhenLoaded) safe->play();
             safe->repaint();
         });
+        if (entry.auditionReader) return; // No audio file or precomputed waveform for MIDI.
         ticket->envelope = std::make_shared<WaveformEnvelope>();
         ProjectScanner::queryAsync ([ticket, entry, generation, request]
         { return ticket->envelope->read (entry.previewOgg, [generation, request] { return generation->load() != request; }); },
@@ -356,7 +388,7 @@ bool WaveformPlayerComponent::ensureAudioDevice()
         pathLabel.setText ("Audio output unavailable: " + playbackError, juce::dontSendNotification);
         return false;
     }
-    sourcePlayer.setSource (&transport);
+    sourcePlayer.setSource (&metronome);
     outputManager.addAudioCallback (&sourcePlayer);
     audioDeviceOpen = true;
     clearDeviceError();
@@ -505,7 +537,7 @@ void WaveformPlayerComponent::stop()
 void WaveformPlayerComponent::togglePlay()
 {
     if (! isLoaded) return;
-    if (normalize && ! waveform && ! transport.isPlaying())
+    if (normalize && ! currentEntry.auditionReader && ! waveform && ! transport.isPlaying())
     { playWhenLoaded = ! playWhenLoaded; playBtn.setButtonText (playWhenLoaded ? "..." : ">"); return; }
     if (waitingForBuffer) { waitingForBuffer = false; playBtn.setButtonText (">"); armIdleRelease(); return; }
     if (transport.isPlaying())
@@ -523,7 +555,7 @@ void WaveformPlayerComponent::togglePlay()
     {
         readerSource->requestPrefill();
         if (position() >= duration() - 0.05) { readerSource->setNextReadPosition (0); resetCursor(); }
-        if (! deviceSettingsLoaded || ! readerSource->ready ((int) (readerSource->sampleRate() * 0.25)))
+        if (! deviceSettingsLoaded || ! readerSource->ready ((int) (readerSource->sampleRate() * (currentEntry.auditionReader ? 0.05 : 0.25))))
         { waitingForBuffer = true; playBtn.setButtonText ("..."); updatePlaybackUpdates(); return; }
         if (! ensureAudioDevice()) { playBtn.setButtonText (">"); updatePlaybackUpdates(); return; }
         resetCursor();
@@ -537,7 +569,7 @@ void WaveformPlayerComponent::togglePlay()
 void WaveformPlayerComponent::play()
 {
     if (isLoading) { playWhenLoaded = true; return; }
-    if (normalize && ! waveform && isLoaded) { playWhenLoaded = true; return; }
+    if (normalize && ! currentEntry.auditionReader && ! waveform && isLoaded) { playWhenLoaded = true; return; }
     if (! isLoaded || transport.isPlaying() || waitingForBuffer) return;
     togglePlay();
 }
@@ -598,7 +630,7 @@ void WaveformPlayerComponent::changeListenerCallback (juce::ChangeBroadcaster* b
     auto* device = outputManager.getCurrentAudioDevice();
     if (! audioDeviceOpen && audioDialog != nullptr && device && device->isOpen())
     {
-        sourcePlayer.setSource (&transport); outputManager.addAudioCallback (&sourcePlayer);
+        sourcePlayer.setSource (&metronome); outputManager.addAudioCallback (&sourcePlayer);
         audioDeviceOpen = true; armIdleRelease();
     }
     if (! audioDeviceOpen) return;
@@ -645,7 +677,7 @@ void WaveformPlayerComponent::timerCallback()
     }
     if (waitingForBuffer)
     {
-        if (deviceSettingsLoaded && readerSource && readerSource->ready ((int) (readerSource->sampleRate() * 0.25)))
+        if (deviceSettingsLoaded && readerSource && readerSource->ready ((int) (readerSource->sampleRate() * (currentEntry.auditionReader ? 0.05 : 0.25))))
         { waitingForBuffer = false; togglePlay(); }
         return;
     }
@@ -706,7 +738,8 @@ void WaveformPlayerComponent::mouseDrag (const juce::MouseEvent& e)
 void WaveformPlayerComponent::paint (juce::Graphics& g)
 {
     g.fillAll (RememberUI::colour (Pal::BgDeep));
-    RememberUI::panel (g, getLocalBounds().toFloat().reduced (12, 6));
+    RememberUI::panel (g, getLocalBounds().toFloat().reduced ((float) RememberUI::appOuterMargin, 6),
+                       RememberUI::surfaceRadius, false);
     if (! isLoaded)
     {
         g.setColour (RememberUI::colour (Pal::Subtext));
@@ -745,6 +778,28 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
         }
 
     }
+    if (currentEntry.auditionNotes && ! waveArea.isEmpty() && duration() > 0)
+    {
+        juce::Graphics::ScopedSaveState clip (g); g.reduceClipRegion (waveArea);
+        const auto tempo = currentEntry.bpmOverride > 0 ? currentEntry.bpmOverride : currentEntry.bpm;
+        const auto beats = duration() * tempo / 60.0;
+        g.setColour (RememberUI::colour (Pal::Border));
+        const int beatStride = juce::jmax (1, (int) std::ceil (beats / 128));
+        for (int beat = 0; beat < beats; beat += beatStride)
+            g.drawVerticalLine (waveArea.getX() + (int) (beat / beats * waveArea.getWidth()), (float) waveArea.getY(), (float) waveArea.getBottom());
+        const auto bounds = waveArea.toFloat().reduced (4);
+        const int range = juce::jmax (12, midiHigh - midiLow + 3);
+        const auto& notes = *currentEntry.auditionNotes;
+        const auto stride = juce::jmax<size_t> (1, (notes.size() + 2047) / 2048);
+        g.setColour (RememberUI::colour (Pal::Accent));
+        for (size_t i = 0; i < notes.size(); i += stride)
+        {
+            const auto& note = notes[i];
+            g.fillRoundedRectangle (bounds.getX() + (float) (note.beat / beats) * bounds.getWidth(),
+                bounds.getBottom() - (float) (note.key - midiLow + 2) / range * bounds.getHeight(),
+                juce::jmax (2.0f, (float) (note.length / beats) * bounds.getWidth()), juce::jmax (2.0f, bounds.getHeight() / range), 1.0f);
+        }
+    }
     // The cursor is usable while the background waveform is still loading.
     float posX = waveArea.getX() + (float) getPositionNormalized() * waveArea.getWidth();
     g.setColour (RememberUI::colour (Pal::Text).withAlpha (0.8f));
@@ -759,7 +814,7 @@ void WaveformPlayerComponent::resized()
 
     auto topRow = area.removeFromTop (34);
     shuffleBtn.setBounds (topRow.removeFromLeft (32)); previousBtn.setBounds (topRow.removeFromLeft (32));
-    playBtn.setBounds (topRow.removeFromLeft (36)); nextBtn.setBounds (topRow.removeFromLeft (32)); repeatBtn.setBounds (topRow.removeFromLeft (32));
+    playBtn.setBounds (topRow.removeFromLeft (36)); nextBtn.setBounds (topRow.removeFromLeft (32)); repeatBtn.setBounds (topRow.removeFromLeft (32)); metronomeBtn.setBounds (topRow.removeFromLeft (32));
     audioBtn.setBounds (topRow.removeFromRight (56).reduced (2, 2));
     playbackOptionsBtn.setBounds (topRow.removeFromRight (30)); normalizeBtn.setBounds (topRow.removeFromRight (30));
     volumeSlider.setBounds (topRow.removeFromRight (getWidth() >= 800 ? 100 : 72)); muteBtn.setBounds (topRow.removeFromRight (30));
@@ -767,13 +822,13 @@ void WaveformPlayerComponent::resized()
     area.removeFromTop (6);
 
     // Bottom row: open + assign + path
-    auto btmRow = area.removeFromBottom (32);
+    auto btmRow = compactMode ? juce::Rectangle<int>{} : area.removeFromBottom (32);
     openBtn.setBounds   (btmRow.removeFromRight (110).reduced (2, 0));
     btmRow.removeFromRight (6);
     assignBtn.setBounds (btmRow.removeFromRight (130).reduced (2, 0));
     pathLabel.setBounds (btmRow);
 
-    area.removeFromBottom (6);
+    if (! compactMode) area.removeFromBottom (6);
 
     // Waveform occupies the middle
     waveArea = area;
@@ -792,6 +847,65 @@ void WaveformPlayerComponent::updateRepeatButton()
     repeatBtn.setDescription (descriptions[mode]);
     repeatBtn.setTooltip (RememberUI::shortcutTooltip (repeatBtn.getTitle(), "L", juce::String (descriptions[mode]) + ". Left-click cycles modes; right-click chooses a mode."));
     repeatBtn.repaint();
+}
+
+void WaveformPlayerComponent::setCompactMode (bool value)
+{
+    if (metronomePopup != nullptr) metronomePopup->dismiss();
+    compactMode = value;
+    for (auto* component : std::initializer_list<juce::Component*> { &openBtn, &assignBtn, &pathLabel }) component->setVisible (! value);
+    resized(); repaint();
+}
+void WaveformPlayerComponent::setMetronomeEnabled (bool value)
+{
+    metronome.setEnabled (value); metronomeBtn.setToggleState (value, juce::dontSendNotification);
+}
+void WaveformPlayerComponent::setMetronomeVolume (double value, bool save)
+{
+    metronome.setVolume ((float) value);
+    preferencesTouched = true;
+    if (save) savePlaybackPreferences();
+}
+namespace
+{
+class MetronomeVolume final : public juce::Component
+{
+public:
+    MetronomeVolume (double value, std::function<void(double, bool)> update)
+    {
+        label.setText ("Metronome volume", juce::dontSendNotification);
+        label.setFont (RememberUI::font (13, true));
+        RememberUI::bindColour (label, juce::Label::textColourId, Pal::Text); addAndMakeVisible (label);
+        slider.setSliderStyle (juce::Slider::LinearHorizontal); slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 24);
+        slider.setRange (0, 100, 1); slider.setValue (value * 100, juce::dontSendNotification); slider.setTextValueSuffix ("%");
+        slider.setTitle ("Metronome volume");
+        RememberUI::bindColour (slider, juce::Slider::textBoxTextColourId, Pal::Text);
+        RememberUI::bindColour (slider, juce::Slider::textBoxBackgroundColourId, Pal::Content);
+        RememberUI::bindColour (slider, juce::Slider::textBoxOutlineColourId, Pal::Border);
+        RememberUI::bindColour (slider, juce::Slider::thumbColourId, Pal::Text);
+        RememberUI::bindColour (slider, juce::Slider::trackColourId, Pal::Accent);
+        RememberUI::bindColour (slider, juce::Slider::backgroundColourId, Pal::Border);
+        slider.onValueChange = [this, update] { update (slider.getValue() / 100, ! slider.isMouseButtonDown()); };
+        slider.onDragEnd = [this, update] { update (slider.getValue() / 100, true); };
+        addAndMakeVisible (slider); setSize (240, 80);
+    }
+    void resized() override { auto area = getLocalBounds().reduced (12); label.setBounds (area.removeFromTop (22)); slider.setBounds (area); }
+private:
+    RememberUI::Style style { *this };
+    juce::Label label;
+    juce::Slider slider;
+};
+}
+void WaveformPlayerComponent::showMetronomeVolume()
+{
+    if (metronomePopup != nullptr) { metronomePopup->dismiss(); return; }
+    auto content = std::make_unique<MetronomeVolume> (getMetronomeVolume(), [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this)] (double value, bool save)
+    { if (safe != nullptr) safe->setMetronomeVolume (value, save); });
+    // JUCE's async holder destroys the callout before its owned content, whose
+    // Style retains this shared look-and-feel throughout the popup lifetime.
+    auto* look = &content->getLookAndFeel();
+    metronomePopup = &juce::CallOutBox::launchAsynchronously (std::move (content), metronomeBtn.getScreenBounds(), nullptr);
+    metronomePopup->setLookAndFeel (look);
 }
 
 void WaveformPlayerComponent::showRepeatOptions()
@@ -865,8 +979,9 @@ void WaveformPlayerComponent::applyOutputGain()
     RememberUI::iconButton (muteBtn, isMuted() || volume == 0 ? "mute" : "volume", isMuted() || volume == 0 ? "Unmute volume" : "Mute volume");
     muteBtn.setTooltip (RememberUI::shortcutTooltip (muteBtn.getTitle(), "M"));
     const auto gain = normalize && waveform ? waveform->normalizationGain : 1.0f;
+    metronome.setMasterGain (isMuted() ? 0.0f : (float) (volume * volume));
     transport.setGain (isMuted() ? 0.0f : (float) (volume * volume) * gain);
-    normalizeBtn.setTooltip (normalize && ! waveform ? "Measuring preview loudness..." : "Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)");
+    normalizeBtn.setTooltip (currentEntry.auditionReader ? "Live MIDI uses its instrument level" : normalize && ! currentEntry.auditionReader && ! waveform ? "Measuring preview loudness..." : "Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)");
 }
 void WaveformPlayerComponent::savePlaybackPreferences()
 {
@@ -874,6 +989,7 @@ void WaveformPlayerComponent::savePlaybackPreferences()
     preferencesTouched = true;
     juce::var patch (new juce::DynamicObject()); auto& o = *patch.getDynamicObject();
     o.setProperty ("playbackVolume", getVolume()); o.setProperty ("playbackMuted", isMuted()); o.setProperty ("normalizePlayback", normalize);
+    o.setProperty ("metronomeVolume", metronome.getVolume());
     o.setProperty ("shufflePlayback", queue.shuffle); o.setProperty ("repeatPlayback", (int) queue.repeat); o.setProperty ("autoplaySelection", autoplay);
     auto safe = juce::Component::SafePointer<WaveformPlayerComponent> (this);
     ProjectScanner::editAsync ([patch] { return LibraryStore::patchJson (LibraryStore::configFile(), patch, true); }, [safe] (juce::Result result)

@@ -134,7 +134,12 @@ function Invoke-RememberProcess([string]$Executable, [string[]]$Arguments, [stri
     $start.RedirectStandardError = $true
     $start.WorkingDirectory = (Get-Location).Path
     foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
-    if ($WithoutPath) { $null = $start.Environment.Remove('Path'); $null = $start.Environment.Remove('PATH') }
+    if ($WithoutPath) {
+        $null = $start.Environment.Remove('Path'); $null = $start.Environment.Remove('PATH')
+        # JUCE's Windows bundle icon step invokes attrib.exe. Keep system tools
+        # available without inheriting unrelated compiler/runtime directories.
+        $start.Environment['Path'] = [Environment]::GetFolderPath([Environment+SpecialFolder]::System)
+    }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $start
     try {

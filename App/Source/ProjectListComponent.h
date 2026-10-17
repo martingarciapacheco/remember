@@ -22,7 +22,7 @@ public:
 
     std::function<void()>                 onSelect;
     std::function<void(juce::ModifierKeys)> onSelectionGesture;
-    std::function<void()>                 onDetails, onRestore;
+    std::function<void()>                 onDetails, onRestore, onUsedSounds;
     std::function<void()>                 onPlay;
     std::function<void(ProjectRowComponent*)> onActions;
     std::function<void(juce::String)>      onStatusChanged;
@@ -44,6 +44,7 @@ private:
 
     juce::TextButton favBtn   { "" };
     juce::TextButton actionsBtn { "..." };
+    juce::TextButton usedSoundsBtn;
     juce::TextButton statusBtn;
     juce::TextEditor renameEditor;
 };
@@ -63,6 +64,7 @@ public:
     // Filter entries by folder membership. Empty string = no filter (show all).
     // Selecting "A" also includes entries in subfolders like "A/B".
     void setFolderFilter (const juce::String& folderPath);
+    void setFolderFilters (const juce::StringArray& paths);
 
     // Programmatic actions for keyboard shortcuts in MainComponent
     void playSelected();
@@ -82,6 +84,7 @@ public:
 
     std::function<void (const ProjectEntry&)> onEntrySelected;
     std::function<void (const ProjectEntry&)> onEntryPlay;
+    std::function<void (const ProjectEntry&)> onUsedSounds;
     std::function<void (const ProjectEntry&)> onBeforeStorageChange;
 
     // Fired after refresh() reloads from disk. Used by the host to refresh
@@ -135,7 +138,8 @@ private:
 
     bool         showFavOnly       { false };
     juce::String folderFilter;            // empty = no filter
+    juce::StringArray folderFilters;
 
-    int toolbarHeight() const { return getWidth() - 32 < 650 ? 134 : 94; }
+    int toolbarHeight() const { return getWidth() - RememberUI::appSectionGap - RememberUI::appOuterMargin < 650 ? 132 : 92; }
     static constexpr int kRowH     = RememberUI::recordingRowHeight;
 };

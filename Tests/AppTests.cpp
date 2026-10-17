@@ -11,6 +11,9 @@
 #include "StartupTests.h"
 #include "ShellTests.h"
 #include "WorkflowTests.h"
+#include "UsedSoundsTests.h"
+#include "../App/Source/UsedSounds.h"
+#include "../App/Source/UsedSoundsDialog.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -58,6 +61,46 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+        if (argc == 3 && (juce::String (argv[1]) == "--inspect-used-sounds" || juce::String (argv[1]) == "--inspect-used-sounds-ui"))
+        {
+            const bool inspectUi = juce::String (argv[1]) == "--inspect-used-sounds-ui";
+            const auto input = juce::File (juce::String::fromUTF8 (argv[2]));
+            juce::Array<juce::File> projects;
+            if (input.isDirectory())
+            {
+                for (const auto& folder : input.findChildFiles (juce::File::findDirectories, false))
+                {
+                    const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
+                    const auto path = metadata.getProperty ("projectPath", "").toString();
+                    if (path.isNotEmpty()) projects.addIfNotAlreadyThere (juce::File (path));
+                }
+            }
+            else projects.add (input);
+            int failed = 0;
+            for (const auto& project : projects)
+            {
+                const auto inventory = UsedSounds::readProject (project);
+                int counts[3] {}, used[3] {};
+                for (const auto& sound : inventory.sounds) { ++counts[(int) sound.kind]; if (sound.inPlaylist) ++used[(int) sound.kind]; }
+                std::cout << project.getFileName() << " version=" << inventory.version << " bpm=" << inventory.bpm
+                    << " all=" << counts[0] << "/" << counts[1] << "/" << counts[2]
+                    << " playlist=" << used[0] << "/" << used[1] << "/" << used[2]
+                    << " error=" << inventory.result.getErrorMessage() << "\n";
+                if (inventory.result.failed()) ++failed;
+                if (inspectUi && inventory.result.wasOk())
+                {
+                    ProjectEntry entry; entry.projectPath = project.getFullPathName(); entry.name = project.getFileNameWithoutExtension();
+                    UsedSoundsDialog dialog (entry); awaitUi ([&] { return dialog.hasLoaded(); });
+                    int exportErrors = 0;
+                    for (const auto& sound : dialog.inventory().sounds) if (sound.exportError.isNotEmpty()) ++exportErrors;
+                    const bool ok = dialog.inventory().result.wasOk() && dialog.inventory().sounds.size() == inventory.sounds.size() && exportErrors == 0;
+                    std::cout << "  UI=" << (ok ? "OK" : "FAILED") << " exportsUnavailable=" << exportErrors << "\n";
+                    if (! ok) ++failed;
+                }
+            }
+            if (inspectUi) { ProjectScanner::beginShutdown(); awaitUi ([] { return ProjectScanner::shutdownReady(); }); }
+            return failed == 0 ? 0 : 1;
+        }
         if (argc == 2 && juce::String (argv[1]) == "--playback")
         {
             testPlayback (root);
@@ -76,6 +119,11 @@ int main (int argc, char** argv)
             ProjectScanner::beginShutdown();
             awaitUi ([] { return ProjectScanner::shutdownReady(); });
             return 0;
+        }
+        if (argc == 2 && juce::String (argv[1]) == "--used-sounds")
+        {
+            testUsedSounds (root);
+            ProjectScanner::beginShutdown(); awaitUi ([] { return ProjectScanner::shutdownReady(); }); return 0;
         }
         if (argc == 2 && juce::String (argv[1]) == "--workflow")
         {
@@ -178,6 +226,7 @@ int main (int argc, char** argv)
         testSettingsLoad (root);
         testSettingsRecovery (root);
         testRecoveryUi (root);
+        testUsedSounds (root);
         testSidebarUi (root);
         testLibraryScene (root);
         testRowInteractions (root);

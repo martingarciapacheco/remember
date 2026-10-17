@@ -80,7 +80,7 @@ void testFrontendDesign (const juce::File& root)
     data->setProperty ("recordedAt", "2026-10-11T12:00:00Z");
     data->setProperty ("favorite", true);
     data->setProperty ("tags", juce::Array<juce::var> { "Ambient", "Work in progress" });
-    data->setProperty ("folders", juce::Array<juce::var> { "Sketches" });
+    data->setProperty ("folders", juce::Array<juce::var> { "Sketches/Ideas" });
     check (LibraryStore::writeJsonAtomically (directory.getChildFile ("metadata.json"), metadata).wasOk(), "Cannot write design metadata");
     {
         juce::OggVorbisAudioFormat ogg;
@@ -138,10 +138,55 @@ void testFrontendDesign (const juce::File& root)
     for (auto size : { juce::Point<int> (640, 480), juce::Point<int> (1024, 768) })
     {
         scene->setSize (size.x, size.y);
-        check (launchers->getX() == 16 && launchers->getRight() <= 216
+        auto* foldersPanel = childOf<FoldersSidebarComponent> (*scene);
+        check (foldersPanel && foldersPanel->getX() == 6 && foldersPanel->getWidth() == 216,
+            "Folder surface lost its outer inset or original width");
+        auto* folderTree = childOf<juce::TreeView> (*foldersPanel);
+        check (folderTree != nullptr, "Folder tree is missing");
+        const auto folderImage = foldersPanel->createComponentSnapshot (foldersPanel->getLocalBounds(), true, 1, juce::SoftwareImageType{});
+        const int allCentre = folderTree->getY() + 17;
+        int selectionLeft = 0, selectionRight = folderImage.getWidth() - 1;
+        while (selectionLeft < folderImage.getWidth() && folderImage.getPixelAt (selectionLeft, allCentre) != RememberUI::colour (Pal::Selected)) ++selectionLeft;
+        while (selectionRight >= 0 && folderImage.getPixelAt (selectionRight, allCentre) != RememberUI::colour (Pal::Selected)) --selectionRight;
+        check (selectionLeft == 10 && folderImage.getWidth() - 1 - selectionRight == selectionLeft,
+            "All selection has unequal side margins");
+        for (auto* child : foldersPanel->getChildren())
+        {
+            if (auto* label = dynamic_cast<juce::Label*> (child))
+                check (label->getX() == RememberUI::folderIconLeading, "Folders does not align with All's icon");
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "Sort")
+                check (button->getRight() == selectionRight + 1, "Folder Sort does not align with All selection");
+        }
+        check (launchers->getX() == 22 && launchers->getRight() <= 222
             && launchers->getBottom() <= player->getY(), "DAW launchers moved away from below the folders");
         juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
         check (search->getWidth() >= 160 && search->getHeight() >= 32, "Minimum window clipped the search target");
+        check (search->getJustificationType() == juce::Justification::centredLeft, "Search text is not vertically centred");
+        check (rows->getX() == search->getX(), "Preview list does not share the search leading edge");
+        check (list->getY() == 70 && search->getY() == 8 && list->getX() == foldersPanel->getRight(),
+            "Library did not follow the inset folder surface while retaining compact spacing");
+        juce::TextButton* settingsControl = nullptr;
+        for (auto* child : scene->getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "Settings") settingsControl = button;
+        check (settingsControl && settingsControl->getProperties()["rememberIcon"].toString() == "settings"
+            && settingsControl->getTooltip() == "Settings" && settingsControl->getWidth() == 34,
+            "Settings lacks its compact gear and pointer tooltip");
+        const int rightEdge = scene->getWidth() - 6;
+        check (settingsControl->getRight() == rightEdge && list->getX() + rows->getRight() == rightEdge,
+            "Settings and preview surface do not share the player surface trailing edge");
+        for (auto* child : list->getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "Refresh")
+                check (list->getX() + button->getRight() == rightEdge, "Refresh does not share the player surface trailing edge");
+        const auto playerImage = player->createComponentSnapshot (player->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+        check (playerImage.getPixelAt (player->getWidth() / 2, 6) == RememberUI::colour (Pal::Content)
+            && playerImage.getPixelAt (6, player->getHeight() / 2) == RememberUI::colour (Pal::Content),
+            "Player still paints a lighter outline than the preview surface");
+        const auto marginsImage = scene->createComponentSnapshot (scene->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+        check (marginsImage.getPixelAt (5, 60) == RememberUI::colour (Pal::BgDeep)
+            && marginsImage.getPixelAt (60, 5) == RememberUI::colour (Pal::BgDeep)
+            && marginsImage.getPixelAt (7, 7) == RememberUI::colour (Pal::BgDeep)
+            && marginsImage.getPixelAt (7, 60) == RememberUI::colour (Pal::Surface),
+            "Folder surface is not inset equally from the top and left with rounded upper corners");
         juce::Label* count = nullptr;
         juce::TextButton* filters = nullptr;
         for (auto* child : list->getChildren())
@@ -150,15 +195,59 @@ void testFrontendDesign (const juce::File& root)
             if (child->getTitle() == "Filter projects") filters = dynamic_cast<juce::TextButton*> (child);
         }
         check (count && filters && count->getText() == "1 item", "Recording count is missing or stale");
+        check (list->getX() + count->getRight() == rightEdge, "Recording count does not share the outer trailing edge");
         check (count->getY() == filters->getY() && count->getHeight() == filters->getHeight()
             && ! count->getBounds().intersects (filters->getBounds()), "Recording count is not aligned with Filters");
         check (rows->getY() - filters->getBottom() == 8, "Toolbar still reserves an empty counter row");
+        juce::ComboBox* sortControl = nullptr;
+        juce::ComboBox* viewControl = nullptr;
+        juce::TextButton* favorites = nullptr;
+        for (auto* child : list->getChildren())
+        {
+            if (child->getTitle() == "Sort projects") sortControl = dynamic_cast<juce::ComboBox*> (child);
+            if (child->getTitle() == "Library view") viewControl = dynamic_cast<juce::ComboBox*> (child);
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "Favorites") favorites = button;
+        }
+        check (sortControl && viewControl && favorites && sortControl->getRight() == favorites->getRight(),
+            "Sort does not share Favorites' trailing edge");
+        check (viewControl->getRight() + 8 == sortControl->getX() && viewControl->getY() == sortControl->getY(),
+            "Library view is not beside sort");
+        check (sortControl->getWidth() >= 152 && sortControl->getWidth() < 180,
+            "Sort lost its compact width for BPM descending");
+        sortControl->setSelectedId (5, juce::dontSendNotification);
+        saveImage (*scene, size.x == 640 ? "apple-sort-longest-minimum.png" : "apple-sort-longest.png", true);
+        sortControl->setSelectedId (1, juce::dontSendNotification);
+        check (sortControl->getY() - search->getBottom() == rows->getY() - filters->getBottom(),
+            "Search/filter gap differs from the filter/preview gap");
+        check (list->getX() + rows->getX() - foldersPanel->getRight() == 6
+            && player->getY() + 6 - (list->getY() + rows->getBottom()) == 6,
+            "Horizontal panel separation differs from the gap above transport");
+        check (launchers->getX() - foldersPanel->getX() == 16 && launchers->getWidth() == 184,
+            "DAW launcher side padding changed");
+        auto* dawViewport = childOf<juce::Viewport> (*launchers);
+        if (! dawViewport->getHorizontalScrollBar().isVisible())
+            check (player->getY() - launchers->getBottom() == 16, "DAW bottom padding differs from side padding");
+        const auto originalDark = RememberUI::isDark();
+        for (bool dark : { false, true })
+        {
+            RememberUI::setDark (dark);
+            const auto previewSurface = rows->createComponentSnapshot (rows->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+            const auto transportSurface = player->createComponentSnapshot (player->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+            check (previewSurface.getPixelAt (12, rows->getHeight() - 12) == transportSurface.getPixelAt (player->getWidth() / 2, 6),
+                "Preview and transport surfaces have different background colours");
+        }
+        RememberUI::setDark (originalDark);
+        check (rows->getX() == filters->getX(), "Preview list does not share the Filters leading edge");
         for (auto* component : scene->getChildren())
             check (scene->getLocalBounds().contains (component->getBounds()), "Main layout places a component outside its bounds");
         rows->deselectAllRows();
         saveImage (*scene, size.x == 640 ? "apple-app-unselected-minimum.png" : "apple-app-unselected.png", true);
         rows->selectRow (0);
         saveImage (*scene, size.x == 640 ? "apple-app-minimum.png" : "apple-app.png", true);
+        saveImage (*search, size.x == 640 ? "search-placeholder-minimum.png" : "search-placeholder.png", true);
+        search->setText ("Midnight sketches", false);
+        saveImage (*search, size.x == 640 ? "search-typed-minimum.png" : "search-typed.png", true);
+        search->setText ({}, false);
         const auto listImage = rows->createComponentSnapshot (rows->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
         check (listImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Preview surface retained a square outer corner");
         if (auto* row = rows->getComponentForRowNumber (0))
@@ -180,6 +269,32 @@ void testFrontendDesign (const juce::File& root)
             (*tips)->setLookAndFeel (nullptr);
         }
     }
+    {
+        DawLauncher launcherLayout;
+        awaitUi ([&] { return launcherLayout.hasDiscoveredApplications(); }, 15000);
+        for (int count : { 1, 4, 8 })
+        {
+            std::vector<DawLauncher::Application> apps;
+            for (int i = 0; i < count; ++i) apps.push_back ({ "DAW " + juce::String (i), {}, {} });
+            launcherLayout.setApplications (apps);
+            launcherLayout.setSize (184, launcherLayout.preferredHeight (184));
+            auto* viewport = childOf<juce::Viewport> (launcherLayout);
+            check (viewport && viewport->getViewArea().getHeight() >= 32, "DAW overflow scrollbar clips the launcher buttons");
+            auto* body = viewport->getViewedComponent();
+            for (int i = 1; i < body->getNumChildComponents(); ++i)
+                check (body->getChildComponent (i)->getX() - body->getChildComponent (i - 1)->getRight() == 16,
+                    "DAW launcher horizontal spacing differs from side padding");
+            viewport->setViewPosition (10000, 0);
+            check (body->getChildComponent (count - 1)->getRight() <= viewport->getViewArea().getRight(), "Last overflow DAW cannot be reached");
+        }
+    }
+    scene->setSize (1920, 1080);
+    check (list->getX() + rows->getRight() == 1914 && list->getX() == 222,
+        "Wide layout lost the player trailing edge or shifted Library origin");
+    for (auto* child : scene->getChildren())
+        if (child->getTitle() == "Settings") check (child->getRight() == 1914, "Wide Settings lost its shared trailing edge");
+    saveImage (*scene, "apple-app-wide.png", true);
+    scene->setSize (1024, 768);
     player->loadEntry (ProjectScanner::scan()[0]);
     check (assignButton->isEnabled(), "Assign path is unavailable for a selected entry");
     check (openButton->isEnabled(), "Open in DAW is unavailable for a selected entry with a verified project");
@@ -188,6 +303,26 @@ void testFrontendDesign (const juce::File& root)
     for (auto* child : player->getChildren())
         if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle().startsWith ("Repeat:")) repeatButton = button;
     check (repeatButton != nullptr, "Player has no Repeat options");
+    RememberUI::ContextMenuButton* metronomeButton = nullptr;
+    for (auto* child : player->getChildren())
+        if (auto* button = dynamic_cast<RememberUI::ContextMenuButton*> (child); button && button->getTitle() == "Metronome") metronomeButton = button;
+    check (metronomeButton && ! player->isMetronomeEnabled() && metronomeButton->getX() == repeatButton->getRight(), "Metronome is not disabled by default beside Repeat");
+    player->setMetronomeEnabled (true);
+    metronomeButton->onContextMenu();
+    auto* metroPopover = juce::Component::getCurrentlyModalComponent();
+    check (metroPopover != nullptr && player->isMetronomeEnabled(), "Metronome context action changed its enabled state");
+    auto* metronomeSlider = childOf<juce::Slider> (*metroPopover);
+    for (auto* content : metroPopover->getChildren())
+        if (metronomeSlider == nullptr) metronomeSlider = childOf<juce::Slider> (*content);
+    check (metronomeSlider != nullptr, "Metronome context action lacks a volume bar");
+    metronomeSlider->setValue (35, juce::sendNotificationSync);
+    check (std::abs (player->getMetronomeVolume() - 0.35) < 0.001, "Metronome volume bar does not update playback");
+    saveImage (*metroPopover, "apple-metronome-volume.png", true);
+    if (auto* callout = dynamic_cast<juce::CallOutBox*> (metroPopover)) callout->dismiss();
+    else metroPopover->exitModalState (0);
+    awaitUi ([] { return juce::Component::getCurrentlyModalComponent() == nullptr; });
+    player->setMetronomeEnabled (false);
+
     auto* repeatContext = dynamic_cast<RememberUI::ContextMenuButton*> (repeatButton);
     check (repeatContext != nullptr, "Repeat lacks a separate context action");
     for (const auto* mode : { "all", "one", "single", "off" })
@@ -296,6 +431,14 @@ void testFrontendDesign (const juce::File& root)
         awaitUi ([&] { return settings.hasLoadedSettings(); });
         juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
         auto* folders = childOf<juce::ListBox> (settings);
+        std::vector<juce::ToggleButton*> recordingSwitches;
+        for (auto* child : settings.getChildren())
+            if (auto* toggle = dynamic_cast<juce::ToggleButton*> (child)) recordingSwitches.push_back (toggle);
+        std::sort (recordingSwitches.begin(), recordingSwitches.end(), [] (auto* a, auto* b) { return a->getY() < b->getY(); });
+        check (recordingSwitches.size() == 4, "Settings recording switches missing");
+        for (size_t i = 1; i < recordingSwitches.size(); ++i)
+            check (recordingSwitches[i]->getBounds().getCentreY() - recordingSwitches[i - 1]->getBounds().getCentreY() == 30,
+                "Record in mono and the remaining switches have unequal spacing");
         check (folders != nullptr, "Settings has no folder list");
         const auto foldersImage = folders->createComponentSnapshot (folders->getLocalBounds(), true, 1, juce::SoftwareImageType{});
         check (foldersImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Settings folder list retained square corners");
@@ -485,6 +628,85 @@ void testSidebarUi (const juce::File& root)
     juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
     check (tree->getNumRowsInTree() >= 103, "Folder rows are not visible after publication/layout dispatch");
     saveImage (*sidebar, "folders-large.png");
+    {
+        const auto now = juce::Time::getCurrentTime();
+        const auto point = juce::Point<float> (2, (float) tree->getRootItem()->getSubItem (0)->getItemPosition (true).getCentreY());
+        juce::MouseEvent gutterClick (juce::Desktop::getInstance().getMainMouseSource(), point,
+            juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, tree, tree, now, point, now, 1, false);
+        sidebar->mouseDown (gutterClick); sidebar->mouseUp (gutterClick);
+        check (sidebar->getSelectedFolders().isEmpty() && tree->getSelectedItem (0)->getUniqueName() == "__ALL__",
+            "All's newly unindented gutter is not clickable");
+        saveImage (*sidebar, "folders-all-unindented.png");
+        sidebar->selectFolder ("A/B");
+    }
+
+    const auto clickFolder = [&](juce::TreeViewItem* item, int modifiers)
+    {
+        const auto now = juce::Time::getCurrentTime();
+        juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), {},
+            juce::ModifierKeys (modifiers | juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0,
+            tree, tree, now, {}, now, 1, false);
+        const bool selectedBeforeDown = item->isSelected();
+        if (! selectedBeforeDown) item->setSelected (true, ! event.mods.isCtrlDown());
+        item->itemClicked (event);
+        if (selectedBeforeDown) item->setSelected (! event.mods.isCtrlDown() || ! item->isSelected(), ! event.mods.isCtrlDown());
+        sidebar->mouseUp (event);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+    };
+    auto rootItem = [&] (int index) { return tree->getRootItem()->getSubItem (index); };
+    clickFolder (rootItem (2), 0); // Batch 000
+    clickFolder (rootItem (4), juce::ModifierKeys::altModifier); // Batch 002
+    check (sidebar->getSelectedFolders().size() == 3 && tree->getNumSelectedItems() == 3
+        && sidebar->getSelectedFolders().contains ("Batch 001"), "Alt-click did not select the contiguous visible range");
+    clickFolder (rootItem (6), juce::ModifierKeys::ctrlModifier);
+    check (sidebar->getSelectedFolders().size() == 4 && sidebar->getSelectedFolders().contains ("Batch 004"), "Ctrl-click did not add a separate folder");
+    clickFolder (rootItem (3), juce::ModifierKeys::ctrlModifier);
+    check (sidebar->getSelectedFolders().size() == 3 && ! sidebar->getSelectedFolders().contains ("Batch 001"), "Ctrl-click did not toggle a selected folder");
+    sidebar->refresh();
+    check (sidebar->getSelectedFolders().size() == 3 && tree->getNumSelectedItems() == 3, "Refresh lost multiple folder identities");
+    {
+        const auto selected = sidebar->getSelectedFolders();
+        const auto current = sidebar->getSelectedFolder();
+        int notifications = 0;
+        sidebar->onFoldersSelected = [&] (juce::StringArray) { ++notifications; };
+        for (auto* target : { rootItem (5), rootItem (2), rootItem (0) })
+        {
+            // Match TreeView's mouse-down ordering, including its selection
+            // before the item's context callback on an unselected row.
+            if (! target->isSelected()) target->setSelected (true, true);
+            const auto now = juce::Time::getCurrentTime();
+            juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), {},
+                juce::ModifierKeys (juce::ModifierKeys::rightButtonModifier), 1, 0, 0, 0, 0,
+                tree, tree, now, {}, now, 1, false);
+            target->itemClicked (event);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+            check (sidebar->getSelectedFolders() == selected && sidebar->getSelectedFolder() == current
+                && tree->getNumSelectedItems() == selected.size() && notifications == 0,
+                "Folder context menu changed selection or the library filter");
+            juce::PopupMenu::dismissAllActiveMenus();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+        }
+        sidebar->onFoldersSelected = nullptr;
+    }
+    rootItem (5)->setSelected (true, true); // native keyboard/accessibility selection
+    awaitUi ([&] { return sidebar->getSelectedFolder() == "Batch 003" && sidebar->getSelectedFolders().size() == 1; });
+    {
+        ProjectListComponent selectedList;
+        selectedList.setSize (700, 500);
+        sidebar->onFoldersSelected = [&] (juce::StringArray paths) { selectedList.setFolderFilters (paths); };
+        clickFolder (rootItem (2), 0);
+        check (selectedList.getNumRows() == 0, "Empty selected folder did not filter the library");
+        clickFolder (rootItem (1), juce::ModifierKeys::ctrlModifier); // union with A
+        check (selectedList.getNumRows() == 1, "Multiple folders did not combine their recordings");
+        auto* nested = rootItem (1)->getSubItem (0);
+        clickFolder (nested, juce::ModifierKeys::ctrlModifier);
+        check (selectedList.getNumRows() == 1, "Overlapping selected folders duplicated recordings");
+        clickFolder (rootItem (0), juce::ModifierKeys::ctrlModifier);
+        check (sidebar->getSelectedFolders().isEmpty() && tree->getNumSelectedItems() == 1
+            && selectedList.getNumRows() == 1, "All did not reset multiple folder filtering");
+        sidebar->onFoldersSelected = nullptr;
+    }
+    sidebar->selectFolder ("A/B");
 
     const auto originalMetadata = LibraryStore::readJson (entry.getChildFile ("metadata.json"));
     const auto folderDrag = [&](const juce::String& path)

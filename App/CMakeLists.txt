@@ -12,7 +12,11 @@ set(JUCE_PATH "E:/JUCE" CACHE PATH "Path to JUCE root")
 add_subdirectory(${JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
+juce_add_binary_data(RememberAudioData HEADER_NAME RememberAudioData.h NAMESPACE RememberAudioData
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../Assets/Audio/Metronome4.wav)
+
 juce_add_gui_app(RememberApp
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../Imagenes/Icono de casete en forma de D.png"
     COMPANY_NAME "Martin Garcia Pacheco"
     BUNDLE_ID    "com.martingarciapacheco.remember.browser"
     PRODUCT_NAME "Remember"
@@ -27,9 +31,12 @@ target_sources(RememberApp PRIVATE
     Source/LibraryWatch.cpp
     Source/WaveformPlayerComponent.cpp
     Source/ReadAheadSource.cpp
+    Source/MetronomeSource.cpp
     Source/WaveformEnvelope.cpp
     Source/ProjectListComponent.cpp
     Source/ProjectListWorkflow.cpp
+    Source/UsedSounds.cpp
+    Source/UsedSoundsDialog.cpp
     Source/SettingsDialog.cpp
     Source/TagsEditorDialog.cpp
     Source/RecoveryChoiceDialog.cpp
@@ -48,6 +55,9 @@ target_compile_definitions(RememberApp PRIVATE
 )
 
 juce_generate_juce_header(RememberApp)
+if(MSVC)
+    target_compile_options(RememberApp PRIVATE /utf-8)
+endif()
 remember_link_fonts(RememberApp)
 if(NOT APPLE)
     add_custom_command(TARGET RememberApp POST_BUILD
@@ -61,6 +71,7 @@ target_include_directories(RememberApp PRIVATE
 )
 
 target_link_libraries(RememberApp PRIVATE
+    RememberAudioData
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -97,21 +108,27 @@ if(REMEMBER_BUILD_TESTS)
         Source/WaveformPlayerComponent.cpp Source/ProjectScanner.cpp Source/LibraryWatch.cpp
         Source/ProjectListComponent.cpp Source/ProjectListWorkflow.cpp Source/TagsEditorDialog.cpp
         Source/RecoveryChoiceDialog.cpp
+        Source/UsedSounds.cpp Source/UsedSoundsDialog.cpp ../Tests/UsedSoundsTests.cpp
         Source/SettingsDialog.cpp
-        Source/ReadAheadSource.cpp Source/WaveformEnvelope.cpp
+        Source/ReadAheadSource.cpp Source/MetronomeSource.cpp Source/WaveformEnvelope.cpp
         ../Shared/LibraryStore.cpp ../Shared/ProjectIdentity.cpp ../Shared/BackgroundRetirement.cpp)
     target_compile_definitions(RememberAppTests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(RememberAppTests PRIVATE
-        juce::juce_audio_utils juce::juce_gui_extra juce::juce_cryptography juce::juce_recommended_config_flags)
+        RememberAudioData juce::juce_audio_utils juce::juce_gui_extra juce::juce_cryptography juce::juce_recommended_config_flags)
     if(WIN32)
         target_link_libraries(RememberAppTests PRIVATE bcrypt comctl32)
     endif()
     juce_generate_juce_header(RememberAppTests)
+    if(MSVC)
+        target_compile_options(RememberAppTests PRIVATE /utf-8)
+    endif()
     remember_link_fonts(RememberAppTests)
     target_include_directories(RememberAppTests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
     remember_copy_asan_runtime(RememberAppTests)
     add_test(NAME RememberAppRegression COMMAND RememberAppTests)
+    add_test(NAME RememberUsedSounds COMMAND RememberAppTests --used-sounds)
+    set_tests_properties(RememberUsedSounds PROPERTIES TIMEOUT 90)
     add_test(NAME RememberFlStudioBackups COMMAND RememberAppTests --fl-studio-backups)
     add_test(NAME RememberDawBackups COMMAND RememberAppTests --daw-backups)
     set_tests_properties(RememberDawBackups PROPERTIES TIMEOUT 30)

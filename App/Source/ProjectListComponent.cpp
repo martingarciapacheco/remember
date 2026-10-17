@@ -13,6 +13,12 @@ ProjectRowComponent::ProjectRowComponent()
     setWantsKeyboardFocus (false);
     favBtn .setWantsKeyboardFocus (false);
     actionsBtn.setWantsKeyboardFocus (false);
+    usedSoundsBtn.setWantsKeyboardFocus (false);
+    RememberUI::iconButton (usedSoundsBtn, "sounds", "Used sounds");
+    RememberUI::bindColour (usedSoundsBtn, juce::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (usedSoundsBtn, juce::TextButton::textColourOffId, Pal::Text);
+    usedSoundsBtn.onClick = [this] { if (onUsedSounds) onUsedSounds(); };
+    addAndMakeVisible (usedSoundsBtn);
 
     RememberUI::iconButton (favBtn, "star", "Toggle favorite");
     RememberUI::iconButton (actionsBtn, "more", "Preview actions");
@@ -102,6 +108,8 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
     actionsBtn.setTooltip ("Preview actions");
     favBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
     actionsBtn.setEnabled (true);
+    usedSoundsBtn.setEnabled (! e.trashed && ! e.pending && e.projectPath.isNotEmpty());
+    usedSoundsBtn.setTooltip (e.projectPath.isEmpty() ? "Associate a saved project to inspect its sounds" : "Used sounds from the saved project");
     statusBtn.setButtonText (e.status);
     statusBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
     setTooltip ({});
@@ -118,7 +126,7 @@ void ProjectRowComponent::startInlineRename()
     renaming = true;
     renameCommit = onRenameCommitted;
     renameEditor.setText (entry.name, false);
-    auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (156).reduced (0, RememberUI::recordingRowPadding);
+    auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (194).reduced (0, RememberUI::recordingRowPadding);
     renameEditor.setBounds (bounds.removeFromTop (22));
     renameEditor.setVisible (true);
     renameEditor.grabKeyboardFocus();
@@ -219,7 +227,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     g.setColour (RememberUI::colour (Pal::Border));
     g.drawHorizontalLine (getHeight() - 1, 44.0f, (float) getWidth() - 12);
 
-    auto area = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (156).reduced (0, RememberUI::recordingRowPadding);
+    auto area = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (194).reduced (0, RememberUI::recordingRowPadding);
 
     // ── Top row: project name + inline tag chips ─────────────────────────────
     auto nameRow = area.removeFromTop (20);
@@ -297,11 +305,12 @@ void ProjectRowComponent::resized()
     actionsBtn.setBounds (getLocalBounds().removeFromRight (44).withSizeKeepingCentre (
         RememberUI::recordingRowActionSize, RememberUI::recordingRowActionSize));
 
-    statusBtn.setBounds (getWidth() - 150, (getHeight() - 32) / 2, 104, 32);
+    usedSoundsBtn.setBounds (getWidth() - 82, (getHeight() - 32) / 2, 32, 32);
+    statusBtn.setBounds (getWidth() - 188, (getHeight() - 32) / 2, 100, 32);
 
     if (renaming)
     {
-        auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (156).reduced (0, RememberUI::recordingRowPadding);
+        auto bounds = getLocalBounds().withTrimmedLeft (44).withTrimmedRight (194).reduced (0, RememberUI::recordingRowPadding);
         renameEditor.setBounds (bounds.removeFromTop (22));
     }
 }
@@ -318,7 +327,8 @@ ProjectListComponent::ProjectListComponent()
     RememberUI::bindColour (searchBox, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
     searchBox.setTitle ("Search library");
     searchBox.setTooltip (RememberUI::shortcutTooltip ("Search library", "Ctrl+F"));
-    searchBox.setIndents (10, 7);
+    searchBox.setIndents (10, 0);
+    searchBox.setJustification (juce::Justification::centredLeft);
     searchBox.onTextChange = [this] { scheduleSearchDebounce(); };
     addAndMakeVisible (searchBox);
 
@@ -437,7 +447,7 @@ void ProjectListComponent::applyFilter()
         const auto row = selectedRows[i];
         if (row >= 0 && row < filtered.size()) selectedIds.insert ((filtered[row].projectId.isEmpty() ? filtered[row].metadataFile.getFullPathName() : filtered[row].projectId).toStdString());
     }
-    filter.query = searchBox.getText(); filter.folder = folderFilter; filter.favorites = showFavOnly;
+    filter.query = searchBox.getText(); filter.folder = folderFilter; filter.folders = folderFilters; filter.favorites = showFavOnly;
     auto active = filter; if (view == 2) active.missing = true;
     const auto snapshot = ProjectScanner::librarySnapshot();
     const auto& candidates = view == 3 ? snapshot->trash : allEntries;
@@ -459,8 +469,14 @@ void ProjectListComponent::applyFilter()
 
 void ProjectListComponent::setFolderFilter (const juce::String& path)
 {
-    if (folderFilter == path) return;
-    folderFilter = path;
+    setFolderFilters (path.isEmpty() ? juce::StringArray{} : juce::StringArray { path });
+}
+
+void ProjectListComponent::setFolderFilters (const juce::StringArray& paths)
+{
+    if (folderFilters == paths) return;
+    folderFilters = paths;
+    folderFilter = paths.isEmpty() ? juce::String{} : paths[0];
     applyFilter();
 }
 
@@ -492,34 +508,34 @@ void ProjectListComponent::paint (juce::Graphics& g)
 
 void ProjectListComponent::resized()
 {
-    auto toolbar = getLocalBounds().removeFromTop (60).reduced (16, 12);
+    const auto content = getLocalBounds().withTrimmedLeft (RememberUI::appSectionGap).withTrimmedRight (RememberUI::appOuterMargin);
+    auto toolbar = content.withHeight (52).reduced (0, 8);
     refreshBtn.setBounds (toolbar.removeFromRight (76));
     toolbar.removeFromRight (8);
     favFilterBtn.setBounds (toolbar.removeFromRight (86));
     toolbar.removeFromRight (8);
     searchBox.setBounds (toolbar);
-    auto workflow = juce::Rectangle<int> (16, 54, getWidth() - 32, 32);
-    const bool compact = workflow.getWidth() < 650;
-    if (compact)
-    {
-        auto actions = juce::Rectangle<int> (16, 94, getWidth() - 32, 32);
-        filtersBtn.setBounds (actions.removeFromLeft (70));
-        itemCount.setBounds (actions.removeFromRight (84));
-    }
-    else
-    {
-        itemCount.setBounds (workflow.removeFromRight (84)); workflow.removeFromRight (8);
-        filtersBtn.setBounds (workflow.removeFromLeft (70)); workflow.removeFromLeft (6);
-    }
-    // Keep the saved filter, add action, library view and sort in one row.
-    const int comboSpace = workflow.getWidth() - 32 - 18;
-    const int collectionWidth = juce::jmin (180, comboSpace / 3);
-    const int viewWidth = juce::jmin (145, (comboSpace - collectionWidth) / 2);
-    collectionCombo.setBounds (workflow.removeFromLeft (collectionWidth)); workflow.removeFromLeft (6);
-    collectionBtn.setBounds (workflow.removeFromLeft (32)); workflow.removeFromLeft (6);
-    viewCombo.setBounds (workflow.removeFromLeft (viewWidth)); workflow.removeFromLeft (6);
-    sortCombo.setBounds (workflow.removeFromLeft (juce::jmin (220, workflow.getWidth())));
-    auto listArea = getLocalBounds().withTrimmedTop (toolbarHeight()).reduced (12, 0);
+    // Match the trailing edge of Favorites, leaving Refresh's column clear.
+    auto workflow = content.withY (52).withHeight (32).withRight (favFilterBtn.getRight());
+    const auto sortFont = sortCombo.getLookAndFeel().getComboBoxFont (sortCombo);
+    juce::GlyphArrangement sortText;
+    sortText.addLineOfText (sortFont, "BPM descending", 0, 0);
+    const int sortWidth = juce::jmax (152, juce::roundToInt (std::ceil (sortText.getBoundingBox (0, -1, true).getWidth())) + 40);
+    sortCombo.setBounds (workflow.removeFromRight (sortWidth));
+    workflow.removeFromRight (8);
+    viewCombo.setBounds (workflow.removeFromRight (juce::jmin (156, workflow.getWidth())));
+
+    const bool compact = content.getWidth() < 650;
+    // At narrow sizes the remaining actions move together to the next row.
+    auto actions = compact ? content.withY (92).withHeight (32) : workflow.withTrimmedRight (8);
+    filtersBtn.setBounds (actions.removeFromLeft (70)); actions.removeFromLeft (8);
+    itemCount.setBounds (compact ? actions.removeFromRight (84)
+                                : content.withY (52).withHeight (32).removeFromRight (76));
+    if (compact) actions.removeFromRight (8);
+    collectionCombo.setBounds (actions.removeFromLeft (juce::jmin (180, actions.getWidth() - 40)));
+    actions.removeFromLeft (8);
+    collectionBtn.setBounds (actions.removeFromLeft (32));
+    auto listArea = content.withTrimmedTop (toolbarHeight());
     if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (32).reduced (4, 2));
     listBox.setBounds (listArea);
     listBox.setVisible (! filtered.isEmpty());
@@ -581,6 +597,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
     comp->onStatusChanged = [entry, persist] (juce::String value) mutable
     { entry.status = value; persist (entry, { "status" }); };
     comp->onDetails = [safe, entry] { if (safe != nullptr) safe->editDetails (entry); };
+    comp->onUsedSounds = [safe, entry] { if (safe != nullptr && safe->onUsedSounds) safe->onUsedSounds (entry); };
     comp->onRestore = [safe, entry] { if (safe != nullptr) safe->restoreRecording (entry); };
     comp->onFavoriteToggle = [safe, entry, persist] (bool fav) mutable
     {

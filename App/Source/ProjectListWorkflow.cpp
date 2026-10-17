@@ -55,7 +55,9 @@ void ProjectListComponent::configureWorkflow()
         const auto at = collectionCombo.getSelectedId() - 2;
         const auto* array = collections.getArray(); if (! array || at < 0 || at >= array->size()) return;
         filter = LibraryFilter::fromJson ((*array)[at].getProperty ("filter", juce::var{}));
-        folderFilter = filter.folder; showFavOnly = filter.favorites;
+        folderFilter = filter.folder; folderFilters = filter.folders;
+        if (folderFilters.isEmpty() && folderFilter.isNotEmpty()) folderFilters.add (folderFilter);
+        showFavOnly = filter.favorites;
         favFilterBtn.setToggleState (showFavOnly, juce::dontSendNotification);
         searchBox.setText (filter.query, false); sortCombo.setSelectedId (filter.sort, juce::dontSendNotification);
         view = 1; viewCombo.setSelectedId (1, juce::dontSendNotification); applyFilter();
@@ -110,7 +112,8 @@ void ProjectListComponent::saveCollection()
     const auto selectedId = values && at >= 0 && at < values->size() ? (*values)[at].getProperty ("id", "").toString() : juce::String{};
     menu.addItem (2, "Remove selected collection", selectedId.isNotEmpty());
     auto safe = juce::Component::SafePointer<ProjectListComponent> (this);
-    auto selectedFilter = filter; selectedFilter.query = searchBox.getText(); selectedFilter.folder = folderFilter; selectedFilter.favorites = showFavOnly;
+    auto selectedFilter = filter; selectedFilter.query = searchBox.getText(); selectedFilter.folder = folderFilter;
+    selectedFilter.folders = folderFilters; selectedFilter.favorites = showFavOnly;
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&collectionBtn), [safe, selectedId, selectedFilter] (int result)
     {
         if (safe == nullptr || result == 0) return;
@@ -228,7 +231,7 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
         }
         if (r == 10)
         {
-            safe->filter = {}; safe->folderFilter.clear(); safe->showFavOnly = false; safe->searchBox.clear();
+            safe->filter = {}; safe->folderFilter.clear(); safe->folderFilters.clear(); safe->showFavOnly = false; safe->searchBox.clear();
             safe->favFilterBtn.setToggleState (false, juce::dontSendNotification); safe->sortCombo.setSelectedId (1, juce::dontSendNotification);
             safe->collectionCombo.setSelectedId (1, juce::dontSendNotification); safe->applyFilter(); return;
         }

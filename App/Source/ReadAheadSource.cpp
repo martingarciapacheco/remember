@@ -24,7 +24,7 @@ public:
     };
     struct Request { uint64_t generation = 0; juce::int64 position = 0; };
 
-    explicit Core (std::unique_ptr<juce::AudioFormatReader> input)
+    explicit Core (std::unique_ptr<juce::AudioFormatReader> input, int cacheFrames)
         : juce::Thread ("RememberPlaybackReadAhead"), reader (std::move (input))
     {
         validReader = module.valid() && reader && std::isfinite (reader->sampleRate)
@@ -32,7 +32,7 @@ public:
             && reader->lengthInSamples > 0 && reader->numChannels > 0;
         if (! validReader) { initialError = "Unsupported or empty preview, or background module unavailable"; return; }
         rate = reader->sampleRate; length = reader->lengthInSamples;
-        pageCount = (int) std::ceil (juce::jlimit (16384.0, 384000.0, rate * 2) / pageFrames) + 2;
+        pageCount = (int) std::ceil ((cacheFrames > 0 ? juce::jlimit (4096.0, 384000.0, (double) cacheFrames) : juce::jlimit (16384.0, 384000.0, rate * 2)) / pageFrames) + 2;
         const auto bytes = (size_t) pageCount * pageFrames * 2 * sizeof (float);
         auto reserved = reservedReadAheadBytes.load();
         do
@@ -139,8 +139,8 @@ public:
     std::atomic<juce::int64> seekPosition { 0 }, consumedPosition { 0 };
 };
 
-ReadAheadSource::ReadAheadSource (std::unique_ptr<juce::AudioFormatReader> reader)
-    : core (std::make_shared<Core> (std::move (reader))) {}
+ReadAheadSource::ReadAheadSource (std::unique_ptr<juce::AudioFormatReader> reader, int cacheFrames)
+    : core (std::make_shared<Core> (std::move (reader), cacheFrames)) {}
 ReadAheadSource::~ReadAheadSource() { BackgroundRetirement::retire (std::move (core)); }
 bool ReadAheadSource::valid() const { return core->validReader; }
 bool ReadAheadSource::ready (int samples) const { return core->ready (samples); }

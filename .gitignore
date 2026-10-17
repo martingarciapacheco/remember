@@ -67,3 +67,7 @@ C:/Temp/
 
 # ──── Claude Code session config ─────────────────────────────────────────────
 .claude/
+
+# Native UI regression output and a local test workspace
+/artifacts/
+/remember-2c7d62466a6f49f8b67063d8a797e15f/

@@ -1,5 +1,6 @@
 #include "PlaybackTests.h"
 #include "../App/Source/ReadAheadSource.h"
+#include "../App/Source/MetronomeSource.h"
 #include "../Shared/BackgroundRetirement.h"
 #include <iostream>
 #include <stdexcept>
@@ -45,6 +46,31 @@ struct Unblock { std::shared_ptr<Control> state; ~Unblock() { state->release.sig
 
 void testPlayback (const juce::File&)
 {
+    {
+        juce::AudioTransportSource transport;
+        MetronomeSource metronome (transport);
+        check (! metronome.isEnabled(), "Metronome must start disabled");
+        juce::AudioBuffer<float> disabled (2, 256); disabled.clear(); disabled.applyGain (1);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 256; ++i) disabled.setSample (ch, i, 0.125f);
+        metronome.setTempo (120); metronome.mixClick ({ &disabled, 0, 256 }, 0, 1.0 / 48000);
+        check (disabled.getSample (0, 100) == 0.125f, "Disabled metronome changes sample volume");
+        metronome.setEnabled (true); metronome.setVolume (1);
+        juce::AudioBuffer<float> full (2, 48000); full.clear();
+        metronome.mixClick ({ &full, 0, full.getNumSamples() }, 0, 1.0 / 48000);
+        check (full.getMagnitude (0, 0, 2048) > 0.01f, "Embedded metronome WAV is silent");
+        check (full.getMagnitude (0, 12000, 2048) == 0, "120 BPM metronome ticks between beats");
+        for (int i = 0; i < 2048; ++i) check (std::abs (full.getSample (0, i) - full.getSample (0, 24000 + i)) < 0.00001f, "Metronome drifts across beats");
+        juce::AudioBuffer<float> sought (2, 4096); sought.clear();
+        metronome.mixClick ({ &sought, 0, 4096 }, 23000.0 / 48000, 1.0 / 48000);
+        for (int i = 0; i < 4096; ++i) check (std::abs (sought.getSample (0, i) - full.getSample (0, 23000 + i)) < 0.00001f, "Seek changes metronome phase");
+        metronome.setVolume (0.25f); sought.clear(); metronome.mixClick ({ &sought, 0, 4096 }, 0, 1.0 / 48000);
+        for (int i = 0; i < 4096; ++i) check (std::abs (sought.getSample (0, i) - full.getSample (0, i) * 0.25f) < 0.00001f, "Metronome volume is not independent");
+        metronome.setMasterGain (0); sought.clear(); metronome.mixClick ({ &sought, 0, 4096 }, 0, 1.0 / 48000);
+        check (sought.getMagnitude (0, 0, 4096) == 0, "Master mute leaves metronome audible");
+        metronome.setMasterGain (1); metronome.setTempo (0); sought.clear(); metronome.mixClick ({ &sought, 0, 4096 }, 0, 1.0 / 48000);
+        check (sought.getMagnitude (0, 0, 4096) == 0, "Unknown BPM starts a free-running metronome");
+        std::cout << "PASS: supplied metronome WAV, disabled passthrough, beat phase/seek, independent volume, master mute and unknown BPM\n";
+    }
     // A large audio block must still yield a distinct, correctly timed cursor
     // on every 60/120 Hz frame, across sample rates and callback boundaries.
     for (const auto rate : { 44100.0, 48000.0, 96000.0, 192000.0 })

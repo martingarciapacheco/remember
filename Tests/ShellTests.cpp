@@ -134,6 +134,9 @@ void testShellCase (const juce::File& root, const juce::String& mode)
     check (window && tray && window->getName() == "Remember" && window->isVisible(), "Production native shell was not created");
     const auto windowHandle = static_cast<HWND> (window->getPeer()->getNativeHandle());
     requireOwnWindow (windowHandle);
+    check (! window->isUsingNativeTitleBar() && window->getTitleBarHeight() == 34
+           && window->getCloseButton() && window->getMaximiseButton() && window->getMinimiseButton(),
+           "Integrated Windows caption lost its window controls");
     const auto identifier = trayIdentifier (*tray);
     const bool trayRegistered = registeredTray (identifier);
     std::cout << "SHELL_NATIVE mode=" << mode << " trayRegistered=" << trayRegistered
@@ -276,6 +279,36 @@ void testShellCase (const juce::File& root, const juce::String& mode)
                        "Late saved bounds read failed native restoration");
                 expectedState = actualState;
             }
+        }
+
+        if (mode == "restore")
+        {
+            const auto original = window->getBounds();
+            const auto originalAppearance = RememberUI::appearanceMode;
+            for (auto appearance : { RememberAppearance::Dark, RememberAppearance::Light })
+            {
+                RememberUI::setAppearanceMode (appearance);
+                for (auto size : { juce::Point<int> (640, 480), juce::Point<int> (1024, 768) })
+                {
+                    window->setContentComponentSize (size.x, size.y);
+                    check (window->getContentComponent()->getWidth() == size.x
+                           && window->getContentComponent()->getHeight() == size.y,
+                           "Integrated caption reduced the usable content size");
+                    const auto image = window->createComponentSnapshot (window->getLocalBounds(), true, 1, juce::SoftwareImageType{});
+                    check (image.getPixelAt (40, 15) == RememberUI::colour (Pal::BgDeep),
+                           "Integrated caption did not follow the app appearance");
+                    for (auto* button : { window->getMinimiseButton(), window->getMaximiseButton(), window->getCloseButton() })
+                        check (button->getWidth() == 46 && button->getHeight() == 34
+                               && window->getLocalBounds().contains (button->getBounds()), "Caption button is clipped");
+                    const auto path = artifact ("caption-" + juce::String (appearance == RememberAppearance::Dark ? "dark-" : "light-")
+                                                + juce::String (size.x)).withFileExtension ("png");
+                    juce::FileOutputStream output (path);
+                    check (output.openedOk() && output.setPosition (0) && output.truncate().wasOk()
+                           && juce::PNGImageFormat().writeImageToStream (image, output), "Cannot save caption snapshot");
+                }
+            }
+            RememberUI::setAppearanceMode (originalAppearance);
+            window->setBounds (original);
         }
 
         if (mode == "move-hidden")

@@ -2,6 +2,34 @@
 
 Applies to every new UI feature in the app and plugin from this revision onward.
 
+Used sounds opens from a waveform icon immediately before each recording's
+ellipsis action. Its native resizable window groups Samples, MIDI and Generators,
+with explicit In playlist / All loaded sounds scope. MIDI rows include a bounded
+piano-roll preview, keyboard audition and external file dragging; sample dragging
+always copies the original. Keep project reading, export preparation and audition
+synthesis on workers. Sample rows are 60 and Generator rows 52 logical pixels high; Drag and Save copy
+sit side by side. Clicking a sample/MIDI row auditions it on release; a drag
+exports without triggering playback. MIDI audio is synthesized during playback
+using a bounded read-ahead ring, without WAV files or whole-pattern PCM caches.
+Used sounds owns a separate compact player with a seekable waveform/piano roll.
+The main project player, controls, waveform and layout stay in the main window
+throughout. Opening/closing the dialog never clears, reparents or reloads it.
+Starting an audition pauses the main output and releases its audio device without
+clearing its project or position, avoiding overlapping sound/exclusive-driver conflicts.
+Seeking and scrubbing keep audition playback running.
+The metronome sits immediately after Repeat, starts disabled and follows the
+preview's BPM/transport position, including seeks and loops. Embed the supplied
+Metronome4.wav; right-click opens an anchored volume slider. Its separate volume
+persists, its enabled state does not. It respects master volume/mute, adds no
+idle audio device, and does no callback I/O/allocation. MIDI audition alone has
+increased instrument gain; original sample playback retains its existing gain.
+Show missing samples and provide Locate; distinguish basic
+audition from FL Studio's effects, automation and complex sampler behavior. The
+MIDI audition instrument is selected in Settings and saved with OK.
+Failed project reads show an explicit central error and unknown counts, never
+three misleading zero counts. A MIDI export failure preserves the sound inventory;
+unavailable playlist usage falls back to All loaded sounds.
+
 ## References
 
 - [Apple Design](https://developer.apple.com/design/)
@@ -56,8 +84,11 @@ tooltips, and 4 for small checkboxes. Borders follow the same contour with their
 stroke inset accounted for. Inner waveform surfaces use 8 within their outer 12
 panel. Switches and progress tracks are capsules with radius half their height;
 primary transport controls stay circular and their focus rings match. Icon
-strokes retain their own geometry. Preserve native window frames on Windows and
-macOS rather than clipping platform controls to custom rounded shapes.
+strokes retain their own geometry. The standalone Windows app uses a 34-pixel
+title region in the base surface colour, without a repeated logo or title, and
+46-pixel-wide minimise, maximise/restore and close controls at the right. Keep
+JUCE's native caption hit testing, resizing, snapping and window actions. macOS
+retains its native frame and controls; plugin windows remain host-owned.
 
 Original vector symbols render at host DPI; give icon buttons accessible titles,
 descriptions and tooltips. Do not bundle SF fonts or SF Symbols for Windows.
@@ -108,10 +139,48 @@ Dragging selects persistent manual ordering; the Sort menu still offers automati
 orders. New folder creates a sibling of the selection; New subfolder is explicit.
 Contextual folder menus appear at the pointer. Organization edits wake the existing
 index without forcing a DAW inventory rebuild or rewriting unaffected memberships.
-The navigation surface has rounded lower corners without a vertical divider;
+The navigation surface has rounded corners without a vertical divider;
 preview surfaces and selection share full-width eight-pixel corner contours.
 Windows media keyboard commands use the native app window transport, including
 when minimized, without changing native window controls or claiming volume keys.
+
+The library search uses vertically centred text and placeholder with no top
+indent. Its leading edge aligns with Filters and the preview list (6 logical
+pixels into the library). Keep the title region at 64 pixels after the top outer inset, with an 8-pixel
+gap before search; Settings is a 34-pixel gear with a pointer tooltip. Folder
+selection supports Alt-click (and Shift-click) for contiguous visible ranges,
+Ctrl-click for separate toggles, and All to clear the group. Combine selected
+folder subtrees as a union without duplicate previews; preserve paths through
+refresh, rename and move, and retain native keyboard/accessibility selection.
+
+Use the player's outer surface as the app alignment reference: 6 logical pixels
+from each side. Settings, Refresh, the recording count and the preview surface
+end at that right edge; controls inside the player retain their internal padding.
+The folder surface is inset 6 from both the top and left, retaining its 216-pixel
+width and rounded upper corners. Shift Library right by the left inset and down
+with the title region. The player surface has no outline, matching the unbordered
+preview surface; the plugin's separate project card retains its existing outline.
+Use the same 6-pixel gap between navigation and Library as between the upper
+surfaces and the player. Preview rows and the player share the exact Content
+colour. Search and each filter row have 8-pixel gaps, including the final gap to
+previews. All is painted one indent to the left of ordinary root folders, with
+its gutter still clickable. DAW buttons have 16-pixel side/bottom padding and
+16-pixel spacing; scrolling reserves space for its bar. Recording switches use
+equal 30-pixel rows, including Record in mono.
+
+The navigation surface uses the same eight-pixel contour as previews. All's
+selection has equal ten-pixel side margins; the Sort button shares its trailing
+edge. Remember (26 pixels, vertically centred without a subtitle), Folders and
+the small disclosure triangles align with All's folder icon at 16 pixels into
+the navigation surface. DAW launch targets are 40 pixels with 32-pixel icons.
+Library view and sort sit together below search; sort ends at Favorites' right
+edge and fits BPM descending. Filters, smart collections and the recording
+count share that row when space allows, moving to the following row in compact
+windows, with eight-pixel vertical gaps.
+
+Use `Imagenes/Icono de casete en forma de D.png` as the application and plugin
+build icon. `Assets/Remember.ico` is its multi-resolution Windows counterpart
+for the combined app/plugin installer; the uninstall entry uses the app icon.
 
 Interface zoom offers 50%, 75%, 90%, 100% (default), 125%, 150% and 200% in Settings.
 Persist `appZoom` and `pluginZoom` independently with worker-only atomic patches.

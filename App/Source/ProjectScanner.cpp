@@ -248,7 +248,7 @@ static juce::Result saveConfigField (const juce::String& field, const juce::var&
 }
 
 static juce::var recordingSettingsPatch (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0)
 {
     juce::var patch (new juce::DynamicObject());
     auto* object = patch.getDynamicObject();
@@ -259,6 +259,7 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
     object->setProperty ("recordSeconds", juce::jlimit (15, 120, seconds));
     object->setProperty ("oggQuality", juce::jlimit (0, 10, quality));
     object->setProperty ("recordMono", mono);
+    if (midiVoice != 0) object->setProperty ("midiPreviewVoice", juce::jlimit (1, 4, midiVoice));
     if (capture)
     {
         const auto options = capture->patch();
@@ -268,19 +269,19 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
 }
 
 juce::Result ProjectScanner::saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono, const CaptureOptions* capture)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture, int midiVoice)
 {
-    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture), true);
+    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice), true);
 }
 juce::Result ProjectScanner::rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                              int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                             juce::File& originalBackup, const CaptureOptions* capture)
+                                             juce::File& originalBackup, const CaptureOptions* capture, int midiVoice)
 {
     originalBackup = {};
     const auto current = readSettings();
     if (current.result.wasOk() || ! current.canRebuild)
         return juce::Result::fail ("Configuration is valid or unavailable: " + configFilePath().getFullPathName() + ". Reload Settings before saving");
-    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture),
+    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice),
                                             fingerprint, originalBackup);
 }
 
@@ -337,6 +338,7 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
     snapshot.capture = CaptureOptions::fromJson (config);
     snapshot.appearance = appearanceFromConfig (config);
     snapshot.interfaceZoom = (int) config.getProperty ("appZoom", 100);
+    snapshot.midiPreviewVoice = juce::jlimit (1, 4, (int) config.getProperty ("midiPreviewVoice", 1));
     return snapshot;
 }
 juce::File ProjectScanner::getPreviewsFolder() { return previewsFromConfig (loadConfig()); }

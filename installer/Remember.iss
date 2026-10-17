@@ -43,7 +43,8 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 ; Beta marker in the title bar so the tester always sees it
-SetupIconFile=
+SetupIconFile=..\Assets\Remember.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; VersionInfoVersion / VersionInfoProductVersion must be pure numeric (a.b.c.d).
 ; The user-visible string {#MyAppVersion} (which contains the beta suffix) is shown in

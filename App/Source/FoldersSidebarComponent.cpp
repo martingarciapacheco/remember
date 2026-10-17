@@ -14,7 +14,8 @@ public:
     FolderItem (FoldersSidebarComponent& o,
                 juce::String name, juce::String path, int count)
         : owner (o), displayName (std::move (name)),
-          fullPath (std::move (path)), entryCount (count) {}
+          fullPath (std::move (path)), entryCount (count)
+    { setDrawsInLeftMargin (fullPath.isEmpty()); }
 
     juce::String fullPath;
     juce::String displayName;
@@ -37,11 +38,18 @@ public:
 
     void paintItem (juce::Graphics& g, int w, int h) override
     {
+        juce::Graphics::ScopedSaveState saved (g);
+        if (fullPath.isEmpty())
+        {
+            const auto indent = owner.tree.getIndentSize();
+            g.addTransform (juce::AffineTransform::translation ((float) -indent, 0));
+            w += indent;
+        }
         bool sel = isSelected();
         if (sel)
         {
             g.setColour (RememberUI::colour (Pal::Selected));
-            g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 6, (float) h - 4), RememberUI::controlRadius);
+            g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 4, (float) h - 4), RememberUI::controlRadius);
         }
 
         g.setColour (RememberUI::colour (sel ? Pal::Accent : Pal::Text));
@@ -62,6 +70,9 @@ public:
     {
         if (e.mods.isPopupMenu())
         {
+            // TreeView selects an unselected row before delivering itemClicked.
+            // A context menu targets this path without changing the library filter.
+            owner.applyTreeSelection();
             juce::PopupMenu m;
             const bool isRoot = fullPath.isEmpty();
             m.addItem (1, "New folder...");
@@ -94,8 +105,10 @@ public:
             return;
         }
 
-        owner.selectFolder (fullPath);
+        owner.selectFolder (fullPath, e.mods);
     }
+
+    void itemSelectionChanged (bool) override { owner.triggerAsyncUpdate(); }
 
     void itemDoubleClicked (const juce::MouseEvent&) override
     {
@@ -189,6 +202,7 @@ private:
 FoldersSidebarComponent::FoldersSidebarComponent()
 {
     header.setFont (RememberUI::font (13.0f, true));
+    header.setBorderSize (juce::BorderSize<int> (0));
     RememberUI::bindColour (header, juce::Label::textColourId, Pal::Text);
     addAndMakeVisible (header);
 
@@ -215,6 +229,9 @@ FoldersSidebarComponent::FoldersSidebarComponent()
     tree.setRootItem (rootItem.get());
     tree.setRootItemVisible (false);
     tree.setIndentSize (16);
+    tree.setMultiSelectEnabled (true);
+    tree.addMouseListener (this, true);
+    tree.setTooltip ("Alt-click to select a range; Ctrl-click to add or remove folders");
     RememberUI::bindColour (tree, juce::TreeView::backgroundColourId, Pal::Surface);
     addAndMakeVisible (tree);
 
@@ -223,6 +240,8 @@ FoldersSidebarComponent::FoldersSidebarComponent()
 
 FoldersSidebarComponent::~FoldersSidebarComponent()
 {
+    cancelPendingUpdate();
+    tree.removeMouseListener (this);
     tree.setRootItem (nullptr);   // detach before destroying root
 }
 
@@ -234,12 +253,12 @@ void FoldersSidebarComponent::paint (juce::Graphics& g)
 
 void FoldersSidebarComponent::resized()
 {
-    auto h = getLocalBounds().removeFromTop (kHeaderH).reduced (12, 8);
+    auto h = getLocalBounds().removeFromTop (kHeaderH).reduced (RememberUI::folderSelectionInset, 8);
     sortBtn   .setBounds (h.removeFromRight (44));
     h.removeFromRight (4);
     newRootBtn.setBounds (h.removeFromRight (32));
     h.removeFromRight (6);
-    header    .setBounds (h);
+    header    .setBounds (h.withTrimmedLeft (RememberUI::folderIconLeading - h.getX()));
 
     tree.setBounds (getLocalBounds().withTrimmedTop (kHeaderH).withTrimmedRight (8).withTrimmedLeft (8));
 }
@@ -249,11 +268,97 @@ void FoldersSidebarComponent::refresh()
     rebuildTree();
 }
 
-void FoldersSidebarComponent::selectFolder (const juce::String& path)
+void FoldersSidebarComponent::selectFolder (const juce::String& path, juce::ModifierKeys modifiers)
 {
-    selectedFolder = path;
-    if (onFolderSelected) onFolderSelected (path);
+    if (path.isEmpty())
+    {
+        selectedFolders.clear(); selectedFolder.clear(); selectionAnchor.clear();
+    }
+    else if ((modifiers.isAltDown() || modifiers.isShiftDown()) && selectionAnchor.isNotEmpty())
+    {
+        int first = -1, last = -1;
+        for (int row = 0; row < tree.getNumRowsInTree(); ++row)
+            if (auto* item = dynamic_cast<FolderItem*> (tree.getItemOnRow (row)))
+            {
+                if (item->fullPath == selectionAnchor) first = row;
+                if (item->fullPath == path) last = row;
+            }
+        if (! modifiers.isCtrlDown()) selectedFolders.clear();
+        if (first >= 0 && last >= 0)
+            for (int row = juce::jmin (first, last); row <= juce::jmax (first, last); ++row)
+                if (auto* item = dynamic_cast<FolderItem*> (tree.getItemOnRow (row)); item && item->fullPath.isNotEmpty())
+                    selectedFolders.addIfNotAlreadyThere (item->fullPath);
+        selectedFolders.addIfNotAlreadyThere (path);
+        selectedFolder = path;
+    }
+    else
+    {
+        if (modifiers.isCtrlDown() || modifiers.isCommandDown())
+        {
+            if (selectedFolders.contains (path)) selectedFolders.removeString (path);
+            else selectedFolders.add (path);
+        }
+        else selectedFolders = { path };
+        selectedFolder = selectedFolders.contains (path) ? path
+            : selectedFolders.isEmpty() ? juce::String{} : selectedFolders[selectedFolders.size() - 1];
+        selectionAnchor = path;
+    }
+    applyTreeSelection();
+    notifySelection();
+}
+
+void FoldersSidebarComponent::applyTreeSelection()
+{
+    std::function<void(juce::TreeViewItem*)> apply = [&] (juce::TreeViewItem* item)
+    {
+        if (auto* folder = dynamic_cast<FolderItem*> (item))
+            folder->setSelected (folder->fullPath.isEmpty() ? selectedFolders.isEmpty() : selectedFolders.contains (folder->fullPath),
+                                 false, juce::dontSendNotification);
+        for (int i = 0; i < item->getNumSubItems(); ++i) apply (item->getSubItem (i));
+    };
+    apply (tree.getRootItem());
     tree.repaint();
+}
+
+void FoldersSidebarComponent::notifySelection()
+{
+    if (onFolderSelected) onFolderSelected (selectedFolder);
+    if (onFoldersSelected) onFoldersSelected (selectedFolders);
+}
+
+void FoldersSidebarComponent::mouseUp (const juce::MouseEvent& event)
+{
+    // JUCE defers toggling already-selected items to mouse-up. Keep the same
+    // Alt/Ctrl gesture result after that native bookkeeping has completed.
+    if (event.eventComponent == &tree || tree.isParentOf (event.eventComponent)) applyTreeSelection();
+}
+
+void FoldersSidebarComponent::mouseDown (const juce::MouseEvent& event)
+{
+    if (event.eventComponent != &tree && ! tree.isParentOf (event.eventComponent)) return;
+    const auto local = event.getEventRelativeTo (&tree);
+    if (auto* item = dynamic_cast<FolderItem*> (tree.getItemAt (local.y));
+        item && item->fullPath.isEmpty() && local.x < item->getItemPosition (true).getX())
+        item->itemClicked (event); // All's visible icon occupies the otherwise unused disclosure gutter.
+}
+
+void FoldersSidebarComponent::handleAsyncUpdate()
+{
+    // Keyboard and accessibility selection changes use the same filter model.
+    juce::StringArray paths;
+    for (int i = 0; i < tree.getNumSelectedItems(); ++i)
+        if (auto* item = dynamic_cast<FolderItem*> (tree.getSelectedItem (i)))
+        {
+            if (item->fullPath.isEmpty()) { paths.clear(); break; }
+            paths.add (item->fullPath);
+        }
+    bool same = paths.size() == selectedFolders.size();
+    for (const auto& path : paths) same = same && selectedFolders.contains (path);
+    if (same) return;
+    selectedFolders = paths;
+    selectedFolder = paths.isEmpty() ? juce::String{} : paths[paths.size() - 1];
+    selectionAnchor = selectedFolder;
+    applyTreeSelection(); notifySelection();
 }
 
 // ── Tree construction ───────────────────────────────────────────────────────
@@ -345,7 +450,7 @@ namespace
 void FoldersSidebarComponent::rebuildTree()
 {
     // Capture selection + expansion so we can re-apply after rebuild
-    juce::String selBackup = selectedFolder;
+    const auto previousSelection = selectedFolders;
     auto opennessXml = std::unique_ptr<juce::XmlElement> (tree.getOpennessState (true));
 
     const auto publication = ProjectScanner::librarySnapshot();
@@ -355,12 +460,10 @@ void FoldersSidebarComponent::rebuildTree()
     {
         if (allPaths.contains (it->second) && ! allPaths.contains (it->first))
         {
-            if (selectedFolder == it->first || selectedFolder.startsWith (it->first + "/"))
-            {
-                selectedFolder = it->second + selectedFolder.substring (it->first.length());
-                selBackup = selectedFolder;
-                if (onFolderSelected) onFolderSelected (selectedFolder);
-            }
+            const auto remap = [&] (juce::String& path)
+            { if (path == it->first || path.startsWith (it->first + "/")) path = it->second + path.substring (it->first.length()); };
+            remap (selectedFolder); remap (selectionAnchor);
+            for (auto& path : selectedFolders) remap (path);
             it = pendingMoves.erase (it);
         }
         else ++it;
@@ -410,39 +513,23 @@ void FoldersSidebarComponent::rebuildTree()
     else
         allItem->setOpen (true);
 
-    // Restore / default selection
-    if (selBackup.isNotEmpty())
+    for (int i = selectedFolders.size(); --i >= 0;)
+        if (! allPaths.contains (selectedFolders[i])) selectedFolders.remove (i);
+    if (! selectedFolders.contains (selectedFolder))
+        selectedFolder = selectedFolders.isEmpty() ? juce::String{} : selectedFolders[selectedFolders.size() - 1];
+    if (! allPaths.contains (selectionAnchor)) selectionAnchor = selectedFolder;
+    applyTreeSelection();
+    std::function<void(juce::TreeViewItem*)> reveal = [&] (juce::TreeViewItem* item)
     {
-        // Find by uniqueName
-        std::function<bool (juce::TreeViewItem*)> findAndSelect =
-            [&] (juce::TreeViewItem* it) -> bool
-        {
-            if (it->getUniqueName() == selBackup)
-            {
-                it->setSelected (true, true);
-                for (auto* parent = it->getParentItem(); parent != nullptr; parent = parent->getParentItem())
-                    parent->setOpen (true);
-                return true;
-            }
-            for (int i = 0; i < it->getNumSubItems(); ++i)
-                if (findAndSelect (it->getSubItem (i))) return true;
-            return false;
-        };
-        if (! findAndSelect (rootItem.get()))
-        {
-            selectedFolder.clear();
-            allItem->setSelected (true, true);
-            if (onFolderSelected) onFolderSelected ({});
-        }
-    }
-    else
-    {
-        allItem->setSelected (true, true);
-    }
+        if (item->isSelected())
+            for (auto* parent = item->getParentItem(); parent; parent = parent->getParentItem()) parent->setOpen (true);
+        for (int i = 0; i < item->getNumSubItems(); ++i) reveal (item->getSubItem (i));
+    };
+    reveal (rootItem.get());
+    if (previousSelection != selectedFolders) notifySelection();
 }
 
-// ── Folder operations ───────────────────────────────────────────────────────
-
+// Folder operations
 void FoldersSidebarComponent::promptNewSubfolder (const juce::String& parentPath)
 {
     auto* aw = new juce::AlertWindow (
@@ -501,14 +588,7 @@ void FoldersSidebarComponent::promptRename (const juce::String& path)
                     auto newPath = parent.isEmpty() ? name : (parent + "/" + name);
                     if (newPath != path)
                     {
-                        // If our selection was inside the renamed subtree, update it
-                        if (safe->selectedFolder == path
-                            || safe->selectedFolder.startsWith (path + "/"))
-                        {
-                            safe->selectedFolder = newPath + safe->selectedFolder.substring (path.length());
-                        }
-                        safe->runFolderEdit ([path, newPath] { return ProjectScanner::renameFolder (path, newPath); });
-                        if (safe->onFolderSelected) safe->onFolderSelected (safe->selectedFolder);
+                        safe->runFolderEdit ([path, newPath] { return ProjectScanner::renameFolder (path, newPath); }, path, newPath);
                     }
                 }
             }
@@ -534,12 +614,6 @@ void FoldersSidebarComponent::confirmDelete (const juce::String& path)
         {
             if (result != 1 || safe == nullptr) return;
             safe->runFolderEdit ([path] { return ProjectScanner::deleteFolder (path); });
-            if (safe->selectedFolder == path
-                || safe->selectedFolder.startsWith (path + "/"))
-            {
-                safe->selectedFolder.clear();
-                if (safe->onFolderSelected) safe->onFolderSelected ({});
-            }
         });
 }
 
@@ -584,30 +658,24 @@ void FoldersSidebarComponent::positionFolder (const juce::String& src, const juc
 {
     const auto leaf = src.fromLastOccurrenceOf ("/", false, false);
     const auto destination = parent.isEmpty() ? leaf : parent + "/" + leaf;
-    if (src != destination) pendingMoves.emplace_back (src, destination);
-    auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (this);
-    ProjectScanner::editAsync ([src, parent, before] { return ProjectScanner::positionFolder (src, parent, before); },
-        [safe, src, destination] (juce::Result result)
-        {
-            if (safe == nullptr) return;
-            if (result.failed())
-            {
-                safe->pendingMoves.erase (std::remove (safe->pendingMoves.begin(), safe->pendingMoves.end(),
-                    std::make_pair (src, destination)), safe->pendingMoves.end());
-                juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Cannot move folder", result.getErrorMessage());
-            }
-            safe->refresh();
-        });
+    runFolderEdit ([src, parent, before] { return ProjectScanner::positionFolder (src, parent, before); }, src, destination);
 }
 
-void FoldersSidebarComponent::runFolderEdit (std::function<juce::Result()> work)
+void FoldersSidebarComponent::runFolderEdit (std::function<juce::Result()> work, juce::String oldPath, juce::String newPath)
 {
+    if (oldPath != newPath) pendingMoves.emplace_back (oldPath, newPath);
     auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (this);
-    ProjectScanner::editAsync (std::move (work), [safe] (juce::Result result)
+    ProjectScanner::editAsync (std::move (work), [safe, oldPath, newPath] (juce::Result result)
     {
         if (safe == nullptr) return;
-        if (result.failed()) juce::AlertWindow::showMessageBoxAsync (
-            juce::AlertWindow::WarningIcon, "Cannot update folder", result.getErrorMessage());
+        if (result.failed())
+        {
+            safe->pendingMoves.erase (std::remove (safe->pendingMoves.begin(), safe->pendingMoves.end(),
+                std::make_pair (oldPath, newPath)), safe->pendingMoves.end());
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon, "Cannot update folder", result.getErrorMessage());
+        }
+        safe->refresh();
         if (safe->onFoldersChanged) safe->onFoldersChanged();
     });
 }

@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "ProjectScanner.h"
 #include "SettingsDialog.h"
+#include "UsedSoundsDialog.h"
 #include "BuildInfo.h"
 
 // Pal:: colours are defined in ProjectListComponent.h
@@ -15,13 +16,17 @@ MainComponent::MainComponent()
     RememberUI::bindColour (settingsButton, juce::TextButton::buttonColourId, Pal::Elevated);
     RememberUI::bindColour (settingsButton, juce::TextButton::textColourOffId, Pal::Subtext);
     settingsButton.onClick = [this] { showSettingsDialog(); };
-    settingsButton.setTitle ("Settings");
-    settingsButton.setTooltip (RememberUI::shortcutTooltip ("Open settings", "Ctrl+,", REMEMBER_VERSION_LINE));
+    RememberUI::iconButton (settingsButton, "settings", "Settings");
+    settingsButton.setTooltip ("Settings");
     addAndMakeVisible (settingsButton);
 
     // Clicking a row loads AND auto-plays the preview
     list.onEntrySelected = [this] (const ProjectEntry& e) { player.loadEntry (e); if (player.autoplaySelection()) player.play(); };
     list.onEntryPlay     = [this] (const ProjectEntry& e) { player.loadEntry (e); player.play(); };
+    list.onUsedSounds = [this] (const ProjectEntry& e)
+    {
+        UsedSoundsDialog::launch (e, {}, {}, {}, &player);
+    };
     list.onVisibleEntriesChanged = [this] (const juce::Array<ProjectEntry>& entries) { player.setQueue (entries); };
     player.onEntryLoaded = [this] (const ProjectEntry& entry) { list.selectEntry (entry); };
     player.setQueue (list.visibleEntries());
@@ -31,11 +36,12 @@ MainComponent::MainComponent()
     addAndMakeVisible (list);
     addAndMakeVisible (player);
     addAndMakeVisible (dawLauncher);
+    dawLauncher.onLayoutChanged = [this] { resized(); };
 
     // Sidebar selects a folder → list filters by it
-    sidebar.onFolderSelected = [this] (juce::String path)
+    sidebar.onFoldersSelected = [this] (juce::StringArray paths)
     {
-        list.setFolderFilter (path);
+        list.setFolderFilters (paths);
     };
 
     // Drop an entry on a folder → add the folder to that entry, then refresh
@@ -177,32 +183,33 @@ void MainComponent::paint (juce::Graphics& g)
     g.fillAll (RememberUI::colour (Pal::BgDeep));
     g.setColour (RememberUI::colour (Pal::Surface));
     juce::Path navigation;
-    navigation.addRoundedRectangle (0, 0, (float) kSidebarWidth, (float) (getHeight() - kPlayerHeight),
-                                    RememberUI::surfaceRadius, RememberUI::surfaceRadius, false, false, true, true);
+    constexpr int margin = RememberUI::appOuterMargin;
+    navigation.addRoundedRectangle ((float) margin, (float) margin, (float) kSidebarWidth,
+                                    (float) (getHeight() - kPlayerHeight - margin), RememberUI::recordingRowRadius);
     g.fillPath (navigation);
+    g.setFont (RememberUI::font (26, true));
+    g.setColour (RememberUI::colour (Pal::Text));
+    g.drawText ("Remember", margin + RememberUI::folderIconLeading, margin, kSidebarWidth - 32, 64, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (22, true));
     g.setColour (RememberUI::colour (Pal::Text));
-    g.drawText ("Remember", 20, 14, kSidebarWidth - 32, 28, juce::Justification::centredLeft);
+    g.drawText ("Library", margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 14, 180, 28, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (Pal::Subtext));
-    g.drawText ("Your music, remembered.", 20, 42, kSidebarWidth - 32, 22, juce::Justification::centredLeft);
-    g.setFont (RememberUI::font (22, true));
-    g.setColour (RememberUI::colour (Pal::Text));
-    g.drawText ("Library", kSidebarWidth + 24, 14, 180, 28, juce::Justification::centredLeft);
-    g.setFont (RememberUI::font (12));
-    g.setColour (RememberUI::colour (Pal::Subtext));
-    g.drawText ("Browse projects and listen to previews", kSidebarWidth + 24, 42,
-                getWidth() - kSidebarWidth - 120, 22, juce::Justification::centredLeft);
+    g.drawText ("Browse projects and listen to previews", margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 42,
+                getWidth() - margin - kSidebarWidth - 120, 22, juce::Justification::centredLeft);
 }
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
-    auto header = area.removeFromTop (80);
-    settingsButton.setBounds (header.removeFromRight (104).reduced (12, 23));
+    constexpr int margin = RememberUI::appOuterMargin;
+    auto header = area.removeFromTop (64 + margin).withTrimmedTop (margin).withTrimmedRight (margin);
+    settingsButton.setBounds (header.removeFromRight (34).withSizeKeepingCentre (34, 34));
     player.setBounds (area.removeFromBottom (kPlayerHeight));
-    auto sidebarArea = area.removeFromLeft (kSidebarWidth);
-    dawLauncher.setBounds (sidebarArea.removeFromBottom (44).reduced (16, 6));
+    auto sidebarArea = area.removeFromLeft (kSidebarWidth + margin).withTrimmedLeft (margin);
+    constexpr int padding = RememberUI::appSidebarPadding;
+    const auto launcherHeight = dawLauncher.preferredHeight (sidebarArea.getWidth() - 2 * padding);
+    dawLauncher.setBounds (sidebarArea.removeFromBottom (launcherHeight + 2 * padding).reduced (padding));
     sidebar.setBounds (sidebarArea);
     list.setBounds (area);
 }

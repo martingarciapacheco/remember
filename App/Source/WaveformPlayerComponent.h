@@ -5,6 +5,7 @@
 #include "ReadAheadSource.h"
 #include "WaveformEnvelope.h"
 #include "PlaybackQueue.h"
+#include "MetronomeSource.h"
 
 class WaveformPlayerComponent : public juce::Component,
                                 public juce::SettableTooltipClient,
@@ -17,6 +18,8 @@ public:
 
     void loadEntry (const ProjectEntry& entry);
     void releaseEntry (const juce::File& metadataFile);
+    void clearPreview();
+    void suspendOutput(); // Pause/release the device while retaining project UI and position.
     void stop();
     void play();         // start playback if a preview is loaded
     void setQueue (const juce::Array<ProjectEntry>& entries)
@@ -33,6 +36,12 @@ public:
     void setMuted (bool);
     bool isMuted() const { return muteBtn.getToggleState(); }
     void setNormalized (bool);
+    void setMetronomeEnabled (bool);
+    bool isMetronomeEnabled() const { return metronome.isEnabled(); }
+    void setMetronomeVolume (double, bool save = true);
+    double getMetronomeVolume() const { return metronome.getVolume(); }
+    void setCompactMode (bool);
+
     float getOutputGain() const { return transport.getGain(); }
     bool autoplaySelection() const { return autoplay; }
     void togglePlay();   // public wrapper for keyboard shortcut
@@ -57,16 +66,21 @@ public:
 
 private:
     friend struct PlaybackCursorTestAccess;
+    friend struct UsedSoundsTestAccess;
     RememberUI::Style uiStyle { *this };
     PlaybackQueue queue;
     juce::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
-    RememberUI::ContextMenuButton repeatBtn;
+    RememberUI::ContextMenuButton repeatBtn, metronomeBtn;
+    juce::Component::SafePointer<juce::CallOutBox> metronomePopup;
+    bool compactMode = false;
+    int midiLow = 48, midiHigh = 84;
     juce::Slider volumeSlider;
     bool normalize = false, autoplay = true, applyingPreferences = false, preferencesTouched = false;
     void applyOutputGain();
     void savePlaybackPreferences();
     void showPlaybackOptions();
     void showRepeatOptions();
+    void showMetronomeVolume();
     void updateRepeatButton();
     void   seekTo (double normalizedPos);
     double getPositionNormalized() const;
@@ -90,6 +104,7 @@ private:
     juce::AudioDeviceManager        deviceManager;
     juce::AudioDeviceManager&       outputManager;
     juce::AudioTransportSource      transport;
+    MetronomeSource metronome { transport };
     struct MonitoredPlayer : juce::AudioSourcePlayer
     {
         std::function<void(juce::String)> onError;

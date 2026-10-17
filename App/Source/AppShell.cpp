@@ -13,11 +13,21 @@ public:
                           RememberUI::colour (Pal::BgDeep),
                           DocumentWindow::allButtons)
     {
+       #if JUCE_WINDOWS
+        // JUCE retains native caption hit testing (drag, snap, system menu and
+        // window controls) while the shared theme paints the client title bar.
+        setLookAndFeel (&windowTheme);
+        setUsingNativeTitleBar (false);
+        setTitleBarHeight (34);
+        setTitleBarButtonsRequired (DocumentWindow::allButtons, false);
+       #else
         setUsingNativeTitleBar (true);
+       #endif
         setContentOwned (new RememberUI::ZoomView (std::make_unique<MainComponent>()), true);
         setResizable (true, false);
-        setResizeLimits (640, 480, 4096, 4096);
-        centreWithSize (960, 680);
+        const auto frame = getContentComponentBorder();
+        setResizeLimits (640 + frame.getLeftAndRight(), 480 + frame.getTopAndBottom(), 4096, 4096);
+        centreWithSize (960 + frame.getLeftAndRight(), 680 + frame.getTopAndBottom());
     }
 
     void activate()
@@ -88,6 +98,7 @@ public:
 
     ~MainWindow() override
     {
+        setLookAndFeel (nullptr);
        #if JUCE_WINDOWS
         taskbar.reset();
        #endif
@@ -102,6 +113,12 @@ public:
     {
         DocumentWindow::resized();
         boundsChanged();
+    }
+
+    void lookAndFeelChanged() override
+    {
+        setBackgroundColour (RememberUI::colour (Pal::BgDeep));
+        DocumentWindow::lookAndFeelChanged();
     }
 
     void closeButtonPressed() override
@@ -140,6 +157,7 @@ private:
     }
     bool boundsReady = false;
    #if JUCE_WINDOWS
+    RememberUI::MainWindowLookAndFeel windowTheme;
     std::unique_ptr<WindowsTaskbarTransport> taskbar;
    #endif
     bool boundsEdited = false;

@@ -8,7 +8,7 @@
 //
 // Drag a row from ProjectListComponent onto a folder to add that folder to
 // the entry (does NOT remove other folder memberships).
-class FoldersSidebarComponent : public juce::Component
+class FoldersSidebarComponent : public juce::Component, private juce::AsyncUpdater
 {
 public:
     FoldersSidebarComponent();
@@ -16,6 +16,8 @@ public:
 
     void paint  (juce::Graphics& g) override;
     void resized() override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
 
     // Rebuilds from one immutable index publication. Preserves the selected
     // folder if it still exists.
@@ -23,6 +25,8 @@ public:
 
     // Fired when the selected folder changes. Empty string == "All" (no filter).
     std::function<void (juce::String folderPath)> onFolderSelected;
+    // Empty selection means All; several folders are combined as a union.
+    std::function<void (juce::StringArray paths)> onFoldersSelected;
 
     // Fired when the user dropped an entry on a folder. The host wires this
     // to the actual mutation (loading the entry, calling
@@ -37,9 +41,10 @@ public:
     // Currently selected folder path ("" for All). Used by ProjectListComponent
     // to filter.
     juce::String getSelectedFolder() const { return selectedFolder; }
+    const juce::StringArray& getSelectedFolders() const { return selectedFolders; }
 
     // Programmatic actions (used by item callbacks)
-    void selectFolder (const juce::String& path);
+    void selectFolder (const juce::String& path, juce::ModifierKeys modifiers = {});
     void promptNewSubfolder (const juce::String& parentPath);
     void promptRename       (const juce::String& path);
     void confirmDelete      (const juce::String& path);
@@ -59,8 +64,13 @@ private:
     class FolderItem;
 
     void rebuildTree();
-    void runFolderEdit (std::function<juce::Result()>);
+    void runFolderEdit (std::function<juce::Result()>, juce::String oldPath = {}, juce::String newPath = {});
+    void applyTreeSelection();
+    void notifySelection();
+    void handleAsyncUpdate() override;
     juce::String              selectedFolder;
+    juce::StringArray selectedFolders;
+    juce::String selectionAnchor;
     std::vector<std::pair<juce::String, juce::String>> pendingMoves;
     std::unique_ptr<TreeRootItem> rootItem;
 

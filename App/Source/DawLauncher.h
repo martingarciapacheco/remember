@@ -24,6 +24,9 @@ public:
             { if (safe != nullptr) { safe->setApplications (*found); safe->discoveryComplete = true; } });
     }
     bool hasDiscoveredApplications() const { return discoveryComplete; }
+    std::function<void()> onLayoutChanged;
+    int preferredHeight (int availableWidth) const
+    { return RememberUI::dawLauncherSize + (contentWidth() > availableWidth ? viewport.getScrollBarThickness() : 0); }
     void setApplications (const std::vector<Application>& apps)
     {
         buttons.clear();
@@ -40,14 +43,15 @@ public:
             body.addAndMakeVisible (*button); buttons.push_back (std::move (button));
         }
         resized();
+        if (onLayoutChanged) onLayoutChanged();
     }
     void resized() override
     {
         viewport.setBounds (getLocalBounds());
-        const int width = (int) buttons.size() * 38;
-        body.setSize (juce::jmax (width, getWidth()), width > getWidth() ? 32 : getHeight());
+        const int width = contentWidth();
+        body.setSize (juce::jmax (width, getWidth()), width > getWidth() ? RememberUI::dawLauncherSize : getHeight());
         int x = 0;
-        for (auto& button : buttons) { button->setBounds (x, 0, 32, 32); x += 38; }
+        for (auto& button : buttons) { button->setBounds (x, 0, RememberUI::dawLauncherSize, RememberUI::dawLauncherSize); x += RememberUI::dawLauncherSize + RememberUI::appSidebarPadding; }
     }
     static std::vector<Application> discover()
     {
@@ -149,6 +153,8 @@ public:
         return apps;
     }
 private:
+    int contentWidth() const
+    { return buttons.empty() ? 0 : (int) buttons.size() * RememberUI::dawLauncherSize + ((int) buttons.size() - 1) * RememberUI::appSidebarPadding; }
 #if JUCE_WINDOWS
     static juce::Image shellIcon (const juce::File& file)
     {
@@ -184,7 +190,7 @@ private:
         {
             if (! icon.isValid()) { juce::TextButton::paintButton (g, over, down); return; }
             getLookAndFeel().drawButtonBackground (g, *this, RememberUI::colour (Pal::Elevated), over, down);
-            g.drawImageWithin (icon, 4, 4, 24, 24, juce::RectanglePlacement::centred);
+            g.drawImageWithin (icon, 4, 4, getWidth() - 8, getHeight() - 8, juce::RectanglePlacement::centred);
         }
     private:
         juce::Image icon;

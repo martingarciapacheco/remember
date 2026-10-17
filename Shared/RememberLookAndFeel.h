@@ -15,10 +15,19 @@ namespace RememberUI
 inline constexpr int recordingRowHeight = 48;
 inline constexpr int recordingRowPadding = 6;
 inline constexpr int recordingRowActionSize = 32;
+inline constexpr int soundRowHeight = 60;
+inline constexpr int midiSoundRowHeight = 116;
+inline constexpr int generatorSoundRowHeight = 52;
 inline constexpr float surfaceRadius = 12.0f;
+inline constexpr int appOuterMargin = 6;
+inline constexpr int appSectionGap = 6;
+inline constexpr int appSidebarPadding = 16;
 inline constexpr float controlRadius = 8.0f;
 inline constexpr float smallRadius = 4.0f;
 inline constexpr float recordingRowRadius = controlRadius;
+inline constexpr int folderSelectionInset = 10;
+inline constexpr int folderIconLeading = 16;
+inline constexpr int dawLauncherSize = 40;
 inline float capsuleRadius (juce::Rectangle<float> bounds) { return bounds.getHeight() * 0.5f; }
 
 class TooltipWindow : public juce::TooltipWindow
@@ -159,12 +168,15 @@ inline void refreshColours (juce::Component& component)
     component.repaint();
 }
 
-inline void panel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius = surfaceRadius)
+inline void panel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius = surfaceRadius, bool outlined = true)
 {
     g.setColour (RememberUI::colour (Pal::Content));
     g.fillRoundedRectangle (bounds, radius);
-    g.setColour (RememberUI::colour (Pal::Border).withAlpha (0.65f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), juce::jmax (0.0f, radius - 0.5f), 1.0f);
+    if (outlined)
+    {
+        g.setColour (RememberUI::colour (Pal::Border).withAlpha (0.65f));
+        g.drawRoundedRectangle (bounds.reduced (0.5f), juce::jmax (0.0f, radius - 0.5f), 1.0f);
+    }
 }
 
 // Original geometric icons, kept in code so they render crisply at host DPI.
@@ -208,6 +220,14 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
             g.drawText (kind == "repeat-single" ? "S" : "1", b.reduced (4, 3), juce::Justification::centred);
         }
     }
+    else if (kind == "metronome")
+    {
+        p.startNewSubPath (x + 5, y + 1); p.lineTo (x + 11, y + 1);
+        p.lineTo (x + 15, y + 15); p.lineTo (x + 1, y + 15); p.closeSubPath();
+        g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved));
+        g.drawLine (x + 8, y + 12, x + 12, y + 3, 1.5f);
+        g.fillRoundedRectangle (x + 9, y + 5, 4, 3, 0.6f);
+    }
     else if (kind == "volume" || kind == "mute")
     {
         p.startNewSubPath (x + 1, y + 5); p.lineTo (x + 5, y + 5); p.lineTo (x + 9, y + 2); p.lineTo (x + 9, y + 14);
@@ -236,6 +256,14 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
             const auto c = b.getCentre();
             g.drawLine (c.x + std::cos (a) * 5, c.y + std::sin (a) * 5,
                         c.x + std::cos (a) * 8, c.y + std::sin (a) * 8, 1.5f);
+        }
+    }
+    else if (kind == "sounds")
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            const float top = i == 1 ? 2.0f : i == 2 ? 5.0f : 7.0f;
+            g.drawLine (x + 2 + i * 4.0f, y + top, x + 2 + i * 4.0f, y + 16 - top, 1.6f);
         }
     }
     else if (kind == "folder")
@@ -305,10 +333,22 @@ private:
     bool contextPressed = false;
 };
 
-class LookAndFeel final : public juce::LookAndFeel_V4
+class LookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     LookAndFeel() { applyPalette(); }
+    void drawTreeviewPlusMinusBox (juce::Graphics& g, const juce::Rectangle<float>& area,
+                                  juce::Colour, bool open, bool over) override
+    {
+        // The disclosure begins at the same inset as All's folder symbol.
+        const float x = area.getX() + (float) (folderIconLeading - 8);
+        const float y = area.getCentreY();
+        juce::Path triangle;
+        if (open) triangle.addTriangle (x, y - 3, x + 7, y - 3, x + 3.5f, y + 3);
+        else      triangle.addTriangle (x, y - 3.5f, x + 6, y, x, y + 3.5f);
+        g.setColour (RememberUI::colour (over ? Pal::Text : Pal::Subtext));
+        g.fillPath (triangle);
+    }
     void applyPalette()
     {
         setColourScheme (isDark() ? getDarkColourScheme() : getLightColourScheme());
@@ -363,6 +403,13 @@ public:
     {
         juce::LookAndFeel_V4::preparePopupMenuWindow (window);
         window.setOpaque (! juce::Desktop::canUseSemiTransparentWindows());
+    }
+    int getCallOutBoxBorderSize (const juce::CallOutBox&) override { return 10; }
+    float getCallOutBoxCornerSize (const juce::CallOutBox&) override { return surfaceRadius; }
+    void drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&) override
+    {
+        g.setColour (RememberUI::colour (Pal::Content)); g.fillPath (path);
+        g.setColour (RememberUI::colour (Pal::Border)); g.strokePath (path, juce::PathStrokeType (1));
     }
     int getPopupMenuBorderSize() override { return 6; }
     void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
@@ -501,6 +548,74 @@ public:
         const bool focused = e.hasKeyboardFocus (true) && ! e.isReadOnly();
         g.setColour (RememberUI::colour (focused ? Pal::Accent : Pal::Border));
         g.drawRoundedRectangle (juce::Rectangle<float> (0, 0, (float) w, (float) h).reduced (1), controlRadius, focused ? 2.0f : 1.0f);
+    }
+};
+
+// Standalone Windows chrome. DocumentWindow still supplies native caption hit
+// testing and window actions; only its presentation is replaced.
+class MainWindowLookAndFeel final : public LookAndFeel
+{
+    class WindowButton final : public juce::Button
+    {
+    public:
+        explicit WindowButton (int typeIn)
+            : Button (typeIn == juce::DocumentWindow::closeButton ? "Close"
+                      : typeIn == juce::DocumentWindow::minimiseButton ? "Minimise" : "Maximise or restore"),
+              type (typeIn)
+        {
+            setTitle (getName());
+            setTooltip (getName());
+            setWantsKeyboardFocus (true);
+        }
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            auto area = getLocalBounds().toFloat().reduced (2);
+            if (over || down)
+            {
+                g.setColour (colour (down ? Pal::Selected : Pal::Elevated));
+                g.fillRoundedRectangle (area, controlRadius);
+            }
+            if (hasKeyboardFocus (false))
+            {
+                g.setColour (colour (Pal::Accent));
+                g.drawRoundedRectangle (area.reduced (1), controlRadius, 2);
+            }
+            g.setColour (colour (isEnabled() ? Pal::Text : Pal::Subtext));
+            const auto symbol = area.withSizeKeepingCentre (10, 10);
+            if (type == juce::DocumentWindow::closeButton)
+            {
+                g.drawLine (symbol.getX(), symbol.getY(), symbol.getRight(), symbol.getBottom(), 1.2f);
+                g.drawLine (symbol.getX(), symbol.getBottom(), symbol.getRight(), symbol.getY(), 1.2f);
+            }
+            else if (type == juce::DocumentWindow::minimiseButton)
+                g.drawHorizontalLine (juce::roundToInt (symbol.getCentreY()), symbol.getX(), symbol.getRight());
+            else if (getToggleState())
+            {
+                g.drawRect (symbol.translated (2, -2).withTrimmedLeft (2).withTrimmedBottom (2), 1);
+                g.setColour (colour (down ? Pal::Selected : over ? Pal::Elevated : Pal::BgDeep));
+                g.fillRect (symbol.withTrimmedRight (2).withTrimmedTop (2));
+                g.setColour (colour (Pal::Text));
+                g.drawRect (symbol.withTrimmedRight (2).withTrimmedTop (2), 1);
+            }
+            else g.drawRect (symbol, 1);
+        }
+    private:
+        int type;
+    };
+public:
+    void drawDocumentWindowTitleBar (juce::DocumentWindow&, juce::Graphics& g,
+                                    int, int, int, int, const juce::Image*, bool) override
+    { g.fillAll (colour (Pal::BgDeep)); }
+
+    juce::Button* createDocumentWindowButton (int type) override { return new WindowButton (type); }
+
+    void positionDocumentWindowButtons (juce::DocumentWindow&, int x, int y, int w, int h,
+                                       juce::Button* minimise, juce::Button* maximise,
+                                       juce::Button* close, bool) override
+    {
+        int right = x + w;
+        for (auto* button : { close, maximise, minimise })
+            if (button != nullptr) { right -= 46; button->setBounds (right, y, 46, h); }
     }
 };
 

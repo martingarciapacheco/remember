@@ -11,6 +11,15 @@ Remember is two pieces that work together:
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
+## Changes in 1.0.0-beta5
+
+- Added **Used sounds** for saved FL Studio projects: samples, per-pattern/channel MIDI and generator names, with playlist/all-loaded filters. Audition samples or MIDI, seek in the dedicated player, and drag or save sample/MIDI copies without modifying the project. Missing samples can be located for the current session. The main preview stays loaded while auditioning.
+- Added selectable MIDI audition sounds (Simple piano, Saw, Square and Sine), sample-backed audition and bounded streaming. Audition covers up to 30 seconds; MIDI export includes the complete pattern and tempo, without instrument audio or DAW effects.
+- Added a transport-synchronised metronome beside Repeat. Right-click for its saved volume. It follows known BPM, seeks and repeats; it starts disabled and only sounds during playback.
+- Improved folder ordering and selection, including multiple selected folders and saved filters, sidebar spacing, project row controls and layouts at small window sizes.
+- Updated the Windows app/installer icon and added a first-run guide and feature overview to the README.
+- FL Studio inventory reads the last saved `.flp`, including supported FL 25/26 layouts. Unsaved changes, samples hidden inside plugins, mixer effects and FL-specific note behavior are outside this reader's scope. Other DAW sound readers are not included.
+
 ## Changes in 1.0.0-beta4
 
 - Left-click Repeat to cycle Off, All, One, Single and back to Off; right-click to choose from the menu. Single plays the selected preview once and stops, without advancing through the queue; manual Previous/Next remain available. The chosen mode is saved between sessions.
@@ -59,7 +68,7 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 
 ## Install
 
-1. Download `Remember-1.0.0-beta4-setup.exe` from the release page.
+1. Download `Remember-1.0.0-beta5-setup.exe` from the [release page](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta5). Close Remember and your DAW before installing.
 2. Run it. **Windows will warn "Unknown publisher"** — click `More info → Run anyway`. This is normal for unsigned beta builds.
 3. The installer needs admin privileges (it writes to the system VST3 folder under `Program Files\Common Files\VST3\`).
 4. After installing:
@@ -112,7 +121,7 @@ Please file issues at: https://github.com/martingarciapacheco/remember/issues/ne
 2. Sample rate & buffer size
 3. The contents of `%APPDATA%\Remember\logs\plugin.log` (and `app.log` if the browser app misbehaves) — drag-drop the file into the issue
 4. What you were doing when it went wrong, and what you expected to happen
-5. The plugin version shown in the footer or app header (e.g. `v1.0.0-beta1  abc1234`)
+5. The plugin version shown in the footer or app header (e.g. `v1.0.0-beta5  abc1234`)
 
 ## Keyboard shortcuts (browser app)
 
