@@ -225,7 +225,8 @@ Processor creation queues output-folder loading and logger initialization. Savin
 | Key | Action |
 |-----|--------|
 | Space | Play/pause loaded preview |
-| Enter | Play selected row |
+| Enter (recording list focused) | Play the selected recording, except in Trash |
+| Up / Down (list focused) | Move the row selection |
 | Ctrl + Left / Right | Previous / next preview (previous restarts after 3 seconds) |
 | Ctrl + F | Focus search and select its text |
 | Ctrl + , | Open settings |
@@ -236,13 +237,31 @@ Processor creation queues output-folder loading and logger initialization. Savin
 | L | Cycle repeat: off, all, one, single |
 | Alt + Left / Right | Seek backward / forward 5 seconds, bounded by the preview |
 | Ctrl + Z | Undo the last organization action |
-| F | Toggle favourite |
-| R | Rename selected entry when no existing DAW file is associated |
-| T | Edit tags |
-| Delete / Backspace | Delete entry (with confirmation) |
+| F | Toggle favourite for one selected recording; mark all selected recordings as favourites for a multiple selection |
+| R | Rename the selected pending or unassociated recording inline |
+| T | Edit tags for one recording; add tags to multiple selected recordings |
+| Delete / Backspace | Move the selected recording(s) to Trash, with confirmation |
+| Enter (Used sounds list focused) | Audition the selected sample or MIDI pattern |
+| Enter / Escape (inline rename focused) | Save / cancel the name change |
+| Media Previous / Next | Previous / next preview |
+| Media Play/Pause, Play, Pause, Stop | Control the main preview through Windows media commands |
 
-Single-letter transport shortcuts and seeking are inactive while editing text.
-Search accepts the explicit Ctrl shortcuts without inserting their characters.
+Multiple selection also supports these keyboard-and-mouse gestures:
+
+| Gesture | Action |
+|---------|--------|
+| Ctrl + click a recording | Add/remove it from the selection |
+| Shift + click a recording | Select a range of recordings |
+| Ctrl + click a sidebar folder | Add/remove it from the folder filter |
+| Shift + click or Alt + click a sidebar folder | Select a range of visible folders from the selection anchor |
+| Ctrl + Shift + click or Ctrl + Alt + click a sidebar folder | Add a visible folder range to the current selection |
+
+App shortcuts apply in the main browser window. While a text field has focus,
+typing, navigation, Space, seeking and Ctrl+Z belong to the text editor; Ctrl+F,
+Ctrl+comma, Ctrl+O and Ctrl+Shift+F remain available in the main window.
+Used sounds handles Enter within its own list. Media keys depend on Windows
+delivering the media command to Remember; they are not system-wide hotkeys.
+The metronome and interface zoom currently have no dedicated keyboard shortcut.
 Hover a control to see its name and shortcut in parentheses.
 
 ## Regression checks
