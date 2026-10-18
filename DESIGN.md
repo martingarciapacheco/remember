@@ -179,7 +179,8 @@ count share that row when space allows, moving to the following row in compact
 windows, with eight-pixel vertical gaps.
 
 Use `Imagenes/Icono de casete en forma de D.png` as the application and plugin
-build icon. `Assets/Remember.ico` is its multi-resolution Windows counterpart
+build icon and embed the same asset for the app's system tray icon.
+`Assets/Remember.ico` is its multi-resolution Windows counterpart
 for the combined app/plugin installer; the uninstall entry uses the app icon.
 
 Interface zoom offers 50%, 75%, 90%, 100% (default), 125%, 150% and 200% in Settings.

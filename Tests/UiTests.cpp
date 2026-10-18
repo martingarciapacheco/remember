@@ -96,6 +96,45 @@ void testFrontendDesign (const juce::File& root)
     }
     ProjectScanner::refreshAsync();
     awaitUi ([&] { return ProjectScanner::scan().size() == 1; });
+    {
+        // Saving a newly added root must resolve nested projects even after
+        // closing Settings, without a Search folders or Refresh click.
+        const auto autoLibrary = root.getChildFile ("automatic-search-library");
+        const auto autoRoots = root.getChildFile ("automatic-search-projects");
+        const auto nested = autoRoots.getChildFile ("nested/deep");
+        const auto autoProject = nested.getChildFile ("Automatic search.als");
+        const auto autoEntry = autoLibrary.getChildFile ("recording");
+        check (autoEntry.createDirectory().wasOk() && nested.createDirectory().wasOk()
+            && autoProject.replaceWithText ("automatic search fixture"), "Cannot create automatic folder search fixture");
+        auto autoMetadata = metadata.clone();
+        autoMetadata.getDynamicObject()->setProperty ("projectId", juce::Uuid().toString());
+        autoMetadata.getDynamicObject()->setProperty ("projectName", "Automatic search");
+        autoMetadata.getDynamicObject()->setProperty ("projectPath", "");
+        check (LibraryStore::writeJsonAtomically (autoEntry.getChildFile ("metadata.json"), autoMetadata).wasOk()
+            && directory.getChildFile ("preview.ogg").copyFileTo (autoEntry.getChildFile ("preview.ogg")), "Cannot create missing-project preview");
+        check (ProjectScanner::saveSettings (autoLibrary, { projects }, 60, 4, false).wasOk(), "Cannot configure automatic search fixture");
+        ProjectScanner::refreshAsync();
+        awaitUi ([&] { auto snapshot = ProjectScanner::librarySnapshot(); return snapshot->sourceRoot == autoLibrary
+            && snapshot->entries.size() == 1 && snapshot->missingProjects == 1; });
+        auto draft = ProjectScanner::readSettings(); draft.roots.add (autoRoots);
+        auto settings = std::make_unique<SettingsDialog> (false, [draft] { return draft; });
+        awaitUi ([&] { return settings->hasLoadedSettings(); });
+        juce::TextButton* ok = nullptr;
+        for (auto* child : settings->getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "OK") ok = button;
+        check (ok != nullptr, "Automatic search fixture cannot save Settings");
+        awaitUi ([&] { return ok->isEnabled(); });
+        bool saved = false; settings->onCompleted = [&] { saved = true; };
+        ok->onClick(); awaitUi ([&] { return saved; }); settings.reset();
+        awaitUi ([&] { const auto snapshot = ProjectScanner::librarySnapshot(); return snapshot->sourceRoot == autoLibrary
+            && snapshot->entries.size() == 1 && snapshot->entries[0].projectAvailable
+            && snapshot->entries[0].projectPath == autoProject.getFullPathName(); }, 10000,
+            "Saving a new search root did not automatically resolve its nested project after Settings closed");
+        check (ProjectScanner::saveSettings (library, { projects }, 60, 4, false).wasOk(), "Cannot restore design fixture");
+        ProjectScanner::refreshAsync();
+        awaitUi ([&] { return ProjectScanner::librarySnapshot()->sourceRoot == library; });
+        std::cout << "PASS: saved search folder resolves nested projects after Settings closes without manual refresh\n";
+    }
     auto scene = std::make_unique<MainComponent>();
     auto* list = childOf<ProjectListComponent> (*scene);
     auto* player = childOf<WaveformPlayerComponent> (*scene);
@@ -440,6 +479,59 @@ void testFrontendDesign (const juce::File& root)
             check (recordingSwitches[i]->getBounds().getCentreY() - recordingSwitches[i - 1]->getBounds().getCentreY() == 30,
                 "Record in mono and the remaining switches have unequal spacing");
         check (folders != nullptr, "Settings has no folder list");
+        juce::Label* estimate = nullptr;
+        juce::Label* wavNotice = nullptr;
+        juce::ComboBox* duration = nullptr;
+        juce::ComboBox* quality = nullptr;
+        juce::ToggleButton* mono = nullptr;
+        juce::ToggleButton* replace = nullptr;
+        for (auto* child : settings.getChildren())
+        {
+            if (auto* label = dynamic_cast<juce::Label*> (child))
+            {
+                if (label->getTitle() == "Estimated preview storage") estimate = label;
+                if (label->getTitle() == "WAV storage notice") wavNotice = label;
+            }
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child))
+            {
+                if (combo->getTitle() == "Capture duration") duration = combo;
+                if (combo->getTitle() == "OGG quality") quality = combo;
+            }
+            if (auto* toggle = dynamic_cast<juce::ToggleButton*> (child))
+            {
+                if (toggle->getButtonText().startsWith ("Record in mono")) mono = toggle;
+                if (toggle->getButtonText().startsWith ("Replace whole previews")) replace = toggle;
+            }
+        }
+        check (estimate && wavNotice && duration && quality && mono && replace, "Settings lacks accessible preview storage estimates");
+        check (estimate->getText().contains ("recovery copy") && wavNotice->isVisible()
+            && wavNotice->getText().contains ("WAV files stay on disk")
+            && wavNotice->getBottom() <= folders->getY(), "WAV and recovery storage notice is missing or overlaps folders");
+        const auto configBeforeEstimate = LibraryStore::configFile().loadFileAsString();
+        const auto originalEstimate = estimate->getText();
+        const int originalDuration = duration->getSelectedId(), originalQuality = quality->getSelectedId();
+        const bool originalMono = mono->getToggleState(), originalReplace = replace->getToggleState();
+        duration->setSelectedId (60, juce::sendNotificationSync);
+        mono->setToggleState (false, juce::dontSendNotification); mono->onClick();
+        const auto stereoSize = estimate->getText().fromFirstOccurrenceOf ("~", false, false).getDoubleValue();
+        duration->setSelectedId (120, juce::sendNotificationSync);
+        const auto longSize = estimate->getText().fromFirstOccurrenceOf ("~", false, false).getDoubleValue();
+        check (longSize > stereoSize * 1.9 && longSize < stereoSize * 2.1, "Doubling duration did not double preview storage estimate");
+        mono->setToggleState (true, juce::dontSendNotification); mono->onClick();
+        const auto monoSize = estimate->getText().fromFirstOccurrenceOf ("~", false, false).getDoubleValue();
+        check (monoSize < longSize * 0.6 && monoSize > longSize * 0.4, "Mono storage estimate does not reflect reduced WAV size");
+        const auto beforeQuality = estimate->getText();
+        quality->setSelectedId (9, juce::sendNotificationSync);
+        check (estimate->getText() != beforeQuality, "OGG quality did not update storage estimate");
+        replace->setToggleState (! originalReplace, juce::dontSendNotification);
+        check (wavNotice->isVisible() && wavNotice->getText().contains ("even when replacing"), "Replacement hides the permanent WAV cost");
+        saveImage (settings, "apple-settings-storage-estimate.png", true);
+        duration->setSelectedId (originalDuration, juce::sendNotificationSync);
+        quality->setSelectedId (originalQuality, juce::sendNotificationSync);
+        mono->setToggleState (originalMono, juce::dontSendNotification); mono->onClick();
+        replace->setToggleState (originalReplace, juce::dontSendNotification);
+        check (estimate->getText() == originalEstimate && LibraryStore::configFile().loadFileAsString() == configBeforeEstimate,
+            "Draft storage estimates changed saved settings or failed to restore");
         const auto foldersImage = folders->createComponentSnapshot (folders->getLocalBounds(), true, 1, juce::SoftwareImageType{});
         check (foldersImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Settings folder list retained square corners");
         auto* row = folders->getComponentForRowNumber (0);

@@ -68,6 +68,20 @@ void testPluginFrontend (const juce::File& root)
                 throw std::runtime_error ("Cannot render plugin frontend");
         };
         save ("apple-plugin.png", 1); save ("apple-plugin-2x.png", 2);
+        processor.getEngine().setCaptureOptions ({ true, false, false });
+        editor->timerCallback();
+        bool automaticStatus = false;
+        for (auto* child : editor->getChildren())
+        {
+            if (auto* label = dynamic_cast<juce::Label*> (child); label && label->getTitle() == "Capture status")
+                automaticStatus = label->getText() == "Automatic capture enabled";
+            if (auto* button = dynamic_cast<juce::TextButton*> (child))
+                if (button->getButtonText() == "Capture next play") throw std::runtime_error ("Plugin still exposes manual arming");
+        }
+        if (! automaticStatus) throw std::runtime_error ("Plugin lacks automatic capture status");
+        save ("automatic-capture-plugin.png", 1);
+        processor.getEngine().setCaptureOptions ({ false, false, false });
+        editor->timerCallback();
         for (auto percent : RememberUI::zoomPercentages)
         {
             editor->applyZoom (percent); ready();
@@ -493,8 +507,8 @@ void testConfiguration (const juce::File& fixtureRoot)
         check (statusContains (*editor, "Output folder is unavailable") && SettingsManager::getInstance().getPreviewsFolder() == second,
                "Engine timer erased a settings error or changed the output despite failure");
         editor->applyOutputFolder (first); await ([&] { return settingsReady (*editor); }, "Output retry did not finish");
-        check (statusContains (*editor, "Output saved; reload plugin to apply") && ! statusContains (*editor, "Output folder is unavailable")
-               && SettingsManager::getInstance().getPreviewsFolder() == first, "Successful output retry did not clear the error or explain preparation");
+        check (statusContains (*editor, "Output saved; applies to the next capture") && ! statusContains (*editor, "Output folder is unavailable")
+               && SettingsManager::getInstance().getPreviewsFolder() == first, "Successful output retry did not clear the error or explain the next capture");
     }
     await ([] { return BackgroundRetirement::pending() == 0; }, "Editor settings reads did not retire");
     for (int i = 0; i < 20; ++i)

@@ -22,7 +22,7 @@ struct Head : juce::AudioPlayHead
     juce::Optional<PositionInfo> getPosition() const override
     { PositionInfo p; p.setIsPlaying (playing); p.setTimeInSeconds (seconds); p.setBpm (128); return p; }
 };
-void render (RecordingEngine& engine, double start, double seconds, float value)
+void render (RecordingEngine& engine, double start, double seconds, float value, bool stopAfter = true)
 {
     Head head; juce::AudioBuffer<float> audio (2, 128);
     const auto samples = (int) (seconds * 8000);
@@ -34,7 +34,8 @@ void render (RecordingEngine& engine, double start, double seconds, float value)
         check (audio.getSample (0, 0) == value, "Capture options changed passthrough audio");
         if (done % 4096 == 0) juce::Thread::sleep (1);
     }
-    head.playing = false; head.seconds = start + seconds; engine.processBlock (audio, &head);
+    if (stopAfter)
+    { head.playing = false; head.seconds = start + seconds; engine.processBlock (audio, &head); }
 }
 juce::var committedMetadata (const juce::File& manifest)
 {
@@ -113,6 +114,46 @@ void testWorkflowCapture (const juce::File& root)
     }
     waitFor ([] { return BackgroundRetirement::pending() == 0; });
     {
+        // An already prepared processor follows app Settings without reopening.
+        RememberProcessor processor (detect); processor.prepareToPlay (8000, 128);
+        auto& engine = processor.getEngine();
+        waitFor ([&] { return ! engine.isPreparingSettings() && engine.isProjectConfirmed(); });
+        engine.setCaptureOptions ({ true, false, true });
+        const auto movedLibrary = root.getChildFile ("live-output-library");
+        check (movedLibrary.createDirectory().wasOk(), "Cannot create live output library");
+        check (ProjectScanner::saveSettings (movedLibrary, { root }, 15, 4, false).wasOk(), "Cannot change app output folder");
+        waitFor ([&]
+        {
+            juce::XmlElement state ("Remember"); engine.saveState (state);
+            return state.getStringAttribute ("previewsFolder") == movedLibrary.getFullPathName();
+        });
+        render (engine, 12, 2, 0.3f);
+        const auto manifest = movedLibrary.getChildFile (engine.getAssociationInfo().id).getChildFile ("metadata.json");
+        const auto firstRevision = committedMetadata (manifest)["audioRevision"].toString();
+        check (manifest.existsAsFile(), "Live folder change did not redirect the next preview");
+        // Two takes separated by a seek while the host stays playing. There is
+        // no stopped callback and no arming request between these positions.
+        render (engine, 24, 2, 0.4f, false);
+        render (engine, 36, 2, 0.5f);
+        waitFor ([&] { return committedMetadata (manifest)["audioRevision"].toString() != firstRevision; });
+        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        const auto hasCaptured = [&] (float value)
+        {
+            const auto info = LibraryStore::readJson (manifest);
+            auto captured = std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (
+                LibraryStore::audioFile (manifest.getParentDirectory(), info, true)));
+            juce::AudioBuffer<float> sample (2, 1);
+            return captured && captured->read (&sample, 0, 1, 0, true, true)
+                && std::abs (sample.getSample (0, 0) - value) < 0.00001f;
+        };
+        waitFor ([&] { return hasCaptured (0.5f); });
+        render (engine, 48, 2, 0.6f, false);
+        render (engine, 6, 2, 0.7f);
+        waitFor ([&] { return hasCaptured (0.7f); });
+        check (ProjectScanner::saveSettings (library, { root }, 15, 4, false).wasOk(), "Cannot restore app output folder");
+    }
+    waitFor ([] { return BackgroundRetirement::pending() == 0; });
+    {
         RecordingEngine engine (detect); engine.prepare (8000, 128, *options);
         waitFor ([&] { return engine.isProjectConfirmed(); });
         render (engine, 0, 5, 0.1f); waitFor ([&] { return engine.getState() == RecordingEngine::State::Done; });
@@ -121,9 +162,6 @@ void testWorkflowCapture (const juce::File& root)
         check ((double) baseline["durationSeconds"] >= 4.99, "Initial full preview was incomplete");
         const auto revision = baseline["audioRevision"].toString();
         engine.setCaptureOptions ({ true, false, false });
-        render (engine, 10, 2, 0.2f); juce::Thread::sleep (100);
-        check (committedMetadata (manifest)["audioRevision"].toString() == revision, "Manual mode captured without being armed");
-        engine.armCapture(); check (engine.isCaptureArmed(), "Manual capture did not arm");
         render (engine, 10, 2, 0.2f);
         juce::var merged;
         waitFor ([&]
@@ -139,12 +177,13 @@ void testWorkflowCapture (const juce::File& root)
         juce::AudioBuffer<float> sample (2, 1); check (reader && reader->read (&sample, 0, 1, 32000, true, true), "Cannot read preserved tail");
         check (std::abs (sample.getSample (0, 0) - 0.1f) < 0.00001f, "Tail changed under prefix policy"); reader.reset();
         const auto mergedRevision = merged["audioRevision"].toString();
-        engine.setCaptureOptions ({ true, true, false }); engine.armCapture(); render (engine, 20, 2, 0.3f); juce::Thread::sleep (100);
-        check (! engine.isCaptureArmed() && committedMetadata (manifest)["audioRevision"].toString() == mergedRevision, "Global lock changed preview audio");
+        engine.setCaptureOptions ({ true, true, false }); render (engine, 20, 2, 0.3f); juce::Thread::sleep (100);
+        check (committedMetadata (manifest)["audioRevision"].toString() == mergedRevision, "Global lock changed preview audio");
         juce::var patch (new juce::DynamicObject()); patch.getDynamicObject()->setProperty ("bpmOverride", 133.5);
         patch.getDynamicObject()->setProperty ("keyOverride", "G major"); patch.getDynamicObject()->setProperty ("notes", "Keep this note");
         check (LibraryStore::patchJson (manifest, patch).wasOk(), "Cannot set musical corrections");
-        engine.setCaptureOptions ({ true, false, true }); engine.armCapture(); render (engine, 20, 2, 0.4f);
+        engine.setCaptureOptions ({ true, false, true });
+        render (engine, 20, 2, 0.4f);
         juce::var replaced;
         waitFor ([&]
         {
@@ -160,9 +199,9 @@ void testWorkflowCapture (const juce::File& root)
         patch = juce::var (new juce::DynamicObject()); patch.getDynamicObject()->setProperty ("previewLocked", true);
         check (LibraryStore::patchJson (manifest, patch).wasOk(), "Cannot lock individual preview");
         const auto replacedRevision = replaced["audioRevision"].toString();
-        engine.armCapture(); render (engine, 30, 2, 0.5f); juce::Thread::sleep (250);
+        render (engine, 30, 2, 0.5f); juce::Thread::sleep (250);
         check (committedMetadata (manifest)["audioRevision"].toString() == replacedRevision, "Individual preview lock was ignored");
     }
     waitFor ([] { return BackgroundRetirement::pending() == 0; });
-    std::cout << "PASS: manual arming at nonzero transport, global/individual locks, prefix preservation, full replacement, untouched passthrough and persistent musical overrides\n";
+    std::cout << "PASS: automatic capture at nonzero transport and seeks, global/individual locks, prefix preservation, full replacement, untouched passthrough and persistent musical overrides\n";
 }

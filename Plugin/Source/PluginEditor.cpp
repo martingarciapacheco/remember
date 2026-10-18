@@ -29,10 +29,11 @@ RememberEditor::RememberEditor (RememberProcessor& p)
         processor.updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withNonParameterStateChanged (true));
         refreshFromEngine();
     };
-    RememberUI::bindColour (captureButton, juce::TextButton::buttonColourId, Pal::Action);
-    RememberUI::bindColour (captureButton, juce::TextButton::textColourOffId, Pal::OnAction);
-    captureButton.onClick = [this] { processor.getEngine().armCapture(); refreshFromEngine(); };
-    addAndMakeVisible (captureButton);
+    captureStatus.setFont (bodyFont());
+    RememberUI::bindColour (captureStatus, juce::Label::textColourId, Pal::Subtext);
+    captureStatus.setTitle ("Capture status");
+    captureStatus.setTooltip ("Capture starts automatically with playback. Capture from any position also follows seeks and loops.");
+    addAndMakeVisible (captureStatus);
 
     // ── Project name editor ──────────────────────────────────────────────────
     nameEditor.setFont (RememberUI::font (16.0f, true));
@@ -116,8 +117,9 @@ void RememberEditor::refreshFromEngine()
         lockToggle.setToggleState (options.locked, juce::dontSendNotification);
         replaceToggle.setToggleState (options.replace, juce::dontSendNotification);
     }
-    captureButton.setEnabled (! settingsRequest && options.manual && ! eng.isPreviewLocked() && ! eng.isCaptureArmed() && state != RecordingEngine::State::Recording);
-    captureButton.setButtonText (eng.isCaptureArmed() ? "Armed for playback" : "Capture next play");
+    captureStatus.setText (eng.isPreviewLocked() ? "Preview updates locked"
+        : state == RecordingEngine::State::Recording ? "Capturing preview"
+        : options.manual ? "Automatic capture enabled" : "Capture from project start", juce::dontSendNotification);
     const auto association = eng.getAssociationInfo();
     const bool followsFile = association.confirmed && association.source != RecordingEngine::Association::ManualRecording;
     nameEditor.setReadOnly (followsFile);
@@ -237,7 +239,7 @@ void RememberEditor::refreshFromEngine()
         statusColour = kError;
     }
     if (options.locked && state != RecordingEngine::State::Error) statusText = "Preview updates locked; unlock to record";
-    else if (options.manual && state == RecordingEngine::State::Idle) statusText = eng.isCaptureArmed() ? "Armed: play from any position" : "Choose a position and arm the capture";
+    else if (options.manual && state == RecordingEngine::State::Idle) statusText = "Ready: play from any position";
     statusLabel.setTooltip (statusText + (settingsMessage.isNotEmpty() ? "\n" + settingsMessage : juce::String{})
         + (association.problem.isNotEmpty() ? "\n" + association.problem : juce::String{})
         + "\nSkipped captures: " + juce::String (eng.getDroppedCaptures())
@@ -283,7 +285,7 @@ void RememberEditor::paint (juce::Graphics& g)
     paintProgressBar (g, { 28, 304, logicalWidth() - 56, 5 }, recordProgress);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (kSubtext));
-    g.drawText (processor.getEngine().getCaptureOptions().manual ? "Manual preview" : "Automatic preview", 28, 326, 160, 22, juce::Justification::centredLeft);
+    g.drawText ("Preview capture", 28, 326, 160, 22, juce::Justification::centredLeft);
 }
 
 void RememberEditor::paintProgressBar (juce::Graphics& g,
@@ -317,7 +319,7 @@ void RememberEditor::resized()
     manualToggle.setBounds (28, 348, logicalWidth() - 56, 30);
     lockToggle.setBounds (28, 378, logicalWidth() - 56, 30);
     replaceToggle.setBounds (28, 408, logicalWidth() - 56, 30);
-    captureButton.setBounds (28, 446, 174, 32);
+    captureStatus.setBounds (28, 446, 190, 32);
     versionLabel.setBounds (logicalWidth() - 200, 455, 172, 18);
 }
 
@@ -418,7 +420,7 @@ void RememberEditor::refreshSettingsRequest()
         if (savingSettings)
         {
             processor.getEngine().setOutputFolder (settingsFolder);
-            settingsMessage = "Output saved; reload plugin to apply";
+            settingsMessage = "Output saved; applies to the next capture";
         }
         else settingsMessage.clear();
     }

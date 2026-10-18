@@ -77,7 +77,7 @@ private:
     juce::ToggleButton manualToggle { "Capture from any position by default in new plugins" }, lockToggle { "Lock preview updates in all plugins" }, replaceToggle { "Replace whole previews instead of keeping the old tail" };
     juce::Label       sizeEstimate;
     juce::Label       storageUsage;
-    juce::Label       pcmPolicy { {}, "Float PCM + OGG: current and previous revisions kept; older revisions cleaned automatically" };
+    juce::Label       pcmPolicy;
 
     juce::Label  projectsCaption { {}, "DAW project search folders" };
     juce::Label  projectsHint    { {}, "Add every folder where you keep your DAW project files" };

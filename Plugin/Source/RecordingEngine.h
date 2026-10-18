@@ -31,8 +31,6 @@ public:
     void setCaptureOptions (CaptureOptions);
     void applySharedCaptureOptions (CaptureOptions);
     CaptureOptions getCaptureOptions() const;
-    void armCapture();
-    bool isCaptureArmed() const;
     bool isPreviewLocked() const;
     void processBlock (const juce::AudioBuffer<float>&, juce::AudioPlayHead*, bool offline = false);
     void setOutputFolder (const juce::File&);

@@ -14,6 +14,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
 juce_add_binary_data(RememberAudioData HEADER_NAME RememberAudioData.h NAMESPACE RememberAudioData
     SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../Assets/Audio/Metronome4.wav)
+juce_add_binary_data(RememberIconData HEADER_NAME RememberIconData.h NAMESPACE RememberIconData
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../Imagenes/Icono de casete en forma de D.png")
 
 juce_add_gui_app(RememberApp
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../Imagenes/Icono de casete en forma de D.png"
@@ -71,6 +73,7 @@ target_include_directories(RememberApp PRIVATE
 )
 
 target_link_libraries(RememberApp PRIVATE
+    RememberIconData
     RememberAudioData
     juce::juce_audio_basics
     juce::juce_audio_devices
@@ -115,7 +118,7 @@ if(REMEMBER_BUILD_TESTS)
     target_compile_definitions(RememberAppTests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(RememberAppTests PRIVATE
-        RememberAudioData juce::juce_audio_utils juce::juce_gui_extra juce::juce_cryptography juce::juce_recommended_config_flags)
+        RememberIconData RememberAudioData juce::juce_audio_utils juce::juce_gui_extra juce::juce_cryptography juce::juce_recommended_config_flags)
     if(WIN32)
         target_link_libraries(RememberAppTests PRIVATE bcrypt comctl32)
     endif()

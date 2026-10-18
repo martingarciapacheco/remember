@@ -7,7 +7,7 @@ IDs de la auditoría de rendimiento en `IMPLEMENTACION_MEJORAS.md`.
 
 | ID | Alcance acordado | Implementación |
 |---|---|---|
-| 01 | Opción en plugin y Settings | Capture from any position en el plugin activa el modo manual solo en ese proyecto y se guarda en su estado del DAW. Capture next play arma desde el cursor actual o la próxima reproducción. Settings establece únicamente el valor por defecto para nuevas instancias; no modifica instancias existentes ni proyectos guardados. Los estados antiguos sin esta opción conservan captura automática al inicio. |
+| 01 | Opción en plugin y Settings | Capture from any position en el plugin activa el modo manual solo en ese proyecto y se guarda en su estado del DAW. La captura se inicia automáticamente al reproducir, saltar de posición o repetir un loop, sin armado. El botón Capture next play se sustituye por un indicador de estado. Settings establece únicamente el valor por defecto para nuevas instancias; no modifica instancias existentes ni proyectos guardados. Los estados antiguos sin esta opción conservan captura automática al inicio. |
 | 02 | Apuntado, aplazado | Sección de preview persistente por proyecto, loops y duración por compases. Sin implementación nueva. |
 | 03 | Opción en plugin y Settings | Lock preview updates es compartido por todas las instancias. Project details permite además bloquear una preview individual. |
 | 04 | Opción en plugin y Settings | Replace whole preview elimina la cola antigua; desactivado mantiene la política existente de sustituir el prefijo y conservar el resto. La opción se fija al empezar cada captura. |

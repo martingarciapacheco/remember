@@ -32,8 +32,6 @@ public:
     void setCaptureOptions (CaptureOptions);
     void applySharedCaptureOptions (CaptureOptions);
     CaptureOptions getCaptureOptions() const;
-    void armCapture();
-    bool isCaptureArmed() const;
     void processBlock (const juce::AudioBuffer<float>&, juce::AudioPlayHead*, bool offline = false);
     void setOutputFolder (const juce::File&);
     void loadOutputFolderFromSettings (SettingsManager::Reader);
@@ -77,6 +75,7 @@ private:
         int count = 0;
         double bpm = 0, minimumBpm = 0, maximumBpm = 0;
         uint64_t generation = 0, sequence = 0;
+        size_t preparedDestination = 0, capturedDestination = 0;
         double rate = 44100;
         int quality = 4;
         bool mono = false, captureMono = false, replace = false;
@@ -183,6 +182,10 @@ private:
     bool promotePending (const juce::File& oldFolder);
     void removePending();
     void activateOutputFolder (const juce::File&);
+    void publishOutputFolder (const juce::File&);
+    // Worker-owned paths; audio only copies the published index into a slot.
+    std::vector<juce::File> outputDestinations { juce::File{} };
+    std::atomic<size_t> outputDestination { 0 };
     BackgroundRetirement::ModuleReference module;
     BackgroundRetirement::NativeCompletion workerCompletion, spoolCompletion, discoveryCompletion, analysisCompletion;
     bool workersStarted = false;
@@ -199,7 +202,7 @@ private:
     std::atomic<bool> captureDisabled { false };
     // -1 awaits the creation default; 0/1 belongs to this DAW instance's state.
     std::atomic<int> manualCapture { -1 };
-    std::atomic<bool> previewsLocked { false }, replacePreview { false }, captureArmed { false };
+    std::atomic<bool> previewsLocked { false }, replacePreview { false };
     std::atomic<bool> sharedCaptureOptions { true };
     std::atomic<bool> entryPreviewLocked { false };
     std::atomic<double> manualDetectedBpm { 0 };
@@ -212,7 +215,7 @@ private:
     mutable juce::CriticalSection bankLock;
     int activeSlot = -1; // only used by the audio callback or a suspended host
     uint64_t nextSequence = 0;
-    bool wasPlaying = false;
+    bool wasPlaying = false, wasAnyPosition = false;
     double previousTime = -1, previousBlockSeconds = 0, offlineTime = 0;
     double captureRate = 44100;
     std::atomic<float> recordSeconds { 60 };

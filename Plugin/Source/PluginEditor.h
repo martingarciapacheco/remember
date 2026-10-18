@@ -42,7 +42,7 @@ private:
     juce::TextButton  settingsButton { "..." };
     juce::Label       associationLabel;
     juce::ToggleButton manualToggle { "Capture from any position" }, lockToggle { "Lock preview updates" }, replaceToggle { "Replace the whole preview" };
-    juce::TextButton captureButton { "Capture next play" };
+    juce::Label captureStatus;
     void saveCaptureOptions();
     juce::TextButton  associationButton { "Associate" };
 

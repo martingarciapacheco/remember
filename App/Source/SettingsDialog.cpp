@@ -152,9 +152,16 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     styleLabel (recordHint,    11.0f, Pal::Subtext);
     styleLabel (durationLbl,   12.0f, Pal::Subtext);
     styleLabel (qualityLbl,    12.0f, Pal::Subtext);
-    styleLabel (sizeEstimate,  11.5f, Pal::Accent);
+    styleLabel (sizeEstimate,  12.0f, Pal::Text, true);
     styleLabel (storageUsage,  11.0f, Pal::Subtext);
-    styleLabel (pcmPolicy, 11.0f, Pal::Subtext);
+    styleLabel (pcmPolicy, 12.0f, Pal::Subtext);
+    sizeEstimate.setTitle ("Estimated preview storage");
+    pcmPolicy.setTitle ("WAV storage notice");
+    for (auto* label : { &sizeEstimate, &pcmPolicy })
+    {
+        label->setJustificationType (juce::Justification::topLeft);
+        label->setMinimumHorizontalScale (1.0f);
+    }
     addAndMakeVisible (recordCaption);
     addAndMakeVisible (recordHint);
     addAndMakeVisible (durationLbl);
@@ -164,6 +171,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     addAndMakeVisible (pcmPolicy);
 
     // Duration presets
+    durationCombo.setTitle ("Capture duration");
     durationCombo.addItem ("15 s",  15);
     durationCombo.addItem ("30 s",  30);
     durationCombo.addItem ("60 s",  60);
@@ -183,6 +191,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     // Quality presets: Low=2 / Med=4 / High=6 / Max=8.
     // ComboBox IDs encode the quality index directly (shifted by +1 because
     // ComboBox forbids id == 0).
+    qualityCombo.setTitle ("OGG quality");
     auto kbpsStr = [] (int q) { return " (~" + juce::String (kVorbisBitrate[q]) + " kbps)"; };
     qualityCombo.addItem ("Low"  + kbpsStr (2), 2 + 1);
     qualityCombo.addItem ("Med"  + kbpsStr (4), 4 + 1);
@@ -430,10 +439,18 @@ void SettingsDialog::updateSizeEstimate()
                    * (recordMono ? kMonoSizeFactor : 1.0) / 8.0;
 
     const auto pcm = 48000.0 * recordSeconds * (recordMono ? 1 : 2) * sizeof (float);
-    sizeEstimate.setText ("At 48 kHz: float WAV " + juce::File::descriptionOfSizeInBytes ((juce::int64) pcm)
-        + " + OGG ~" + juce::File::descriptionOfSizeInBytes ((juce::int64) bytes)
-        + " per revision (WAV x4 at 192 kHz)", juce::dontSendNotification);
-    sizeEstimate.setTooltip ("Estimated OGG size varies with content. The previous revision uses additional disk space; temporary capture WAV also uses disk while saving.");
+    const auto size = [] (double value) { return juce::File::descriptionOfSizeInBytes ((juce::int64) value); };
+    sizeEstimate.setText ("At 48 kHz: ~" + size (2.0 * (pcm + bytes)) + " per preview, including recovery copy\n"
+        + juce::String (recordSeconds) + " s " + (recordMono ? "mono" : "stereo") + ": WAV " + size (pcm)
+        + " + OGG ~" + size (bytes) + " per copy", juce::dontSendNotification);
+    sizeEstimate.setTooltip ("Estimate for the full selected duration at 48 kHz, including the current and previous copies. "
+        "WAV size scales with the DAW sample rate: twice at 96 kHz, four times at 192 kHz. "
+        "OGG size varies with content. Temporary capture and encoding files need additional space. "
+        "Existing previews may have different durations, formats or settings.");
+    pcmPolicy.setText ("WAV files stay on disk, even when replacing the whole preview.\n"
+        "Temporary WAVs need extra space while saving; WAV size is 4x at 192 kHz.", juce::dontSendNotification);
+    pcmPolicy.setTooltip ("Both tail preservation and full replacement currently retain WAV + OGG for the current and previous revisions. "
+        "These settings do not remove existing audio files.");
 }
 
 void SettingsDialog::updateStorageUsage()
@@ -544,8 +561,13 @@ void SettingsDialog::commit()
         for (const auto& root : roots) if (root.isDirectory()) { validRoot = true; break; }
         if (! previews.isDirectory() || ! validRoot)
             return juce::Result::fail ("Select an existing previews folder and at least one accessible project search folder");
-        return fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice)
+        const auto result = fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice)
             : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice);
+        // Saving accepts the search roots independently of the dialog's draft
+        // search, which is cancelled on close. Rebuild the live inventory even
+        // if a native filesystem notification is delayed or unavailable.
+        if (result.wasOk()) ProjectScanner::refreshAsync();
+        return result;
     }, [safe = juce::Component::SafePointer<SettingsDialog> (this), originalBackup] (juce::Result result)
     {
         if (safe == nullptr) return;
@@ -643,8 +665,9 @@ void SettingsDialog::resized()
     manualToggle.setBounds (area.removeFromTop (30));
     lockToggle.setBounds (area.removeFromTop (30));
     replaceToggle.setBounds (area.removeFromTop (30));
-    sizeEstimate.setBounds (area.removeFromTop (24));
-    pcmPolicy.setBounds (area.removeFromTop (22));
+    area.removeFromTop (6);
+    sizeEstimate.setBounds (area.removeFromTop (38));
+    pcmPolicy.setBounds (area.removeFromTop (38));
     storageUsage.setBounds (area.removeFromTop (24));
 
     area.removeFromTop (12);

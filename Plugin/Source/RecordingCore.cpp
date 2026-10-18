@@ -335,6 +335,7 @@ void RecordingEngine::Core::applyPreparation()
         if (lastError.startsWith ("Prepare settings:")) lastError.clear();
     }
     desiredOutputFolder = request->snapshot.previews;
+    publishOutputFolder (desiredOutputFolder);
     if (pendingCaptures.load() == 0 && ! capturing.load()) activateOutputFolder (desiredOutputFolder);
 }
 
@@ -410,6 +411,7 @@ void RecordingEngine::Core::prepareBank (double newSampleRate, int maxBlockSize,
         slot.mono = settings.mono;
         slot.captureMono = settings.mono;
         slot.settings = request;
+        slot.preparedDestination = outputDestination.load();
         slot.outputRoot = destination;
         slot.settingsRevision = settings.revision;
         slot.settingsFingerprint = settings.fingerprint;
@@ -450,6 +452,7 @@ void RecordingEngine::Core::startCapture (double bpm)
         slot.replace = replacePreview.load();
         slot.generation = generation.load();
         slot.sequence = ++nextSequence;
+        slot.capturedDestination = outputDestination.load();
         capturedBpm.store (bpm);
         samplesWritten.store (0);
         capturing.store (true);
@@ -520,7 +523,11 @@ void RecordingEngine::Core::processBlock (const juce::AudioBuffer<float>& buffer
     // A stopped block, seek, or another loop must not be appended to the preview.
     if (activeSlot >= 0 && (! playing || movedBack || jumpedForward)) finishCapture();
     const bool manual = manualCapture.load() == 1;
-    const bool requested = playing && manual && captureArmed.exchange (false);
+    // Any-position mode follows transport boundaries directly; it never needs
+    // a UI request, even when the host sends no stopped audio blocks.
+    const bool requested = playing && manual
+        && (! wasPlaying || ! wasAnyPosition || previousTime < 0 || movedBack || jumpedForward);
+    wasAnyPosition = manual;
     if (requested || (! manual && playing && time >= 0 && time <= 0.5 / captureRate && (! wasPlaying || movedBack)))
     {
         if (activeSlot < 0) startCapture (position.hasValue() ? position->getBpm().orFallback (0) : 0);
@@ -1049,7 +1056,21 @@ void RecordingEngine::Core::run()
         {
             optionsPolledAt = now;
             const auto options = SettingsManager::readSnapshot (LibraryStore::configFile());
-            if (options.fingerprint.isNotEmpty()) applySharedCaptureOptions (options.capture);
+            if (options.fingerprint.isNotEmpty())
+            {
+                applySharedCaptureOptions (options.capture);
+                if (! isPreparingSettings() && options.previews.isDirectory())
+                {
+                    juce::ScopedLock lock (projectLock);
+                    if (requestedDestination() != options.previews)
+                    {
+                        requestedOutputFolder = options.previews;
+                        ++outputFolderRevision;
+                        desiredOutputFolder = options.previews;
+                        publishOutputFolder (desiredOutputFolder);
+                    }
+                }
+            }
         }
         applyCommands();
         applyPreparation();
@@ -1135,6 +1156,8 @@ void RecordingEngine::Core::processReadySlots()
         }
         if (next->generation == generation.load())
         {
+            if (next->capturedDestination > next->preparedDestination)
+                next->outputRoot = outputDestinations[next->capturedDestination];
             activateOutputFolder (next->outputRoot);
             encodeAndSave (*next);
         }
@@ -1486,10 +1509,17 @@ void RecordingEngine::Core::setOutputFolder (const juce::File& folder)
         commands.push_back ([this, folder]
         {
             desiredOutputFolder = folder;
+            publishOutputFolder (folder);
             if (pendingCaptures.load() == 0 && ! capturing.load()) activateOutputFolder (folder);
         });
     }
     wake.signal();
+}
+void RecordingEngine::Core::publishOutputFolder (const juce::File& folder)
+{
+    if (outputDestinations.back() == folder) return;
+    outputDestinations.push_back (folder);
+    outputDestination.store (outputDestinations.size() - 1);
 }
 void RecordingEngine::Core::activateOutputFolder (const juce::File& folder)
 {
@@ -1795,7 +1825,6 @@ void RecordingEngine::Core::restoreState (const juce::XmlElement& xml, SettingsM
 {
     // Legacy projects must not inherit a default enabled after they were saved.
     manualCapture.store (xml.getBoolAttribute ("manualCapture", false) ? 1 : 0);
-    captureArmed.store (false);
     Entry replacement;
     auto id = xml.getStringAttribute ("projectId");
     if (id.isNotEmpty() && ! juce::Uuid (id).isNull()) replacement.id = juce::Uuid (id).toString();
@@ -1935,7 +1964,6 @@ juce::String RecordingEngine::Core::getTransportWarning() const
 void RecordingEngine::Core::setCaptureOptions (CaptureOptions value)
 {
     manualCapture.store (value.manual ? 1 : 0); previewsLocked.store (value.locked); replacePreview.store (value.replace);
-    if (! value.manual || value.locked) captureArmed.store (false);
 }
 CaptureOptions RecordingEngine::Core::getCaptureOptions() const
 { return { manualCapture.load() == 1, previewsLocked.load(), replacePreview.load() }; }
@@ -1944,11 +1972,7 @@ void RecordingEngine::Core::applySharedCaptureOptions (CaptureOptions value)
     int uninitialised = -1;
     manualCapture.compare_exchange_strong (uninitialised, value.manual ? 1 : 0);
     previewsLocked.store (value.locked); replacePreview.store (value.replace);
-    if (manualCapture.load() != 1 || value.locked) captureArmed.store (false);
 }
-void RecordingEngine::Core::armCapture()
-{ if (manualCapture.load() == 1 && ! isPreviewLocked()) captureArmed.store (true); }
-bool RecordingEngine::Core::isCaptureArmed() const { return captureArmed.load(); }
 
 void RecordingEngine::Core::refreshEntryPreferences()
 {
@@ -1963,6 +1987,5 @@ void RecordingEngine::Core::refreshEntryPreferences()
         juce::ScopedLock lock (resultsLock);
         manualDetectedKey = metadata.getProperty ("keyOverride", "").toString();
     }
-    if (entryPreviewLocked.load()) captureArmed.store (false);
     preferencesReadAt = now; lastPreferenceId = identity;
 }

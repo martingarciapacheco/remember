@@ -4,6 +4,7 @@
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/BackgroundRetirement.h"
 #include "WindowsTaskbarTransport.h"
+#include <RememberIconData.h>
 
 class AppShell::MainWindow : public juce::DocumentWindow, private juce::Timer
 {
@@ -211,22 +212,10 @@ public:
 private:
     static juce::Image createIcon()
     {
-        juce::Image icon (juce::Image::ARGB, 32, 32, true);
-        juce::Graphics graphics (icon);
-        graphics.setColour (RememberUI::colour (Pal::Accent));
-        graphics.fillRoundedRectangle (1.0f, 1.0f, 30.0f, 30.0f, 7.0f);
-        graphics.setColour (juce::Colours::white);
-
-        juce::Path waveform;
-        waveform.startNewSubPath (6.0f, 16.0f);
-        waveform.lineTo (10.0f, 16.0f);
-        waveform.lineTo (13.0f, 8.0f);
-        waveform.lineTo (18.0f, 24.0f);
-        waveform.lineTo (22.0f, 16.0f);
-        waveform.lineTo (26.0f, 16.0f);
-        graphics.strokePath (waveform, juce::PathStrokeType (2.5f,
-            juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        return icon;
+        return juce::ImageCache::getFromMemory (
+            RememberIconData::Icono_de_casete_en_forma_de_D_png,
+            RememberIconData::Icono_de_casete_en_forma_de_D_pngSize)
+                .rescaled (64, 64, juce::Graphics::highResamplingQuality);
     }
 
     std::function<void()> onOpen;
