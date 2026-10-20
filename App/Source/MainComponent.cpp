@@ -3,6 +3,7 @@
 #include "SettingsDialog.h"
 #include "PreviewFolderSetup.h"
 #include "UsedSoundsDialog.h"
+#include "StatisticsDialog.h"
 #include "BuildInfo.h"
 
 // Pal:: colours are defined in ProjectListComponent.h
@@ -12,6 +13,9 @@ MainComponent::MainComponent()
     setSize (960, 680);
     setWantsKeyboardFocus (true);
     list.addSearchKeyListener (this);
+    sidebar.addMouseListener (this, true);
+    list.addMouseListener (this, true);
+    juce::Desktop::getInstance().addFocusChangeListener (this);
 
     settingsButton.setTooltip ("Open settings (previews & projects folders)");
     RememberUI::bindColour (settingsButton, juce::TextButton::buttonColourId, Pal::Elevated);
@@ -20,6 +24,12 @@ MainComponent::MainComponent()
     RememberUI::iconButton (settingsButton, "settings", "Settings");
     settingsButton.setTooltip ("Settings");
     addAndMakeVisible (settingsButton);
+    RememberUI::iconButton (statisticsButton, "statistics", "Statistics");
+    statisticsButton.setTooltip ("Statistics");
+    RememberUI::bindColour (statisticsButton, juce::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (statisticsButton, juce::TextButton::textColourOffId, Pal::Subtext);
+    statisticsButton.onClick = [this] { StatisticsDialog::launch (&player); };
+    addAndMakeVisible (statisticsButton);
 
     // Clicking a row loads AND auto-plays the preview
     list.onEntrySelected = [this] (const ProjectEntry& e) { player.loadEntry (e); if (player.autoplaySelection()) player.play(); };
@@ -82,6 +92,39 @@ MainComponent::MainComponent()
     // missing projects from that publication without a second scan or dialogs.
 }
 
+MainComponent::~MainComponent()
+{
+    juce::Desktop::getInstance().removeFocusChangeListener (this);
+    sidebar.removeMouseListener (this);
+    list.removeMouseListener (this);
+    list.removeSearchKeyListener (this);
+}
+
+void MainComponent::rememberUndoContext (juce::Component* component)
+{
+    if (component == nullptr) return;
+    if (component == &sidebar || sidebar.isParentOf (component)) lastUndoContext = ProjectScanner::UndoContext::Folders;
+    else if (component == &list || list.isParentOf (component)) lastUndoContext = ProjectScanner::UndoContext::Previews;
+}
+
+void MainComponent::mouseDown (const juce::MouseEvent& event)
+{
+    lastFocusedComponent = juce::Component::getCurrentlyFocusedComponent();
+    rememberUndoContext (event.eventComponent);
+}
+
+void MainComponent::observeUndoFocus (juce::Component* component)
+{
+    if (component == lastFocusedComponent.getComponent()) return;
+    lastFocusedComponent = component;
+    rememberUndoContext (component);
+}
+
+void MainComponent::globalFocusChanged (juce::Component* component)
+{
+    observeUndoFocus (component);
+}
+
 bool MainComponent::libraryShortcut (const juce::KeyPress& key)
 {
     if (key == juce::KeyPress ('F', juce::ModifierKeys::ctrlModifier, 0)) { list.focusSearch(); return true; }
@@ -95,6 +138,9 @@ bool MainComponent::libraryShortcut (const juce::KeyPress& key)
 bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
     if (libraryShortcut (key)) return true;
+    // Desktop focus notifications are deferred. Observe a keyboard focus move
+    // before the next shortcut, without overriding a newer click that kept focus.
+    observeUndoFocus (juce::Component::getCurrentlyFocusedComponent());
     // Text editors own typing and cursor movement; only explicit library
     // commands above may change the app while the user is entering text.
     if (auto* focused = juce::Component::getCurrentlyFocusedComponent();
@@ -106,11 +152,12 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     { player.seekBySeconds (-5); return true; }
     if (key == juce::KeyPress (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier, 0))
     { player.seekBySeconds (5); return true; }
-    if (key.getModifiers().isCtrlDown() && key.getKeyCode() == 'Z')
+    if (key == juce::KeyPress ('Z', juce::ModifierKeys::ctrlModifier, 0))
     {
-        ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); },
+        const auto context = lastUndoContext;
+        ProjectScanner::editAsync ([context] { return ProjectScanner::undoOrganization (context); },
             [safe = juce::Component::SafePointer<MainComponent> (this)] (juce::Result result)
-            { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Cannot undo organization", result.getErrorMessage()); });
+            { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Cannot undo", result.getErrorMessage()); });
         return true;
     }
     // Space: play/pause currently loaded preview
@@ -202,7 +249,7 @@ void MainComponent::paint (juce::Graphics& g)
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (Pal::Subtext));
     g.drawText ("Browse projects and listen to previews", margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 42,
-                getWidth() - margin - kSidebarWidth - 120, 22, juce::Justification::centredLeft);
+                getWidth() - margin - kSidebarWidth - 162, 22, juce::Justification::centredLeft);
 }
 
 void MainComponent::resized()
@@ -211,6 +258,8 @@ void MainComponent::resized()
     constexpr int margin = RememberUI::appOuterMargin;
     auto header = area.removeFromTop (64 + margin).withTrimmedTop (margin).withTrimmedRight (margin);
     settingsButton.setBounds (header.removeFromRight (34).withSizeKeepingCentre (34, 34));
+    header.removeFromRight (8);
+    statisticsButton.setBounds (header.removeFromRight (34).withSizeKeepingCentre (34, 34));
     player.setBounds (area.removeFromBottom (kPlayerHeight));
     auto sidebarArea = area.removeFromLeft (kSidebarWidth + margin).withTrimmedLeft (margin);
     constexpr int padding = RememberUI::appSidebarPadding;

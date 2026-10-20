@@ -393,18 +393,18 @@ juce::StringArray ProjectScanner::getAllUniqueTags()
 
 bool ProjectScanner::deleteEntry (const ProjectEntry& entry)
 {
-    // Each entry lives in its own folder: <previews>/<name>/{preview.ogg, metadata.json}
-    auto folder = entry.metadataFile.getParentDirectory();
-    if (! folder.isDirectory()) return false;
-
-    // Safety check: never delete anything outside the previews root.
-    auto previews = getPreviewsFolder();
-    if (! previews.isDirectory() || ! folder.isAChildOf (previews))
-        return false;
-
-    auto result = LibraryStore::deleteEntry (previews, folder);
+    const auto result = trashEntry (entry);
     if (result.failed()) juce::Logger::writeToLog (result.getErrorMessage());
     return result.wasOk();
+}
+
+juce::Result ProjectScanner::trashEntry (const ProjectEntry& entry)
+{
+    LibraryStore::TrashReceipt receipt;
+    const auto result = LibraryStore::deleteEntry (getPreviewsFolder(), entry.metadataFile.getParentDirectory(), &receipt,
+                                                  entry.storageError.isEmpty() ? entry.projectId : juce::String{});
+    if (result.wasOk()) OrganizationUndo::recordDeletion (std::move (receipt));
+    return result;
 }
 
 namespace
@@ -1117,13 +1117,13 @@ juce::StringArray ProjectScanner::getAllFolderPaths()
 
 juce::Result ProjectScanner::createFolder (const juce::String& path)
 {
-    OrganizationUndo::Batch undoBatch;
+    OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     if (path.trim().isEmpty()) return juce::Result::fail ("Folder name is empty");
     return editExplicitFolders ([&] (juce::StringArray& list) { list.addIfNotAlreadyThere (path); });
 }
 juce::Result ProjectScanner::deleteFolder (const juce::String& path)
 {
-    OrganizationUndo::Batch undoBatch;
+    OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     if (path.isEmpty()) return juce::Result::fail ("Cannot delete the All collection");
     auto remove = [&] (const juce::String& value)
     { return value == path || value.startsWith (path + "/") ? juce::String{} : value; };
@@ -1136,7 +1136,7 @@ juce::Result ProjectScanner::deleteFolder (const juce::String& path)
 }
 juce::Result ProjectScanner::renameFolder (const juce::String& oldPath, const juce::String& newPath)
 {
-    OrganizationUndo::Batch undoBatch;
+    OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     if (oldPath.isEmpty() || newPath.isEmpty()) return juce::Result::fail ("Folder path is empty");
     if (oldPath == newPath) return juce::Result::ok();
     if (newPath.startsWith (oldPath + "/")) return juce::Result::fail ("Cannot move a folder inside itself");
@@ -1190,7 +1190,7 @@ void ProjectScanner::setSidebarSort (SidebarSort s)
 juce::Result ProjectScanner::positionFolder (const juce::String& path, const juce::String& parent,
                                             const juce::String& beforePath)
 {
-    OrganizationUndo::Batch undoBatch;
+    OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     auto paths = getAllFolderPaths();
     // Include edits accepted since the last index publication.
     const auto config = loadConfig();
@@ -1289,5 +1289,5 @@ juce::Result ProjectScanner::restoreEntry (const ProjectEntry& entry)
 {
     return LibraryStore::restoreEntry (getPreviewsFolder(), entry.metadataFile.getParentDirectory());
 }
-bool ProjectScanner::canUndoOrganization() { return OrganizationUndo::available(); }
-juce::Result ProjectScanner::undoOrganization() { return OrganizationUndo::undo(); }
+bool ProjectScanner::canUndoOrganization (UndoContext context) { return OrganizationUndo::available (context); }
+juce::Result ProjectScanner::undoOrganization (UndoContext context) { return OrganizationUndo::undo (context, getPreviewsFolder()); }

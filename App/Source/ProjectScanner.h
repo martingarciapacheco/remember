@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "../../Shared/ProjectIdentity.h"
 #include "../../Shared/LibraryStore.h"
+#include "../../Shared/OrganizationUndoContext.h"
 #include <functional>
 #include <memory>
 #include "../../Shared/CaptureOptions.h"
@@ -153,13 +154,15 @@ public:
                                                    const juce::String& fileId = {},
                                                    const juce::String& fingerprint = {});
 
-    // Removes everything associated with this entry from disk (the project
-    // folder containing preview.ogg + metadata.json). Returns true on success.
+    // Moves the preview and metadata to Trash and records a session undo receipt.
+    // The DAW project is preserved. Call from an edit worker.
     static bool deleteEntry (const ProjectEntry& entry);
+    static juce::Result trashEntry (const ProjectEntry& entry);
     static juce::Array<ProjectEntry> scanTrash (const juce::File& root);
     static juce::Result restoreEntry (const ProjectEntry& entry);
-    static bool canUndoOrganization();
-    static juce::Result undoOrganization();
+    using UndoContext = OrganizationUndo::Context;
+    static bool canUndoOrganization (UndoContext context = UndoContext::Any);
+    static juce::Result undoOrganization (UndoContext context = UndoContext::Any);
 
     // Returns every unique tag string that appears across all entries,
     // sorted alphabetically (case-insensitive). Cheap: uses the same cache

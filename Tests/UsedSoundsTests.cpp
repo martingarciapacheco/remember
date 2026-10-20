@@ -471,6 +471,15 @@ void testUsedSounds (const juce::File& root)
         check (&player != &projectPlayer && player.getParentComponent() == &dialog && projectPlayer.getParentComponent() == nullptr,
             "Used sounds moves the main player rather than using its own timeline");
         waitFor ([&] { return dialog.hasLoaded(); }, "Inventory did not load");
+        for (const auto size : { juce::Point<int> (640, 480), juce::Point<int> (1024, 768) })
+            for (const auto category : { UsedSounds::Kind::Sample, UsedSounds::Kind::Midi, UsedSounds::Kind::Generator })
+            {
+                dialog.setSize (size.x, size.y); dialog.setCategory (category);
+                const auto surface = dialog.getLocalArea (&player, player.surfaceBounds());
+                const auto listBounds = UsedSoundsTestAccess::list (dialog).getBounds();
+                check (surface.getX() == listBounds.getX() && surface.getRight() == listBounds.getRight(), "Used sounds player surface is narrower than its list");
+                snapshot (dialog, "used-sounds-aligned-" + juce::String ((int) category) + "-" + juce::String (size.x) + ".png");
+            }
         dialog.setCategory (UsedSounds::Kind::Midi);
         check (played == 0 && ReadAheadSource::processBufferBytes() == baseline, "Browsing generates audio");
         std::vector<size_t> indices;

@@ -15,7 +15,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
 option(REMEMBER_COPY_PLUGIN_AFTER_BUILD "Install the VST3 after building" OFF)
 juce_add_plugin(RememberPlugin
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../Imagenes/Icono de casete en forma de D.png"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../Imagenes/Icono de casete en forma de R.png"
     COMPANY_NAME            "Martin Garcia Pacheco"
     COMPANY_WEBSITE         "https://github.com/martingarciapacheco/remember"
     BUNDLE_ID               "com.martingarciapacheco.remember.plugin"

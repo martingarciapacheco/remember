@@ -688,7 +688,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
                 if (safe->onBeforeStorageChange) safe->onBeforeStorageChange (entry);
                 ProjectScanner::editAsync ([entry]
                 {
-                    return LibraryStore::deleteEntry (ProjectScanner::getPreviewsFolder(), entry.metadataFile.getParentDirectory());
+                    return ProjectScanner::trashEntry (entry);
                 }, [safe] (juce::Result deletion)
                 {
                     if (safe != nullptr && deletion.failed()) juce::AlertWindow::showMessageBoxAsync (

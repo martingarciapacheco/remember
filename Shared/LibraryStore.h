@@ -54,8 +54,15 @@ StorageUsage measureStorage (const juce::File& root, const std::function<bool()>
 juce::File audioFile (const juce::File& entryFolder, const juce::var& metadata, bool pcm);
 juce::File audioFile (const juce::File& entryFolder, bool pcm);
 bool isDeleted (const juce::File& entryFolder);
-juce::Result deleteEntry (const juce::File& previewsRoot, const juce::File& entryFolder);
-juce::Result restoreEntry (const juce::File& previewsRoot, const juce::File& trashFolder);
+struct TrashReceipt
+{
+    juce::File root, folder;
+    juce::String identity, deletionId;
+};
+juce::Result deleteEntry (const juce::File& previewsRoot, const juce::File& entryFolder,
+                          TrashReceipt* receipt = nullptr, const juce::String& expectedIdentity = {});
+juce::Result restoreEntry (const juce::File& previewsRoot, const juce::File& trashFolder,
+                           const juce::String& expectedIdentity = {}, const juce::String& expectedDeletionId = {});
 juce::Result purgeExpiredTrash (const juce::File& previewsRoot, juce::Time now = juce::Time::getCurrentTime());
 juce::Result renameEntryWithoutReplacement (const juce::File& source, const juce::File& target);
 

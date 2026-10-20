@@ -2,10 +2,30 @@
 #include "WaveformPlayerComponent.h"
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
+#include "PreviewExport.h"
 
 namespace
 {
 std::atomic<int> activeLoads { 0 };
+struct WaveformPreferences : juce::ChangeBroadcaster
+{
+    bool colorful = false, separate = false, requested = false, touched = false;
+};
+WaveformPreferences& waveformPreferences() { static WaveformPreferences value; return value; }
+void saveWaveformPreferences()
+{
+    auto& preferences = waveformPreferences(); preferences.touched = true;
+    preferences.sendSynchronousChangeMessage();
+    juce::var patch (new juce::DynamicObject());
+    patch.getDynamicObject()->setProperty ("colorfulWaveforms", preferences.colorful);
+    patch.getDynamicObject()->setProperty ("separateWaveformChannels", preferences.separate);
+    ProjectScanner::editAsync ([patch] { return LibraryStore::patchJson (LibraryStore::configFile(), patch, true); },
+        [] (juce::Result result)
+        {
+            if (result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon,
+                "Cannot save waveform preferences", result.getErrorMessage());
+        });
+}
 struct LoadTicket
 {
     LoadTicket() { activeLoads.fetch_add (1); }
@@ -23,6 +43,22 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     auto safePlayer = juce::Component::SafePointer<WaveformPlayerComponent> (this);
     setTooltip (RememberUI::shortcutTooltip ("Seek preview", "Alt+Left / Alt+Right", "Move backward or forward by 5 seconds."));
     outputManager.addChangeListener (this);
+    auto& visual = waveformPreferences();
+    visual.addChangeListener (this);
+    if (! visual.requested)
+    {
+        visual.requested = true;
+        auto saved = std::make_shared<juce::var>();
+        ProjectScanner::queryAsync ([saved] { *saved = LibraryStore::readJson (LibraryStore::configFile()); return juce::Result::ok(); },
+            [saved] (juce::Result result)
+            {
+                auto& state = waveformPreferences();
+                if (result.failed() || state.touched) return;
+                state.colorful = (bool) saved->getProperty ("colorfulWaveforms", false);
+                state.separate = (bool) saved->getProperty ("separateWaveformChannels", false);
+                state.sendSynchronousChangeMessage();
+            });
+    }
     sourcePlayer.onError = [safePlayer] (juce::String error)
     { juce::MessageManager::callAsync ([safePlayer, error] { if (safePlayer != nullptr) safePlayer->handleDeviceFailure (error); }); };
     deviceSettingsLoaded = ! persistAudioState;
@@ -127,6 +163,17 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     setOpenProjectAvailable (false);
     btnSetup (assignBtn, Pal::Elevated, Pal::Subtext);
     assignBtn.setEnabled (false);
+    btnSetup (dragBtn, Pal::Elevated, Pal::Text);
+    dragBtn.setTitle ("Drag preview audio");
+    dragBtn.setDescription ("Drag a copy of the complete preview as a WAV file to a DAW or folder.");
+    dragBtn.setTooltip ("Select a recording to prepare its WAV copy");
+    dragBtn.setEnabled (false);
+    dragBtn.begin = [this]
+    {
+        if (exportedPreview == juce::File{}) return;
+        if (! startPreviewDrag ({ exportedPreview.getFullPathName() }, false, &dragBtn))
+            dragBtn.setTooltip ("Cannot start drag. Release the mouse and try again.");
+    };
     btnSetup (audioBtn, Pal::Elevated, Pal::Subtext);
     audioBtn.onClick = [this] { showAudioSettings(); };
 
@@ -221,6 +268,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     addAndMakeVisible (playBtn);
     addAndMakeVisible (openBtn);
     addAndMakeVisible (assignBtn);
+    addAndMakeVisible (dragBtn);
     addAndMakeVisible (nameLabel);
     addAndMakeVisible (pathLabel);
     addAndMakeVisible (timeLabel);
@@ -236,6 +284,7 @@ WaveformPlayerComponent::~WaveformPlayerComponent()
     if (metronomePopup != nullptr) metronomePopup->dismiss();
     loadGeneration->fetch_add (1);
     outputManager.removeChangeListener (this);
+    waveformPreferences().removeChangeListener (this);
     if (audioDialog != nullptr)
     { audioDialog->clearContentComponent(); audioDialog->exitModalState (0); }
     detachSource();
@@ -275,7 +324,8 @@ void WaveformPlayerComponent::releaseEntry (const juce::File& metadataFile)
     if (currentEntry.metadataFile != metadataFile) return;
     loadGeneration->fetch_add (1);
     stop(); detachSource();
-    currentEntry = {}; waveform.reset();
+    currentEntry = {}; waveform.reset(); exportedPreview = {}; dragBtn.setEnabled (false);
+    dragBtn.setTooltip ("Select a recording to prepare its WAV copy");
     metronome.setTempo (0); metronomeBtn.setEnabled (false);
     isLoaded = false; isLoading = false; playWhenLoaded = false;
     playbackError.clear(); previewError.clear(); playbackErrorFromDevice = false;
@@ -292,6 +342,9 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     detachSource();
     const auto request = loadGeneration->fetch_add (1) + 1;
     currentEntry = entry;
+    exportedPreview = {}; dragBtn.setEnabled (false);
+    dragBtn.setTooltip (entry.pending ? "Recording is not ready for export" : entry.auditionReader
+        ? "Use the MIDI row's Drag action" : "Preparing complete preview WAV...");
     queue.select (entry);
     const auto tempo = entry.bpmOverride > 0 ? entry.bpmOverride : entry.bpm;
     metronome.setTempo (tempo);
@@ -321,8 +374,28 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     if (entry.storageError.isNotEmpty())
     {
         isLoading = false; playbackError = previewError = entry.storageError;
+        dragBtn.setTooltip ("Cannot prepare WAV: " + entry.storageError);
         pathLabel.setText (playbackError, juce::dontSendNotification);
         return;
+    }
+
+    if (! compactMode && ! entry.pending && ! entry.auditionReader)
+    {
+        const auto generation = loadGeneration;
+        auto exported = std::make_shared<juce::File>();
+        ProjectScanner::queryAsync ([entry, generation, request, exported]
+        {
+            if (generation->load() != request) return juce::Result::ok();
+            return PreviewExport::prepare (entry, ProjectScanner::getPreviewsFolder(), *exported,
+                [generation, request] { return generation->load() != request; });
+        }, [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this), generation, request, exported] (juce::Result result)
+        {
+            if (! safe || generation->load() != request) return;
+            safe->exportedPreview = *exported;
+            safe->dragBtn.setEnabled (result.wasOk() && *exported != juce::File{});
+            safe->dragBtn.setTooltip (result.wasOk() ? "Drag the complete preview as WAV to a DAW or folder. Copies remain in Exports."
+                                                    : "Cannot prepare WAV: " + result.getErrorMessage());
+        });
     }
 
     // One loader for the process. Obsolete requests never touch a component;
@@ -378,7 +451,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
                     safe->waveform = ticket->envelope; safe->applyOutputGain();
                     if (safe->playWhenLoaded) safe->play();
                 }
-                else safe->pathLabel.setTooltip (result.getErrorMessage());
+                else safe->pathLabel.setDescription (result.getErrorMessage());
                 safe->repaint();
             });
     });
@@ -631,7 +704,7 @@ void WaveformPlayerComponent::updatePathLabel()
                        : currentEntry.projectPath.isEmpty()
                            ? "(no project file - press Assign path)" : currentEntry.projectPath,
                        juce::dontSendNotification);
-    pathLabel.setTooltip (currentEntry.projectProblem + "\n" + currentEntry.projectPath);
+    pathLabel.setDescription (currentEntry.projectProblem + "\n" + currentEntry.projectPath);
 }
 
 void WaveformPlayerComponent::setOpenProjectAvailable (bool available)
@@ -644,6 +717,7 @@ void WaveformPlayerComponent::setOpenProjectAvailable (bool available)
 
 void WaveformPlayerComponent::changeListenerCallback (juce::ChangeBroadcaster* broadcaster)
 {
+    if (broadcaster == &waveformPreferences()) { repaint (waveArea); return; }
     if (broadcaster != &outputManager) return;
     auto* device = outputManager.getCurrentAudioDevice();
     if (! audioDeviceOpen && audioDialog != nullptr && device && device->isOpen())
@@ -714,7 +788,7 @@ void WaveformPlayerComponent::timerCallback()
             reportedUnderruns = underruns;
             juce::Logger::writeToLog ("Playback underruns=" + juce::String ((juce::int64) underruns)
                 + " cacheBytes=" + juce::String ((juce::int64) readerSource->bufferBytes()));
-            pathLabel.setTooltip ("Storage could not supply audio in time. Underruns: " + juce::String ((juce::int64) underruns));
+            pathLabel.setDescription ("Storage could not supply audio in time. Underruns: " + juce::String ((juce::int64) underruns));
         }
     }
 
@@ -736,6 +810,8 @@ void WaveformPlayerComponent::mouseDown (const juce::MouseEvent& e)
 {
     if (waveArea.contains (e.getPosition()))
     {
+        if (e.mods.isPopupMenu()) { showWaveformOptions(); return; }
+        if (! e.mods.isLeftButtonDown()) return;
         seekTo ((double) (e.x - waveArea.getX()) / (double) waveArea.getWidth());
     }
 }
@@ -744,7 +820,7 @@ void WaveformPlayerComponent::mouseDrag (const juce::MouseEvent& e)
 {
     // Only scrub if the drag started inside the waveform area — and clamp the
     // x position so dragging outside the bounds pins the playhead to the edge.
-    if (! waveArea.contains (e.getMouseDownPosition())) return;
+    if (! e.mods.isLeftButtonDown() || e.mods.isPopupMenu() || ! waveArea.contains (e.getMouseDownPosition())) return;
 
     int x = juce::jlimit (waveArea.getX(), waveArea.getRight(), e.x);
     double norm = (double) (x - waveArea.getX()) / (double) waveArea.getWidth();
@@ -756,7 +832,7 @@ void WaveformPlayerComponent::mouseDrag (const juce::MouseEvent& e)
 void WaveformPlayerComponent::paint (juce::Graphics& g)
 {
     g.fillAll (RememberUI::colour (Pal::BgDeep));
-    RememberUI::panel (g, getLocalBounds().toFloat().reduced ((float) RememberUI::appOuterMargin, 6),
+    RememberUI::panel (g, surfaceBounds().toFloat(),
                        RememberUI::surfaceRadius, false);
     if (! isLoaded)
     {
@@ -773,25 +849,42 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
 
     if (waveform && ! waveform->channels[0].empty() && ! waveArea.isEmpty())
     {
-        // Overlay L/R peaks on one common amplitude axis, without an RMS layer.
-        for (int ch = 0; ch < 2; ++ch)
+        const bool separate = hasSeparateWaveformChannels() && waveform->channelCount > 1;
+        for (int ch = 0; ch < waveform->channelCount; ++ch)
         {
             const auto& peaks = waveform->channels[(size_t) ch];
-            const auto centre = (float) waveArea.getCentreY();
-            const auto scale = waveArea.getHeight() * 0.45f;
+            auto channelArea = waveArea;
+            if (separate)
+                channelArea = { waveArea.getX(), waveArea.getY() + ch * waveArea.getHeight() / 2,
+                                waveArea.getWidth(), waveArea.getHeight() / 2 };
+            const auto centre = (float) channelArea.getCentreY();
+            const auto scale = channelArea.getHeight() * 0.45f;
+            if (separate)
+            {
+                g.setColour (RememberUI::colour (Pal::Border));
+                g.drawHorizontalLine ((int) centre, (float) channelArea.getX(), (float) channelArea.getRight());
+            }
             g.setColour (RememberUI::colour (ch == 0 ? Pal::WaveLeft : Pal::WaveRight));
             const auto clip = g.getClipBounds().getIntersection (waveArea);
             for (int x = clip.getX() - waveArea.getX(); x < clip.getRight() - waveArea.getX(); ++x)
             {
                 const auto first = (size_t) x * peaks.size() / waveArea.getWidth();
                 const auto last = juce::jmin (peaks.size(), juce::jmax (first + 1, (size_t) (x + 1) * peaks.size() / waveArea.getWidth()));
-                float low = 0, high = 0;
+                float low = 0, high = 0, power = 0, moment = 0;
                 for (auto i = first; i < last; ++i)
                 {
                     low = juce::jmin (low, peaks[i].low); high = juce::jmax (high, peaks[i].high);
+                    power += peaks[i].spectralPower; moment += peaks[i].frequencyMoment;
                 }
+                g.setColour (hasColorfulWaveforms() && power > 0 ? RememberUI::waveformFrequencyColour (moment / power)
+                    : RememberUI::colour (ch == 0 ? Pal::WaveLeft : Pal::WaveRight));
                 g.drawVerticalLine (waveArea.getX() + x, centre - juce::jmin (1.0f, high) * scale,
                                    centre - juce::jmax (-1.0f, low) * scale);
+            }
+            if (separate)
+            {
+                g.setColour (RememberUI::colour (Pal::Subtext)); g.setFont (RememberUI::font (11));
+                g.drawText (ch == 0 ? "L" : "R", channelArea.reduced (4, 0).removeFromTop (14), juce::Justification::centredLeft);
             }
         }
 
@@ -828,7 +921,7 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
 
 void WaveformPlayerComponent::resized()
 {
-    auto area = getLocalBounds().reduced (26, 16);
+    auto area = getLocalBounds().reduced (compactMode ? 20 : 26, 16);
 
     auto topRow = area.removeFromTop (34);
     shuffleBtn.setBounds (topRow.removeFromLeft (32)); previousBtn.setBounds (topRow.removeFromLeft (32));
@@ -844,6 +937,8 @@ void WaveformPlayerComponent::resized()
     openBtn.setBounds   (btmRow.removeFromRight (110).reduced (2, 0));
     btmRow.removeFromRight (6);
     assignBtn.setBounds (btmRow.removeFromRight (130).reduced (2, 0));
+    btmRow.removeFromRight (6);
+    dragBtn.setBounds (btmRow.removeFromRight (64).reduced (2, 0));
     pathLabel.setBounds (btmRow);
 
     if (! compactMode) area.removeFromBottom (6);
@@ -871,7 +966,7 @@ void WaveformPlayerComponent::setCompactMode (bool value)
 {
     if (metronomePopup != nullptr) metronomePopup->dismiss();
     compactMode = value;
-    for (auto* component : std::initializer_list<juce::Component*> { &openBtn, &assignBtn, &pathLabel }) component->setVisible (! value);
+    for (auto* component : std::initializer_list<juce::Component*> { &openBtn, &assignBtn, &dragBtn, &pathLabel }) component->setVisible (! value);
     resized(); repaint();
 }
 void WaveformPlayerComponent::setMetronomeEnabled (bool value)
@@ -1011,7 +1106,7 @@ void WaveformPlayerComponent::savePlaybackPreferences()
     o.setProperty ("shufflePlayback", queue.shuffle); o.setProperty ("repeatPlayback", (int) queue.repeat); o.setProperty ("autoplaySelection", autoplay);
     auto safe = juce::Component::SafePointer<WaveformPlayerComponent> (this);
     ProjectScanner::editAsync ([patch] { return LibraryStore::patchJson (LibraryStore::configFile(), patch, true); }, [safe] (juce::Result result)
-    { if (safe != nullptr && result.failed()) { safe->pathLabel.setText ("Cannot save playback preferences", juce::dontSendNotification); safe->pathLabel.setTooltip (result.getErrorMessage()); } });
+    { if (safe != nullptr && result.failed()) { safe->pathLabel.setText ("Cannot save playback preferences", juce::dontSendNotification); safe->pathLabel.setDescription (result.getErrorMessage()); } });
 }
 void WaveformPlayerComponent::showPlaybackOptions()
 {
@@ -1024,4 +1119,30 @@ void WaveformPlayerComponent::showPlaybackOptions()
         if (r == 1) { safe->autoplay = ! safe->autoplay; safe->savePlaybackPreferences(); }
         if (r == 2) safe->setNormalized (! safe->normalize);
     });
+}
+
+bool WaveformPlayerComponent::hasColorfulWaveforms() const { return waveformPreferences().colorful; }
+bool WaveformPlayerComponent::hasSeparateWaveformChannels() const { return waveformPreferences().separate; }
+void WaveformPlayerComponent::setColorfulWaveforms (bool value)
+{
+    if (waveformPreferences().colorful == value) return;
+    waveformPreferences().colorful = value; saveWaveformPreferences();
+}
+void WaveformPlayerComponent::setSeparateWaveformChannels (bool value)
+{
+    if (waveformPreferences().separate == value) return;
+    waveformPreferences().separate = value; saveWaveformPreferences();
+}
+void WaveformPlayerComponent::showWaveformOptions()
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "Colorful waveforms", true, hasColorfulWaveforms());
+    menu.addItem (2, "Separate L/R channels", true, hasSeparateWaveformChannels());
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(),
+        [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this)] (int choice)
+        {
+            if (! safe) return;
+            if (choice == 1) safe->setColorfulWaveforms (! safe->hasColorfulWaveforms());
+            if (choice == 2) safe->setSeparateWaveformChannels (! safe->hasSeparateWaveformChannels());
+        });
 }

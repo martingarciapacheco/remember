@@ -7,6 +7,10 @@ check the commit shown in the app/plugin or the release's `release-manifest.json
 to distinguish builds. Install the app and plugin together: older beta5 builds
 cannot read the new `.rmp` preview format. Existing WAV/OGG previews remain readable.
 
+This refresh also adds Statistics, WAV preview export, shared waveform display
+options and contextual undo. See the feature guide below and the
+[DAW compatibility register](DAW_COMPATIBILITY.md) for support and validation limits.
+
 ## Install and record your first preview
 
 1. Download `Remember-1.0.0-beta5-setup.exe` from the [beta release](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta5). The installer includes both the app and plugin.
@@ -25,10 +29,12 @@ in the tray; choose **Exit** from the tray menu to quit.
 
 - **Capture:** automatic recording from transport zero or any position when enabled, preview locking and replacement options. Audio passes through unchanged. Shorter recaptures preserve the existing tail using compressed fragments without repeatedly encoding it.
 - **Library:** search, favourites, tags, nested folders, multiple folder selection, filters with tag suggestions, smart collections, notes, bulk organisation and a recoverable 30-day trash. Clear filters resets search, favourites, folders and project filters together. Project associations follow verified file moves and renames; backups are excluded where recognised.
-- **Playback:** seekable waveform, queue, shuffle, repeat Off/All/One/Single, loudness normalization, volume/mute, output-device selection, media keys and Windows taskbar controls.
+- **Playback and export:** seekable waveform, queue, shuffle, repeat Off/All/One/Single, loudness normalization, volume/mute, output-device selection, media keys and Windows taskbar controls. Drag the complete preview as a 24-bit WAV; optionally show spectral colours and separate L/R axes.
 - **Musical tools:** BPM/key analysis with manual corrections and a BPM-synchronised metronome with its own saved volume.
 - **Used sounds for FL Studio:** inspect samples, MIDI patterns and generators from the last saved `.flp`; filter by playlist usage, audition samples/MIDI and drag or save copies of samples, `.mid` files and saved generator state as FL Studio `.fst` presets. Supported formats show saved preset names. MIDI audition offers piano, saw, square and sine sounds; supported sample channels use their source sample.
 - **Appearance:** System, Light and Dark themes, interface zoom, shared typography and keyboard shortcuts.
+- **Statistics for FL Studio and Ableton Live:** rank the library's top 1000 sample paths, 50 instruments and 50 effects, counting each item once per saved project. Search, audition or copy samples and hide/unhide ranking entries. See the dedicated section below for coverage and limits.
+- **Contextual undo:** Ctrl+Z follows the last sidebar or recording-list interaction, with separate session histories. Folder deletion keeps recordings; recording deletion can be undone from Trash.
 - **Recovery:** recording integrity checks, repair and revision audition/restoration when complete recoverable audio survives.
 - **Storage:** self-contained `.rmp` previews, per-recording audio size, background usage estimates and explicit compaction for one recording or entries above a configurable size threshold.
 
@@ -102,6 +108,49 @@ waveform and no-results states, settings/tags/recovery dialogs, and the plugin a
 painting; visual acceptance inside a real DAW remains a separate check.
 
 ## Components
+
+### Statistics (FL Studio and Ableton Live)
+
+Open the chart button beside Settings. Samples, Instruments and Effects rank all
+loaded sounds in the saved projects associated with the active library, including
+sounds unused in the playlist. Repeated references within one project count once;
+several recordings linked to the same project path do not multiply its count.
+Samples group by resolved path, not filename or audio content. Supported external
+plugins can group across FL Studio and Live; native devices remain DAW-specific.
+
+Search filters the displayed top 1000 samples or top 50 instruments/effects.
+Right-click to hide entries; hidden identities persist per category and the visible
+top fills from the retained metadata inventory. The eye shows hidden entries within
+the original capped ranking so they can be unhidden. It does not remove the limits.
+Samples can be auditioned in an independent player, copied by drag, located if
+missing, revealed in Explorer or have their location copied. Audition pauses the
+main output while preserving its loaded project and position.
+
+Refresh reads saved `.flp` and `.als` files on a worker. Coverage identifies
+unlinked, unsupported or unreadable projects instead of counting them as empty.
+Statistics supports known Live native devices, VST2/VST3/AU and named Max for Live
+devices. It cannot see unsaved changes, opaque plugin contents or every unknown
+device type. Other DAW statistics readers are pending. **Ableton Statistics support
+does not add Ableton support to Used Sounds.** The [compatibility register](DAW_COMPATIBILITY.md)
+records reader limits, offline validation evidence and pending real-host checks.
+
+### Preview export and waveform display
+
+The main player's **Drag** button, immediately left of **Assign path**, copies the
+complete preview as a 24-bit WAV at its original sample rate and channel count.
+It reads legacy WAV/OGG and new `.rmp` previews. WAVs are prepared on a worker and
+kept in `Exports` inside your previews folder. Unchanged audio reuses its file;
+changed previews get new filenames, preserving paths already used by DAWs.
+Exports are not automatically deleted. Playback volume, normalization and metronome
+do not affect exported audio, and dragging does not start playback. WAV format
+compatibility does not certify native dragging into every host; see the register.
+
+Right-click an audio waveform for **Colorful waveforms** and **Separate L/R channels**.
+Both start off, persist between sessions and update open main, Used Sounds and
+Statistics players together. Colour follows local frequency content from red bass
+through pink, green, yellow and turquoise to violet treble. Stereo can use separate
+labelled axes; mono keeps one axis. MIDI piano rolls retain their note display.
+Right-click opens the menu without seeking.
 
 ### Used sounds (FL Studio first)
 
@@ -280,12 +329,15 @@ Processor creation queues output-folder loading and logger initialization. Savin
 | S | Toggle shuffle |
 | L | Cycle repeat: off, all, one, single |
 | Alt + Left / Right | Seek backward / forward 5 seconds, bounded by the preview |
-| Ctrl + Z | Undo the last organization action |
+| Ctrl + Z | Undo in the last-used sidebar/folder or recording-list context; histories are separate for the current session |
 | F | Toggle favourite for one selected recording; mark all selected recordings as favourites for a multiple selection |
 | R | Rename the selected pending or unassociated recording inline |
 | T | Edit tags for one recording; add tags to multiple selected recordings |
-| Delete / Backspace | Move the selected recording(s) to Trash, with confirmation |
+| Delete / Backspace (recording list) | Move selected recording(s) to Trash, with confirmation; Ctrl+Z can restore that deletion |
+| Delete / Backspace (sidebar) | Remove selected folders/subfolders and their folder tags, with confirmation; keep the recordings. All cannot be deleted |
 | Enter (Used sounds list focused) | Audition the selected sample or MIDI pattern |
+| Enter (Statistics Samples list focused) | Load the selected sample; play when audition autoplay is enabled |
+| Ctrl + F (Statistics window) | Focus the ranking search and select its text |
 | Enter / Escape (inline rename focused) | Save / cancel the name change |
 | Up / Down (tag filter editor focused) | Select an existing-tag suggestion |
 | Enter (tag filter suggestion selected) | Insert the selected tag |
@@ -311,7 +363,16 @@ delivering the media command to Remember; they are not system-wide hotkeys.
 The metronome and interface zoom currently have no dedicated keyboard shortcut.
 Hover a control to see its name and shortcut in parentheses.
 
+An empty undo history in one context does not undo an action in the other.
+Bulk recording deletion is one undo action. Text fields retain their native undo.
+
 ## Regression checks
+
+`RememberAppTests --statistics`, `--waveforms` and `--undo` cover Statistics
+readers/rankings, preview export/waveform options and contextual undo respectively.
+These suites also run through CTest. Native snapshots cover Statistics and the
+main browser at 640 × 480 and 1024 × 768; offline reader and component tests do not
+replace DAW drag/capture acceptance.
 
 Configure `Plugin/` with `-DREMEMBER_BUILD_TESTS=ON -DREMEMBER_COPY_PLUGIN_AFTER_BUILD=OFF`, build `RememberTests` in Release, then run `ctest --test-dir Plugin/build -C Release --output-on-failure`. The suite creates isolated project/audio fixtures under the build directory and does not alter the user's Remember settings or library. It checks headless recording, partial updates, the one-second minimum, rename/move, independent Save As entries, template isolation, pending capture lifecycle, offline export, sample rate changes, and browser metadata preservation. Host-title fixtures cover FL Studio and Ableton; real-host integration still needs verification in those DAWs.
 

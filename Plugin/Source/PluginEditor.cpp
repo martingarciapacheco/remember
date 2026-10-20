@@ -280,8 +280,6 @@ void RememberEditor::paint (juce::Graphics& g)
     g.setFont (bodyFont());
     g.setColour (RememberUI::colour (kSubtext));
     g.drawText ("Project", 28, 96, 160, 18, juce::Justification::centredLeft);
-    g.setColour (RememberUI::colour (kBorder));
-    g.drawHorizontalLine (228, 28, (float) logicalWidth() - 28);
     paintProgressBar (g, { 28, 304, logicalWidth() - 56, 5 }, recordProgress);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (kSubtext));
