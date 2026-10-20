@@ -1,0 +1,79 @@
+name: Bug report (beta)
+description: Report a bug you hit while testing the Remember beta
+title: "[bug] "
+labels: [bug, beta]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more concrete the steps and the more logs you attach, the faster I can fix it.
+
+  - type: input
+    id: version
+    attributes:
+      label: Remember version
+      description: Visible in the plugin footer or next to "REMEMBER" in the app header.
+      placeholder: "1.0.0-beta1  abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: daw
+    attributes:
+      label: DAW + version
+      placeholder: "Ableton Live 12.0.5"
+    validations:
+      required: true
+
+  - type: input
+    id: audio
+    attributes:
+      label: Sample rate / buffer size
+      placeholder: "48000 Hz  /  256 samples"
+
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2 (x64)"
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: |
+        Tell me what you were doing, what you expected, and what actually occurred.
+        If there's a clear repro sequence, list the steps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        **Attach `plugin.log` and `app.log` from `%APPDATA%\Remember\logs\`** — drag-drop them into this box.
+        Without logs I usually can't diagnose anything.
+      placeholder: "Drop log files here, or paste the relevant section."
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Cosmetic / minor"
+        - "Annoying but workaroundable"
+        - "Blocks me from using a feature"
+        - "Crashes / data loss"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Sanity checks
+      options:
+        - label: "I have searched existing issues and this isn't a duplicate"
+          required: true
+        - label: "I'm on the latest beta build (check the version above)"
+          required: true

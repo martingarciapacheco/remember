@@ -1,162 +1,206 @@
 #include "KeyDetector.h"
 
-// Krumhansl-Schmuckler key profiles (tonic = index 0)
-static constexpr std::array<float, 12> kMajor = {
-    6.35f, 2.23f, 3.48f, 2.33f, 4.38f, 4.09f,
-    2.52f, 5.19f, 2.39f, 3.66f, 2.29f, 2.88f
-};
-static constexpr std::array<float, 12> kMinor = {
-    6.33f, 2.68f, 3.52f, 5.38f, 2.60f, 3.53f,
-    2.54f, 4.75f, 3.98f, 2.69f, 3.34f, 3.17f
-};
-
-static const juce::StringArray kNoteNames {
-    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-};
-
-juce::String KeyDetector::detectKey (const juce::AudioBuffer<float>& buffer, double sampleRate)
+namespace
 {
-    int numSamples = buffer.getNumSamples();
-    if (numSamples == 0 || sampleRate <= 0.0)
-        return "Unknown";
-
-    // Mix down to mono
-    juce::AudioBuffer<float> mono (1, numSamples);
-    mono.clear();
-    float invCh = 1.0f / (float) buffer.getNumChannels();
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-        mono.addFrom (0, 0, buffer, ch, 0, numSamples, invCh);
-
-    auto chroma = computeChroma (mono.getReadPointer (0), numSamples, sampleRate);
-
-    // Reject signals that are essentially silent or whose chroma is too flat
-    // to support any meaningful key estimate — otherwise the algorithm would
-    // tie at zero correlation and pick whichever root came first.
-    float chromaSum = 0.0f, chromaMax = 0.0f;
-    for (auto v : chroma) { chromaSum += v; if (v > chromaMax) chromaMax = v; }
-    float chromaMean = chromaSum / 12.0f;
-    if (chromaSum < 0.01f || (chromaMax - chromaMean) < 0.05f)
-        return "Unknown";
-
-    return findBestKey (chroma);
-}
-
-std::array<float, 12> KeyDetector::computeChroma (const float* samples, int numSamples, double sampleRate)
+// Version 5: profiles fitted to the 301 frozen development references only.
+// Parameters and internal validation: candidate-v5-native-plan.json.
+constexpr std::array<float, 12> majorProfile {
+    0.455908367f, -0.345346810f, 0.152558367f, -0.280896637f,
+    0.178232991f, -0.000087256f, -0.231534834f, 0.579290211f,
+    -0.317191331f, 0.010380040f, -0.220598334f, 0.019285227f
+};
+constexpr std::array<float, 12> minorProfile {
+    0.587392468f, -0.272400146f, 0.097743321f, 0.130584844f,
+    -0.189454637f, 0.006783512f, -0.305307193f, 0.506913859f,
+    -0.191953537f, -0.243709386f, 0.115302918f, -0.241896021f
+};
+const juce::StringArray noteNames { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+constexpr int fftOrder = 13, fftSize = 1 << fftOrder, hop = fftSize / 4;
+struct Peak { float frequency = 0, magnitude = 0, background = 0; };
+struct Plan
 {
-    // FFT order 13 → 8192 points (~186 ms at 44.1 kHz). Larger window gives
-    // finer frequency resolution (~5.4 Hz/bin) — important to disambiguate
-    // adjacent pitch classes at low frequencies.
-    constexpr int fftOrder = 13;
-    constexpr int fftSize  = 1 << fftOrder;
-    constexpr int hopSize  = fftSize / 4;
-
-    if (numSamples < fftSize) return {};
-
-    juce::dsp::FFT fft (fftOrder);
-
-    std::vector<float> window ((size_t) fftSize);
-    for (int i = 0; i < fftSize; ++i)
-        window[(size_t) i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
-                                                        * (float) i / (float) (fftSize - 1)));
-
-    std::array<float, 12> chroma {};
-    std::vector<float>     buf (2 * fftSize, 0.0f);
-
-    int activeFrames = 0;
-
-    for (int start = 0; start + fftSize <= numSamples; start += hopSize)
+    std::array<float, fftSize> window {};
+    std::array<std::pair<int, int>, 1858> background {};
+    Plan()
     {
         for (int i = 0; i < fftSize; ++i)
-            buf[(size_t) i] = samples[start + i] * window[(size_t) i];
-        std::fill (buf.begin() + fftSize, buf.end(), 0.0f);
-
-        fft.performFrequencyOnlyForwardTransform (buf.data());
-
-        // Frame energy — skip near-silent frames so they don't bias the result
-        float frameEnergy = 0.0f;
-        for (int bin = 1; bin < fftSize / 2; ++bin) frameEnergy += buf[(size_t) bin];
-        if (frameEnergy < 1.0e-3f) continue;
-
-        // Per-frame chroma with linear interpolation between adjacent pitch classes
-        std::array<float, 12> frameChroma {};
-        for (int bin = 1; bin <= fftSize / 2; ++bin)
-        {
-            float freq = (float) bin * (float) sampleRate / (float) fftSize;
-            // Focus on the fundamental-pitch range (A1=55 Hz to C7=2093 Hz).
-            // Outside this band, harmonics dominate over true pitch content.
-            if (freq < 55.0f || freq > 2093.0f) continue;
-
-            float midi  = 12.0f * std::log2 (freq / 440.0f) + 69.0f;
-            float pcFrac = std::fmod (midi + 1200.0f, 12.0f);   // [0, 12)
-            int   pcLo   = ((int) pcFrac) % 12;
-            float w      = pcFrac - std::floor (pcFrac);
-            float mag    = buf[(size_t) bin];
-
-            frameChroma[(size_t) pcLo]              += mag * (1.0f - w);
-            frameChroma[(size_t) ((pcLo + 1) % 12)] += mag * w;
-        }
-
-        // Normalize this frame's contribution so loud frames don't dominate
-        float frameSum = 0.0f;
-        for (auto v : frameChroma) frameSum += v;
-        if (frameSum > 0.0f)
-        {
-            for (int i = 0; i < 12; ++i) chroma[(size_t) i] += frameChroma[(size_t) i] / frameSum;
-            ++activeFrames;
-        }
+            window[(size_t) i] = 0.5f * (1 - std::cos (juce::MathConstants<float>::twoPi * i / (fftSize - 1)));
+        for (int bin = 21; bin <= 1857; ++bin)
+            background[(size_t) bin] = {
+                juce::jmax (1, (int) std::floor (bin / std::exp2 (1.0 / 3))),
+                juce::jmin (fftSize / 2, (int) std::ceil (bin * std::exp2 (1.0 / 3))) };
     }
+};
+const Plan& plan() { static const Plan value; return value; }
+}
 
-    if (activeFrames == 0) return chroma;   // all zeros → caller returns "Unknown"
+juce::String KeyDetector::detectKey (const juce::AudioBuffer<float>& audio, double rate)
+{
+    return analyse (audio, rate).key;
+}
 
-    float maxVal = *std::max_element (chroma.begin(), chroma.end());
-    if (maxVal > 0.0f)
-        for (auto& v : chroma) v /= maxVal;
+KeyDetector::Estimate KeyDetector::analyse (const juce::AudioBuffer<float>& audio, double rate,
+                                           const AnalysisAudio::Cancellation& cancelled)
+{
+    if (! std::isfinite (rate) || rate <= 0 || audio.getNumChannels() == 0 || (cancelled && cancelled())) return {};
+    // Keep an already-normalised buffer; avoid another 20 MiB copy.
+    juce::AudioBuffer<float> normalised;
+    const auto* input = &audio;
+    if (rate != AnalysisAudio::rate)
+    {
+        normalised = AnalysisAudio::normalise (audio, rate, cancelled);
+        input = &normalised;
+    }
+    if (input->getNumSamples() < fftSize || input->getNumChannels() == 0) return {};
+    const auto features = extract (*input, input->getNumSamples(), nullptr, 0, cancelled);
+    if (cancelled && cancelled()) return {};
+    return estimate (features);
+}
 
-    return chroma;
+int KeyDetector::requiredSamples (int totalSamples, int unchangedFrom, bool reuse)
+{
+    const auto limit = juce::jlimit (0, (int) (120 * AnalysisAudio::rate), totalSamples);
+    const auto frames = limit < fftSize ? 0 : 1 + (limit - fftSize) / hop;
+    const auto boundary = juce::jlimit (0, limit, unchangedFrom);
+    const auto computed = reuse ? juce::jlimit (0, frames, (boundary + hop - 1) / hop) : frames;
+    return computed == 0 ? 0 : (computed - 1) * hop + fftSize;
+}
+
+KeyDetector::Features KeyDetector::extract (const juce::AudioBuffer<float>& audio, int totalSamples,
+                                            const Features* previous, int unchangedFrom,
+                                            const AnalysisAudio::Cancellation& cancelled)
+{
+    Features result;
+    result.samples = juce::jlimit (0, (int) (120 * AnalysisAudio::rate), totalSamples);
+    result.channels = juce::jmin (2, audio.getNumChannels());
+    const auto frames = result.samples < fftSize ? 0 : 1 + (result.samples - fftSize) / hop;
+    const auto reuse = previous && previous->valid && previous->samples == result.samples
+        && previous->channels == result.channels && (int) previous->frames.size() == frames;
+    if (result.channels == 0 || audio.getNumSamples() < requiredSamples (result.samples, unchangedFrom, reuse)
+        || (cancelled && cancelled())) return result;
+    result.frames.resize ((size_t) frames);
+    const auto& prepared = plan();
+    juce::dsp::FFT fft (fftOrder);
+    std::vector<float> buffer (2 * fftSize, 0);
+    std::vector<double> prefix ((size_t) fftSize / 2 + 2);
+    std::vector<Peak> peaks; peaks.reserve (1024);
+    for (int index = 0; index < frames; ++index)
+    {
+        if (cancelled && cancelled()) return {};
+        const auto start = index * hop;
+        auto& frame = result.frames[(size_t) index];
+        if (reuse && start >= unchangedFrom)
+        {
+            frame = previous->frames[(size_t) index]; ++result.reused; continue;
+        }
+        ++result.computed;
+        double energy = 0;
+        std::array<double, 12> chroma {};
+        for (int ch = 0; ch < result.channels; ++ch)
+        {
+            bool nonzero = false;
+            const auto* samples = audio.getReadPointer (ch, start);
+            for (int i = 0; i < fftSize; ++i)
+            {
+                const auto value = std::isfinite (samples[i]) ? samples[i] : 0;
+                nonzero = nonzero || value != 0;
+                energy += (double) value * value;
+                buffer[(size_t) i] = value * prepared.window[(size_t) i];
+            }
+            std::fill (buffer.begin() + fftSize, buffer.end(), 0.0f);
+            if (! nonzero) continue;
+            fft.performFrequencyOnlyForwardTransform (buffer.data());
+            prefix[0] = 0;
+            for (int bin = 0; bin <= fftSize / 2; ++bin)
+                prefix[(size_t) bin + 1] = prefix[(size_t) bin] + buffer[(size_t) bin];
+            peaks.clear();
+            for (int bin = 21; bin <= 1857; ++bin)
+            {
+                const auto left = buffer[(size_t) bin - 1], centre = buffer[(size_t) bin], right = buffer[(size_t) bin + 1];
+                if (centre <= 1.0e-8f || centre <= left || centre < right) continue;
+                const auto a = std::log (juce::jmax (left, 1.0e-12f));
+                const auto b = std::log (centre), c = std::log (juce::jmax (right, 1.0e-12f));
+                const auto denominator = a - 2 * b + c;
+                const auto delta = std::abs (denominator) > 1.0e-9f
+                    ? juce::jlimit (-0.5f, 0.5f, 0.5f * (a - c) / denominator) : 0.0f;
+                const auto [first, last] = prepared.background[(size_t) bin];
+                peaks.push_back ({ (float) ((bin + delta) * AnalysisAudio::rate / fftSize),
+                    std::exp (b - 0.25f * (a - c) * delta),
+                    (float) ((prefix[(size_t) last + 1] - prefix[(size_t) first]) / (last - first + 1)) });
+            }
+            std::stable_sort (peaks.begin(), peaks.end(), [] (const Peak& a, const Peak& b) { return a.magnitude > b.magnitude; });
+            if (peaks.size() > 100) peaks.resize (100);
+            for (const auto& peak : peaks)
+            {
+                if (peak.frequency > 2093 || peak.background <= 0) continue;
+                const auto pitch = 69 + 12 * std::log2 ((double) peak.frequency / 440);
+                const auto nearest = (int) std::floor (pitch + 0.5);
+                const auto support = std::cos (juce::MathConstants<double>::pi * (pitch - nearest));
+                chroma[(size_t) ((nearest % 12 + 12) % 12)] += peak.magnitude / std::sqrt ((double) peak.background) * support * support;
+            }
+        }
+        double sum = 0;
+        for (auto value : chroma) sum += value;
+        if (energy / fftSize < 1.0e-9 || sum <= 0) frame.fill (0);
+        else for (int pitch = 0; pitch < 12; ++pitch) frame[(size_t) pitch] = (float) (chroma[(size_t) pitch] / sum);
+    }
+    result.valid = true;
+    return result;
+}
+
+KeyDetector::Estimate KeyDetector::estimate (const Features& features)
+{
+    if (! features.valid) return {};
+    std::array<float, 12> chroma {};
+    for (const auto& frame : features.frames)
+        for (int i = 0; i < 12; ++i) chroma[(size_t) i] += frame[(size_t) i];
+    const auto maximum = *std::max_element (chroma.begin(), chroma.end());
+    if (maximum > 0) for (auto& value : chroma) value /= maximum;
+    return findBestKey (chroma);
 }
 
 float KeyDetector::pearson (const std::array<float, 12>& a, const std::array<float, 12>& b)
 {
-    float meanA = 0.0f, meanB = 0.0f;
+    float meanA = 0, meanB = 0;
     for (int i = 0; i < 12; ++i) { meanA += a[(size_t) i]; meanB += b[(size_t) i]; }
-    meanA /= 12.0f; meanB /= 12.0f;
-
-    float num = 0.0f, denA = 0.0f, denB = 0.0f;
+    meanA /= 12; meanB /= 12;
+    float numerator = 0, denominatorA = 0, denominatorB = 0;
     for (int i = 0; i < 12; ++i)
     {
-        float da = a[(size_t) i] - meanA;
-        float db = b[(size_t) i] - meanB;
-        num  += da * db;
-        denA += da * da;
-        denB += db * db;
+        const auto da = a[(size_t) i] - meanA, db = b[(size_t) i] - meanB;
+        numerator += da * db;
+        denominatorA += da * da; denominatorB += db * db;
     }
-
-    float den = std::sqrt (denA * denB);
-    return den > 0.0f ? num / den : 0.0f;
+    const auto denominator = std::sqrt (denominatorA * denominatorB);
+    return denominator > 0 ? numerator / denominator : 0;
 }
 
-juce::String KeyDetector::findBestKey (const std::array<float, 12>& chroma)
+KeyDetector::Estimate KeyDetector::findBestKey (const std::array<float, 12>& chroma)
 {
-    float bestCorr  = -2.0f;
-    int   bestRoot  = 0;
-    bool  bestMajor = true;
-
+    Estimate result;
+    float best = -2, second = -2;
+    int bestRoot = 0;
+    bool bestMajor = true;
     for (int root = 0; root < 12; ++root)
-    {
-        // Rotate profiles so that index 'root' is the tonic
-        std::array<float, 12> major {}, minor {};
-        for (int i = 0; i < 12; ++i)
+        for (int mode = 0; mode < 2; ++mode)
         {
-            major[(size_t) i] = kMajor[(size_t) ((i - root + 12) % 12)];
-            minor[(size_t) i] = kMinor[(size_t) ((i - root + 12) % 12)];
+            std::array<float, 12> profile {};
+            for (int i = 0; i < 12; ++i)
+                profile[(size_t) i] = (mode == 0 ? majorProfile : minorProfile)[(size_t) ((i - root + 12) % 12)];
+            const auto score = pearson (chroma, profile);
+            if (score > best)
+            { second = best; best = score; bestRoot = root; bestMajor = mode == 0; }
+            else second = juce::jmax (second, score);
         }
-
-        float cMajor = pearson (chroma, major);
-        float cMinor = pearson (chroma, minor);
-
-        if (cMajor > bestCorr) { bestCorr = cMajor; bestRoot = root; bestMajor = true;  }
-        if (cMinor > bestCorr) { bestCorr = cMinor; bestRoot = root; bestMajor = false; }
-    }
-
-    return kNoteNames[bestRoot] + (bestMajor ? " major" : " minor");
+    result.correlation = best;
+    result.margin = best - second;
+    const auto maximum = *std::max_element (chroma.begin(), chroma.end());
+    const auto minimum = *std::min_element (chroma.begin(), chroma.end());
+    float sum = 0;
+    for (auto value : chroma) sum += value;
+    if (maximum == 0 || maximum / sum > 0.6f || maximum - minimum < 0.12f
+        || best < 0.6f || result.margin < 0.04) return result;
+    result.confidence = juce::jlimit (0.0, 1.0, (double) best * juce::jmin (1.0, result.margin / 0.2));
+    result.key = noteNames[bestRoot] + (bestMajor ? " major" : " minor");
+    return result;
 }

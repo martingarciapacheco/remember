@@ -1,0 +1,41 @@
+#include "../../Shared/PreviewAudio.h"
+#include "WaveformEnvelope.h"
+#include "LoudnessMeter.h"
+
+juce::Result WaveformEnvelope::read (const juce::File& file, const std::function<bool()>& cancelled)
+{
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
+    if (cancelled()) return juce::Result::ok();
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+    if (! reader || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0
+        || reader->lengthInSamples <= 0 || reader->numChannels == 0)
+        return juce::Result::fail ("Cannot read waveform: " + file.getFullPathName());
+    const auto length = reader->lengthInSamples;
+    // Keep enough detail for enlarged/high-DPI editors without decoding on paint.
+    const auto bins = (int) juce::jlimit ((juce::int64) 1, (juce::int64) 32768, (length + 63) / 64);
+    for (auto& channel : channels) channel.assign ((size_t) bins, {});
+    juce::AudioBuffer<float> audio (2, 8192);
+    LoudnessMeter meter (reader->sampleRate, (int) reader->numChannels);
+    for (juce::int64 position = 0; position < length;)
+    {
+        if (cancelled()) { for (auto& channel : channels) channel.clear(); return juce::Result::ok(); }
+        const auto count = (int) juce::jmin ((juce::int64) 8192, length - position);
+        if (! reader->read (&audio, 0, count, position, true, true))
+        { for (auto& channel : channels) channel.clear(); return juce::Result::fail ("Waveform read failed: " + file.getFullPathName()); }
+        meter.add (audio, count);
+        for (int i = 0; i < count; ++i)
+        {
+            const auto bin = (size_t) ((long double) (position + i) * bins / length);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const auto value = audio.getSample (ch, i);
+                if (! std::isfinite (value)) continue;
+                auto& peak = channels[(size_t) ch][bin];
+                peak.low = juce::jmin (peak.low, value); peak.high = juce::jmax (peak.high, value);
+            }
+        }
+        position += count;
+    }
+    normalizationGain = meter.gain(); loudness = meter.integrated(); decodedPeak = meter.peak;
+    return juce::Result::ok();
+}

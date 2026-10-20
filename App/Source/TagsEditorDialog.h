@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/RememberLookAndFeel.h"
 
 // Modal dialog for editing the tags of a single ProjectEntry.
 //
@@ -18,8 +19,15 @@ public:
     static void launch (const juce::String& entryName,
                         const juce::StringArray& initialTags,
                         std::function<void (juce::StringArray)> onCommit);
+    // Build the same content without a native peer; useful for embedding and
+    // measuring controls separately from window/graphics-driver startup.
+    static std::unique_ptr<TagsEditorDialog> create (const juce::String& entryName,
+                                                    const juce::StringArray& initialTags,
+                                                    std::function<void (juce::StringArray)> onCommit);
+    ~TagsEditorDialog() override;
 
 private:
+    RememberUI::Style uiStyle { *this };
     TagsEditorDialog (const juce::String& entryName,
                       const juce::StringArray& initialTags,
                       std::function<void (juce::StringArray)> onCommit);
@@ -48,9 +56,17 @@ private:
     juce::Label      suggestCaption  { {}, "Quick add" };
     juce::Label      suggestEmpty    { {}, "(no other tags in your library)" };
 
-    // Dynamically built chip / suggestion buttons
-    juce::OwnedArray<juce::TextButton> chipButtons;
-    juce::OwnedArray<juce::TextButton> suggestionButtons;
+    // All tags retain logical bounds; only visible chips own controls.
+    class TagFlow;
+    class TagViewport final : public juce::Viewport
+    {
+    public:
+        std::function<void (const juce::Rectangle<int>&)> onAreaChanged;
+        void visibleAreaChanged (const juce::Rectangle<int>& area) override
+        { if (onAreaChanged) onAreaChanged (area); }
+    };
+    std::unique_ptr<TagFlow> chipsContent, suggestionsContent;
+    TagViewport chipsViewport, suggestionsViewport;
 
     juce::TextButton okBtn     { "OK"     };
     juce::TextButton cancelBtn { "Cancel" };
@@ -59,5 +75,6 @@ private:
     juce::Rectangle<int> chipsArea;
     juce::Rectangle<int> suggestArea;
 
+    juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TagsEditorDialog)
 };

@@ -5,13 +5,20 @@
 class RememberProcessor : public juce::AudioProcessor
 {
 public:
-    RememberProcessor();
+    explicit RememberProcessor (RecordingEngine::ProjectDetector = ProjectIdentity::detectHostProject,
+                                SettingsManager::Reader = {});
     ~RememberProcessor() override = default;
 
     // ── AudioProcessor interface ─────────────────────────────────────────────
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override { engine.finishCapture(); }
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    bool isBusesLayoutSupported (const BusesLayout& layout) const override
+    {
+        const auto input = layout.getMainInputChannelSet();
+        return input == layout.getMainOutputChannelSet()
+            && (input == juce::AudioChannelSet::mono() || input == juce::AudioChannelSet::stereo());
+    }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -32,17 +39,14 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    // Host passes track name here (Ableton, etc.)
-    void updateTrackProperties (const TrackProperties& properties) override;
-
     // ── Accessors for the editor ─────────────────────────────────────────────
     RecordingEngine& getEngine() { return engine; }
-    juce::String     getProjectName() const { return projectName; }
+    juce::String     getProjectName() const { return engine.getProjectName(); }
     void             setProjectName (const juce::String& name);
 
 private:
+    SettingsManager::Reader settingsReader;
     RecordingEngine engine;
-    juce::String    projectName;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RememberProcessor)
 };

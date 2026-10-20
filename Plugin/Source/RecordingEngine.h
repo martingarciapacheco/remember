@@ -1,78 +1,67 @@
 #pragma once
 #include <JuceHeader.h>
+#include "../../Shared/ProjectIdentity.h"
+#include "SettingsManager.h"
+#include <functional>
+#include <memory>
 
-// Captures 60 seconds of audio from the master bus and encodes it to OGG.
-// Trigger: DAW transport starts playing from near position 0.
-// Encoding + key detection run on a background thread — audio callback never blocked.
-class RecordingEngine : public juce::Thread
+// The facade never joins background I/O. Its retained core releases resources
+// after cancellation and native thread completion, including during DLL unload.
+class RecordingEngine
 {
 public:
-    enum class State { Idle, Recording, Encoding, Done, Error };
-
-    RecordingEngine();
-    ~RecordingEngine() override;
-
+    enum class State { Idle, Recording, Encoding, Done, Pending, Error };
+    enum class Association { Unassigned, HostPath, TitleMatch, ManualFile, ManualRecording, Ambiguous };
+    struct AssociationInfo
+    {
+        Association source = Association::Unassigned;
+        juce::String id, path, description, confidence, problem;
+        bool confirmed = false, verified = false;
+    };
+    using ProjectDetector = std::function<HostProject()>;
+    explicit RecordingEngine (ProjectDetector = ProjectIdentity::detectHostProject);
+    ~RecordingEngine();
+    // Shared settings are read asynchronously. Explicit snapshots select an
+    // independent destination/format without reading shared configuration.
     void prepare (double sampleRate, int maxBlockSize);
-
-    // Call from AudioProcessor::processBlock — never blocks
-    void processBlock (const juce::AudioBuffer<float>& buffer,
-                       juce::AudioPlayHead*            playHead);
-
-    void setOutputFolder  (const juce::File&   folder);
-    void setProjectName   (const juce::String& name);
-
-    // Reads the projectName field from this entry's metadata.json (if it exists).
-    // Used to pick up renames the user made from the browser app.
-    juce::String readPersistedProjectName() const;
-
-    // Updates the projectName field inside the existing metadata.json (if any)
-    // without touching the other fields. Used when the user renames inside the
-    // plugin so the browser app sees the change immediately.
-    void writePersistedProjectName (const juce::String& name) const;
-
-    // Exposed so PluginProcessor can derive a folder path the same way.
-    static juce::String sanitizeFolderNamePublic (const juce::String& name)
-        { return sanitizeFolderName (name); }
-
-    State        getState()          const noexcept { return state.load(); }
-    float        getProgress()       const noexcept;
-    juce::String getDetectedKey()    const;
-    double       getDetectedBpm()    const noexcept { return capturedBpm.load(); }
-    juce::String getLastSavedTime()  const;
+    void prepare (double sampleRate, int maxBlockSize, const SettingsManager::Snapshot&);
+    void prepareAsync (double sampleRate, int maxBlockSize, SettingsManager::Reader);
+    bool isPreparingSettings() const;
+    void finishCapture();
+    void setCaptureOptions (CaptureOptions);
+    void applySharedCaptureOptions (CaptureOptions);
+    CaptureOptions getCaptureOptions() const;
+    bool isPreviewLocked() const;
+    void processBlock (const juce::AudioBuffer<float>&, juce::AudioPlayHead*, bool offline = false);
+    void setOutputFolder (const juce::File&);
+    void loadOutputFolderFromSettings (SettingsManager::Reader);
+    // Control/UI only: diagnostics are written by the retained core worker.
+    void logDiagnostic (juce::String);
+    void setProjectName (const juce::String&);
+    void associateProjectFile (const juce::File&, const juce::String& expectedId = {});
+    void keepRecording (const juce::String& name = {}, const juce::String& expectedId = {});
+    void useAutomaticAssociation (const juce::String& expectedId = {});
+    AssociationInfo getAssociationInfo() const;
+    juce::String getProjectName() const;
+    bool isProjectConfirmed() const;
+    void saveState (juce::XmlElement&) const;
+    void restoreState (const juce::XmlElement&, SettingsManager::Reader sharedSettings = {});
+    State getState() const noexcept;
+    float getProgress() const noexcept;
+    juce::String getDetectedKey() const;
+    double getDetectedBpm() const noexcept;
+    juce::String getLastSavedTime() const;
+    juce::String getLastError() const;
+    uint64_t getDroppedCaptures() const noexcept;
+    uint64_t getShortCaptures() const noexcept;
+    uint64_t getUnknownPositions() const noexcept;
+    size_t getReservedCaptureBytes() const noexcept;
+    static size_t getProcessCaptureBytes() noexcept;
+    juce::String getTransportWarning() const;
+    int getTotalSeconds() const noexcept;
 
 private:
-    void run() override;
-    void startCapture (double bpm);
-    void encodeAndSave();
-    void saveMetadata (const juce::File& projectFolder, const juce::String& key);
-    juce::String detectProjectFilePath() const;
-    static juce::String sanitizeFolderName (const juce::String& name);
-
-    static constexpr float kRecordSeconds    = 60.0f;
-    static constexpr float kTriggerThreshold = 2.0f;
-    static constexpr int   kOggQualityIndex  = 4;       // 128 kbps
-
-    std::atomic<State> state { State::Idle };
-    std::atomic<int>   samplesWritten { 0 };
-    int                samplesToCapture { 0 };
-
-    double                   currentSampleRate { 44100.0 };
-    juce::AudioBuffer<float> captureBuffer;
-
-    std::atomic<bool>   wasPlayingNearStart { false };
-    std::atomic<bool>   wasPlaying          { false };
-    std::atomic<double> capturedBpm { 0.0 };
-
-    juce::File   outputFolder;
-    juce::String projectName;
-
-    // Detected once per recording, used in saveMetadata
-    juce::String detectedProjectFilePath;
-    juce::String detectedDaw;
-
-    mutable juce::CriticalSection resultsLock;
-    juce::String detectedKey;
-    juce::String lastSavedTime;
-
-    juce::WaitableEvent encodeTrigger { true };
+    class Core;
+    std::shared_ptr<Core> core;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RecordingEngine)
 };

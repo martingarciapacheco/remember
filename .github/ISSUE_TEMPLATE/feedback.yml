@@ -1,0 +1,31 @@
+name: General feedback (beta)
+description: Feature requests, UX feedback, observations — anything that isn't a bug
+title: "[feedback] "
+labels: [feedback, beta]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Remember version
+      placeholder: "1.0.0-beta1  abc1234"
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "Plugin (recording, BPM/key detection)"
+        - "Browser app — list / search / filtering"
+        - "Browser app — folder sidebar / drag-drop"
+        - "Browser app — tags / favourites / rename"
+        - "Browser app — playback / waveform"
+        - "Installer / packaging"
+        - "Other"
+
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback
+      description: What's good? What's bad? What's missing?
+    validations:
+      required: true
