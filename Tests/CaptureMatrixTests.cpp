@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "CaptureMatrixTests.h"
 #include "TransportTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
@@ -61,18 +62,19 @@ void testCaptureMatrix (const juce::File& root)
             Head head;
             const auto length = (int) (rate * 1.25);
             juce::AudioBuffer<float> storage (2, blockSize);
-            for (int ch = 0; ch < 2; ++ch)
-                juce::FloatVectorOperations::fill (storage.getWritePointer (ch), ch == 0 ? 1.25f : 0.25f, blockSize);
             for (int position = 0; position < length;)
             {
                 const auto count = juce::jmin (blockSize, length - position);
+                for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < count; ++i)
+                    storage.setSample (ch, i, (ch == 0 ? 1.25f : 0.25f) * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * (position + i) / rate));
                 auto* const* channels = storage.getArrayOfWritePointers();
                 juce::AudioBuffer<float> block (channels, 2, count); // Non-owning; no data allocation.
                 head.sample = position;
                 const auto begin = juce::Time::getMillisecondCounterHiRes();
                 engine.processBlock (block, &head, (cases % 3) == 0);
                 if ((cases % 3) != 0) callbackTimes.push_back (juce::Time::getMillisecondCounterHiRes() - begin);
-                check (block.getSample (0, 0) == 1.25f && block.getSample (1, count - 1) == 0.25f, "Audio passthrough changed");
+                check (block.getSample (0, 0) == 1.25f * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * position / rate)
+                    && block.getSample (1, count - 1) == 0.25f * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * (position + count - 1) / rate), "Audio passthrough changed");
                 position += count;
             }
             head.playing = false;
@@ -82,15 +84,17 @@ void testCaptureMatrix (const juce::File& root)
             check (engine.getDroppedCaptures() == 0, "Matrix dropped a capture");
             const auto folder = savedEntry (library);
             const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
-            juce::AudioFormatManager formats; formats.registerBasicFormats();
+            juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
             std::unique_ptr<juce::AudioFormatReader> pcm (formats.createReaderFor (LibraryStore::audioFile (folder, metadata, true)));
             check (pcm && pcm->sampleRate == rate && pcm->lengthInSamples == length, "Matrix PCM rate/length changed");
             check (pcm->numChannels == (settings.mono ? 1u : 2u), "Mono capture still stores two channels");
-            check (pcm->usesFloatingPointData, "PCM no longer preserves float headroom");
+            check (pcm->usesFloatingPointData && (int) metadata["audioStorageVersion"] == 3, "Segmented preview format missing");
             juce::AudioBuffer<float> sample (2, 1);
-            check (pcm->read (&sample, 0, 1, 100, true, true), "Matrix PCM read failed");
-            const auto expected = settings.mono ? 0.75f : 1.25f;
-            check (std::abs (sample.getSample (0, 0) - expected) < 0.00001f, "Matrix channel/float data changed");
+            const auto probe = (int) (rate / 2);
+            check (pcm->read (&sample, 0, 1, probe, true, true), "Matrix compressed preview read failed");
+            const auto expected = (settings.mono ? 0.75f : 1.25f) * (float) (double) metadata["previewGain"];
+            check (std::abs (sample.getSample (0, 0) - expected) < 0.035f, "Matrix channel/gain data changed");
+            if (! settings.mono) check (std::abs (sample.getSample (1, 0) * 5 - sample.getSample (0, 0)) < 0.04f, "Matrix lost stereo channel ratio");
             check ((double) metadata.getProperty ("bpm", 0) == 137.5 && metadata.getProperty ("bpmSource", "") == juce::var ("host"), "Host tempo lost priority");
             check ((double) metadata.getProperty ("bpmConfidence", 0) == 1, "Host tempo confidence missing");
             check ((double) metadata.getProperty ("previewGain", 0) > 0 && (double) metadata.getProperty ("previewGain", 0) <= 1, "Preview gain policy missing");
@@ -116,7 +120,7 @@ void testCaptureMatrix (const juce::File& root)
         check (engine.getState() == RecordingEngine::State::Done && engine.getDroppedCaptures() == 0,
                "Accelerated export was dropped: " + engine.getLastError());
         const auto folder = savedEntry (library);
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
         check (reader && reader->lengthInSamples == 192000 * 15, "Accelerated export truncated at the queue capacity");
         std::cout << "PASS: 15-second accelerated 192 kHz export through an 8 MiB ring, elapsed="

@@ -1,3 +1,5 @@
+#include "PreviewAudio.h"
+#include "PreviewCompaction.h"
 #include "LibraryStore.h"
 #include "AtomicJsonWriter.h"
 #include "ProjectIdentity.h"
@@ -437,6 +439,19 @@ juce::Result rebuildSettingsJson (const juce::File& file, const juce::var& patch
 
 bool isDeleted (const juce::File& folder) { return deletionMarker (folder).existsAsFile(); }
 
+juce::int64 measureEntryAudio (const juce::File& folder, const std::function<bool()>& cancelled)
+{
+    if (! folder.isDirectory() || folder.isSymbolicLink()) return 0;
+    juce::int64 bytes = 0;
+    for (const auto& item : juce::RangedDirectoryIterator (folder, true, "*", juce::File::findFiles, juce::File::FollowSymlinks::no))
+    {
+        if (cancelled && cancelled()) return -1;
+        const auto file = item.getFile();
+        if (! file.isSymbolicLink() && file.hasFileExtension ("wav;ogg;rmp")) bytes += item.getFileSize();
+    }
+    return bytes;
+}
+
 StorageUsage measureStorage (const juce::File& root, const std::function<bool()>& cancelled)
 {
     StorageUsage result;
@@ -449,7 +464,7 @@ StorageUsage measureStorage (const juce::File& root, const std::function<bool()>
         const auto size = item.getFileSize();
         result.bytes += size;
         if (file.hasFileExtension ("wav")) result.pcmBytes += size;
-        if (file.hasFileExtension ("ogg")) result.previewBytes += size;
+        if (file.hasFileExtension ("ogg;rmp")) result.previewBytes += size;
     }
     if (cancelled && cancelled()) { result.cancelled = true; return result; }
     result.freeBytes = root.getBytesFreeOnVolume();
@@ -461,6 +476,10 @@ juce::File audioFile (const juce::File& folder, const juce::var& metadata, bool 
     auto revision = metadata.getProperty ("audioRevision", "").toString();
     if (revision.isEmpty()) return folder.getChildFile (pcm ? "preview.wav" : "preview.ogg");
     if (juce::Uuid (revision).isNull()) return {};
+    if ((int) metadata.getProperty ("audioStorageVersion", 0) == 4)
+        return folder.getChildFile (".audio").getChildFile (juce::Uuid (revision).toString()).getChildFile ("preview.ogg");
+    if ((int) metadata.getProperty ("audioStorageVersion", 0) == 3)
+        return folder.getChildFile (".audio").getChildFile (juce::Uuid (revision).toString()).getChildFile ("preview.rmp");
     return folder.getChildFile (".audio").getChildFile (juce::Uuid (revision).toString())
                  .getChildFile (pcm ? "preview.wav" : "preview.ogg");
 }
@@ -469,9 +488,9 @@ juce::File audioFile (const juce::File& folder, bool pcm)
     return audioFile (folder, readJson (folder.getChildFile ("metadata.json")), pcm);
 }
 
-AudioRevision::AudioRevision (const juce::File& folder)
+AudioRevision::AudioRevision (const juce::File& folder, bool useSegments)
     : directory (folder.getChildFile (".audio").getChildFile (id)),
-      ogg (directory.getChildFile ("preview.ogg")), pcm (directory.getChildFile ("preview.wav")) {}
+      ogg (directory.getChildFile (useSegments ? "preview.rmp" : "preview.ogg")), pcm (directory.getChildFile ("preview.wav")), segmented (useSegments) {}
 AudioRevision::~AudioRevision() { if (! published) discard(); }
 juce::Result AudioRevision::prepare()
 {
@@ -501,10 +520,12 @@ juce::Result verifyAudio (const juce::File& folder, const juce::var& metadata,
     if ((int) metadata.getProperty ("audioReceiptVersion", 0) == 1 && receipt.getDynamicObject() == nullptr)
         return juce::Result::fail ("Audio revision receipt is missing or invalid");
     const auto oggFile = audioFile (folder, metadata, false), pcmFile = audioFile (folder, metadata, true);
+    if ((int) metadata.getProperty ("audioStorageVersion", 0) == 3)
+        if (auto checked = PreviewAudio::verify (oggFile, cancelled); checked.failed()) return checked;
     if (! oggFile.existsAsFile() || oggFile.getSize() == 0 || ! pcmFile.existsAsFile() || pcmFile.getSize() == 0)
         return juce::Result::fail ("Audio revision is incomplete");
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> ogg (formats.createReaderFor (oggFile)), pcm (formats.createReaderFor (pcmFile));
     // Earlier mono settings downmixed only the OGG and retained stereo PCM.
     // This documented legacy layout is valid input; new revisions must match.
@@ -542,13 +563,15 @@ juce::var revisionReceipt (const juce::File& folder, const juce::String& revisio
 
 juce::Result commitAudio (const juce::File& folder, const AudioRevision& audio,
                           const juce::var& patch, const juce::String& expected,
-                          const std::function<bool()>& cancelled, const CommitObserver& observer)
+                          const std::function<bool()>& cancelled, const CommitObserver& observer, bool discardHistory)
 {
     if (patch.getDynamicObject() == nullptr) return juce::Result::fail ("Audio metadata must be an object");
     juce::var audioPointer (new juce::DynamicObject());
     audioPointer.getDynamicObject()->setProperty ("audioRevision", audio.id);
+    audioPointer.getDynamicObject()->setProperty ("audioStorageVersion", audio.compacted ? 4 : (audio.segmented ? 3 : 2));
     if (auto verified = verifyAudio (folder, audioPointer, cancelled); verified.failed()) return verified;
-    const auto oggHash = ProjectIdentity::fingerprint (audio.ogg, cancelled), pcmHash = ProjectIdentity::fingerprint (audio.pcm, cancelled);
+    const auto oggHash = ProjectIdentity::fingerprint (audio.ogg, cancelled);
+    const auto pcmHash = (audio.segmented || audio.compacted) ? oggHash : ProjectIdentity::fingerprint (audio.pcm, cancelled);
     if (oggHash.isEmpty() || pcmHash.isEmpty()) return juce::Result::fail ("Cannot hash a complete audio revision (read failed or cancelled)");
     if (observer) observer (CommitStage::AudioVerified);
     const auto file = folder.getChildFile ("metadata.json");
@@ -565,6 +588,14 @@ juce::Result commitAudio (const juce::File& folder, const AudioRevision& audio,
         return juce::Result::fail ("Preview is locked; audio was preserved");
     if (metadata.getProperty ("audioRevision", "").toString() != expected)
         return juce::Result::fail ("Audio revision changed during encoding; retry the merge");
+    if (discardHistory)
+    {
+        if ((bool) metadata.getProperty ("pending", false) && pendingOwnerState (folder, metadata) != OwnerState::Orphaned)
+            return juce::Result::fail ("Pending preview ownership changed during compaction; original audio preserved");
+        if (metadata["projectId"].toString() != patch["projectId"].toString()
+            || ProjectIdentity::fingerprint (audioFile (folder, metadata, false), cancelled) != patch["compactionSourceSha256"].toString())
+            return juce::Result::fail ("Preview changed during compaction; original audio preserved");
+    }
     auto next = metadata.clone();
     auto* object = next.getDynamicObject();
     const juce::StringArray identityFields { "projectId", "projectName", "projectPath", "projectFileId", "projectFingerprint", "pending", "daw" };
@@ -572,9 +603,9 @@ juce::Result commitAudio (const juce::File& folder, const AudioRevision& audio,
         if (! (identityFields.contains (property.name.toString()) && object->hasProperty (property.name)))
             object->setProperty (property.name, property.value);
     object->setProperty ("audioRevision", audio.id);
-    object->setProperty ("audioStorageVersion", 2);
+    object->setProperty ("audioStorageVersion", audio.compacted ? 4 : (audio.segmented ? 3 : 2));
     object->setProperty ("audioReceiptVersion", 1);
-    object->setProperty ("previousAudioRevision", expected);
+    object->setProperty ("previousAudioRevision", discardHistory ? juce::String{} : expected);
     object->setProperty ("dataRevision", (juce::int64) object->getProperty ("dataRevision") + 1);
     juce::var receipt (new juce::DynamicObject());
     auto* record = receipt.getDynamicObject();
@@ -603,7 +634,92 @@ juce::Result commitAudio (const juce::File& folder, const AudioRevision& audio,
             juce::Logger::writeToLog ("Cannot mark revision for cleanup: " + audio.directory.getFullPathName());
         if (observer) observer (CommitStage::RevisionMarked);
     }
+    if (result.wasOk() && discardHistory)
+    {
+        // Publication is the commit point. Cleanup only known published audio;
+        // uncommitted jobs may belong to a live DAW and must remain untouched.
+        juce::StringArray failures;
+        const auto audioRoot = folder.getChildFile (".audio");
+        for (const auto& directory : audioRoot.findChildFiles (juce::File::findDirectories, false))
+        {
+            if (directory == audio.directory || directory.isSymbolicLink() || ! directory.isAChildOf (audioRoot)
+                || juce::Uuid (directory.getFileName()).isNull()) continue;
+            const auto old = revisionReceipt (folder, directory.getFileName());
+            const bool published = old.getDynamicObject() != nullptr && old["metadata"]["projectId"].toString() == next["projectId"].toString()
+                && (directory.getChildFile (".committed").existsAsFile() || directory.getFileName() == expected);
+            const bool orphaned = ownerState (readJson (directory.getChildFile ("owner.json"))) == OwnerState::Orphaned;
+            if (! published && ! orphaned) continue;
+            for (const auto* name : { "preview.rmp", "preview.ogg", "preview.wav" })
+            {
+                const auto oldAudio = directory.getChildFile (name);
+                if (oldAudio.existsAsFile() && (oldAudio.isSymbolicLink() || ! oldAudio.deleteFile())) failures.add (oldAudio.getFileName());
+            }
+            // Receipts may still serve a reader or interrupted recovery. Once
+            // audio is gone, they are small and cannot resurrect old sound.
+        }
+        for (const auto* name : { "preview.wav", "preview.ogg" })
+        {
+            const auto oldAudio = folder.getChildFile (name);
+            if (oldAudio.existsAsFile() && (oldAudio.isSymbolicLink() || ! oldAudio.deleteFile())) failures.add (oldAudio.getFileName());
+        }
+        if (measureEntryAudio (folder) > audio.ogg.getSize() && failures.isEmpty()) failures.add ("Unpublished or unrecognized audio was retained");
+        next.getDynamicObject()->setProperty ("compactionCleanupPending", ! failures.isEmpty());
+        record->setProperty ("metadata", next);
+        if (auto written = writeJsonAtomically (audio.directory.getChildFile ("revision.json"), receipt); written.failed()) return written;
+        if (auto written = writeJsonAtomically (backupFile (folder), next); written.failed()) return written;
+        if (auto written = writeJsonAtomically (file, next); written.failed()) return written;
+        if (! failures.isEmpty()) return juce::Result::fail ("Audio compacted, but some old audio is busy or belongs to an unverified recording job. Close its DAW session and compact again to finish cleanup");
+    }
     return result;
+}
+
+CompactionResult compactPreview (const juce::File& root, const juce::File& folder,
+                                 const juce::String& expectedId, const juce::String& expectedRevision,
+                                 int quality, const std::function<bool()>& cancelled, const CommitObserver& observer)
+{
+    CompactionResult outcome;
+    const auto fail = [&] (const juce::String& message) { outcome.result = juce::Result::fail (message); return outcome; };
+    if (! root.isDirectory() || root.isSymbolicLink() || folder.isSymbolicLink()
+        || ! (folder.getParentDirectory() == root || (folder.getParentDirectory() == root.getChildFile (".pending")
+            && ! folder.getParentDirectory().isSymbolicLink())) || isDeleted (folder)) return fail ("Preview is outside the active library");
+    const auto metadata = readJson (folder.getChildFile ("metadata.json"));
+    if (expectedId.isEmpty() || metadata["projectId"].toString() != expectedId
+        || metadata["audioRevision"].toString() != expectedRevision) return fail ("Preview changed; refresh and retry compaction");
+    if ((bool) metadata.getProperty ("previewLocked", false)) return fail ("Preview is locked; unlock it before compacting");
+    if ((bool) metadata.getProperty ("pending", false) && pendingOwnerState (folder, metadata) != OwnerState::Orphaned)
+        return fail ("Pending preview has a live or unverified owner; close its DAW session first");
+    if (auto verified = verifyAudio (folder, metadata, cancelled, revisionReceipt (folder, expectedRevision)); verified.failed()) return fail (verified.getErrorMessage());
+    outcome.beforeBytes = measureEntryAudio (folder, cancelled);
+    const auto source = audioFile (folder, metadata, false);
+    const auto sourceHash = ProjectIdentity::fingerprint (source, cancelled);
+    if (sourceHash.isEmpty() || outcome.beforeBytes < 0) return fail ("Compaction cancelled or source unavailable");
+    if ((int) metadata["audioStorageVersion"] == 4 && outcome.beforeBytes == source.getSize()
+        && ! (bool) metadata.getProperty ("compactionCleanupPending", false))
+    { outcome.afterBytes = outcome.beforeBytes; return outcome; }
+    AudioRevision revision (folder); revision.compacted = true;
+    if (auto prepared = revision.prepare(); prepared.failed()) return fail (prepared.getErrorMessage());
+    PreviewCompaction::Encoding encoding;
+    const bool alreadyFlat = (int) metadata["audioStorageVersion"] == 4;
+    const auto encoded = alreadyFlat ? (source.copyFileTo (revision.ogg) ? juce::Result::ok() : juce::Result::fail ("Cannot copy compacted OGG"))
+                                    : PreviewCompaction::encode (source, revision.ogg, quality, encoding, cancelled);
+    if (encoded.failed()) return fail (encoded.getErrorMessage());
+    juce::var patch (new juce::DynamicObject()); auto* object = patch.getDynamicObject();
+    object->setProperty ("projectId", expectedId);
+    object->setProperty ("compactedAt", juce::Time::getCurrentTime().toISO8601 (true));
+    object->setProperty ("compactionSourceSha256", sourceHash);
+    object->setProperty ("compactionCleanupPending", true);
+    if (! alreadyFlat)
+    {
+        object->setProperty ("oggQuality", juce::jlimit (0, 10, quality));
+        object->setProperty ("previewGain", encoding.gain);
+        object->setProperty ("previewDecodedPeak", encoding.peak);
+        object->setProperty ("previewGainPasses", encoding.passes);
+        object->setProperty ("previewGainPolicy", "compacted-decoded-peak-guard-v1");
+    }
+    outcome.result = commitAudio (folder, revision, patch, expectedRevision, cancelled, observer, true);
+    outcome.changed = revision.published;
+    outcome.afterBytes = measureEntryAudio (folder);
+    return outcome;
 }
 
 juce::Result deleteEntry (const juce::File& root, const juce::File& folder)
@@ -696,9 +812,10 @@ const juce::StringArray audioFields { "audioRevision", "previousAudioRevision", 
     "bpmMinimum", "bpmMaximum", "estimatedBpmStart", "estimatedBpmEnd", "key", "keyConfidence", "analysisSampleRate",
     "analysisVersion", "analysisInputSamples", "analysisKeyComputedFrames", "analysisKeyReusedFrames",
     "analysisBpmComputedFrames", "analysisBpmReusedFrames", "analysisCacheBytes",
-    "previewGain", "previewDecodedPeak", "previewGainPasses", "previewGainPolicy",
+    "previewGain", "previewPlaybackGain", "previewDecodedPeak", "previewGainPasses", "previewGainPolicy",
     "pcmPeak", "samplesAboveUnity", "seamCrossfadeMs",
-    "settingsRevision", "settingsFingerprint", "recordSeconds", "oggQuality", "recordMono" };
+    "settingsRevision", "settingsFingerprint", "recordSeconds", "oggQuality", "recordMono",
+    "compactedAt", "compactionSourceSha256", "compactionCleanupPending" };
 }
 OwnerState pendingOwnerState (const juce::File& folder, const juce::var& metadata)
 {
@@ -771,9 +888,7 @@ RecoveryChoice recoveryChoice (const juce::File& folder, const juce::var& receip
     choice.key = metadata.getProperty ("key", "").toString();
     choice.bpm = (double) metadata.getProperty ("bpm", 0);
     choice.previewOgg = audioFile (folder, metadata, false);
-    juce::WavAudioFormat wav;
-    auto input = audioFile (folder, metadata, true).createInputStream();
-    std::unique_ptr<juce::AudioFormatReader> reader (input ? wav.createReaderFor (input.release(), true) : nullptr);
+    auto reader = PreviewAudio::open (audioFile (folder, metadata, true));
     if (reader != nullptr && reader->sampleRate > 0)
     {
         choice.durationSeconds = reader->lengthInSamples / reader->sampleRate;

@@ -6,6 +6,7 @@
 #include "WaveformEnvelope.h"
 #include "PlaybackQueue.h"
 #include "MetronomeSource.h"
+#include <optional>
 
 class WaveformPlayerComponent : public juce::Component,
                                 public juce::SettableTooltipClient,
@@ -25,6 +26,10 @@ public:
     void setQueue (const juce::Array<ProjectEntry>& entries)
     { queue.setEntries (entries); nextBtn.setEnabled (! entries.isEmpty()); previousBtn.setEnabled (! entries.isEmpty()); }
     std::function<void (const ProjectEntry&)> onEntryLoaded;
+    // The library selection can differ from the last preview played (keyboard,
+    // multi-selection or filtering). Resolve it before opening the file picker.
+    std::function<juce::Array<ProjectEntry>()> assignmentSelection;
+    std::optional<ProjectEntry> projectAssignmentTarget() const;
     void next (bool automatic = false);
     void previous();
     void toggleMute();

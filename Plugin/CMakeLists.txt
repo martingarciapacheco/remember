@@ -45,6 +45,7 @@ target_sources(RememberPlugin PRIVATE
     Source/PreviewAnalysis.cpp
     Source/SettingsManager.cpp
     ../Shared/ProjectIdentity.cpp
+    ../Shared/PreviewAudio.cpp ../Shared/PreviewCompaction.cpp
     ../Shared/LibraryStore.cpp
     ../Shared/BackgroundRetirement.cpp
 )
@@ -99,6 +100,7 @@ option(REMEMBER_BUILD_TESTS "Build Remember regression tests" OFF)
 if(REMEMBER_BUILD_TESTS)
     enable_testing()
     juce_add_console_app(RememberTests PRODUCT_NAME "Remember regression tests")
+    target_sources(RememberTests PRIVATE ../Tests/SegmentedPreviewTests.cpp)
     target_sources(RememberTests PRIVATE ../Tests/RememberTests.cpp ../Tests/StorageTests.cpp ../Tests/RecoveryTests.cpp ../Tests/StressTests.cpp ../Tests/LifecycleTests.cpp ../Tests/ConfigurationTests.cpp ../Tests/AnalysisTests.cpp ../Tests/CaptureMatrixTests.cpp ../App/Source/ProjectScanner.cpp ../App/Source/LibraryWatch.cpp)
     target_link_libraries(RememberTests PRIVATE RememberPlugin
         juce::juce_audio_processors juce::juce_audio_formats juce::juce_dsp
@@ -111,6 +113,10 @@ if(REMEMBER_BUILD_TESTS)
     target_sources(RememberTests PRIVATE ../Tests/AtomicJsonTests.cpp)
     target_sources(RememberTests PRIVATE ../Tests/TransportTests.cpp)
     target_sources(RememberTests PRIVATE ../Tests/WorkflowCaptureTests.cpp)
+    add_test(NAME RememberSegmentedPreviews COMMAND RememberTests --segmented)
+    add_test(NAME RememberPreviewCompaction COMMAND RememberTests --compaction)
+    set_tests_properties(RememberPreviewCompaction PROPERTIES TIMEOUT 180)
+    set_tests_properties(RememberSegmentedPreviews PROPERTIES TIMEOUT 180)
     add_test(NAME RememberWorkflowCapture COMMAND RememberTests --workflow-capture)
     set_tests_properties(RememberWorkflowCapture PROPERTIES TIMEOUT 60)
     target_sources(RememberTests PRIVATE ../Tests/PreviewQualityTests.cpp)

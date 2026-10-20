@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <functional>
+#include "PreviewAudio.h"
 
 // All operations here belong on control/background threads, never an audio callback.
 namespace LibraryStore
@@ -46,7 +47,10 @@ struct StorageUsage
     bool cancelled = false;
 };
 // Includes hidden revision/history/pending folders. Call on a worker only.
+juce::int64 measureEntryAudio (const juce::File& entryFolder, const std::function<bool()>& cancelled = {});
 StorageUsage measureStorage (const juce::File& root, const std::function<bool()>& cancelled = {});
+// The pcm selector is legacy: storage v3 returns the same compressed .rmp
+// package for playback and analysis. v1/v2 retain their separate WAV/OGG paths.
 juce::File audioFile (const juce::File& entryFolder, const juce::var& metadata, bool pcm);
 juce::File audioFile (const juce::File& entryFolder, bool pcm);
 bool isDeleted (const juce::File& entryFolder);
@@ -59,7 +63,8 @@ struct AudioRevision
 {
     juce::String id { juce::Uuid().toString() };
     juce::File directory, ogg, pcm;
-    explicit AudioRevision (const juce::File& entryFolder);
+    explicit AudioRevision (const juce::File& entryFolder, bool segmented = false);
+    bool segmented = false, compacted = false;
     ~AudioRevision();
     AudioRevision (const AudioRevision&) = delete;
     AudioRevision& operator= (const AudioRevision&) = delete;
@@ -74,12 +79,22 @@ struct AudioRevision
 };
 
 // Optimistic audio revision check prevents a stale merge replacing a newer tail.
-// Only metadata.json is replaced at commit: both audio files are immutable first.
+// Only metadata.json is replaced at commit: the package (or legacy pair) is immutable first.
 enum class CommitStage { AudioVerified, ReceiptWritten, BackupWritten, ManifestWritten, RevisionMarked };
 using CommitObserver = std::function<void (CommitStage)>;
 juce::Result commitAudio (const juce::File& entryFolder, const AudioRevision&,
                           const juce::var& metadataPatch, const juce::String& expectedRevision,
-                          const std::function<bool()>& cancelled = {}, const CommitObserver& observer = {});
+                          const std::function<bool()>& cancelled = {}, const CommitObserver& observer = {}, bool discardHistory = false);
+struct CompactionResult
+{
+    juce::Result result = juce::Result::ok();
+    juce::int64 beforeBytes = 0, afterBytes = 0;
+    bool changed = false;
+};
+CompactionResult compactPreview (const juce::File& previewsRoot, const juce::File& entryFolder,
+                                 const juce::String& expectedId, const juce::String& expectedRevision,
+                                 int quality, const std::function<bool()>& cancelled = {},
+                                 const CommitObserver& observer = {});
 // Integrity repair preserves current organisation/identity when available.
 // Prepared but unpublished receipts are considered only if no published
 // audio can be recovered and their writer is proven gone. Respects tombstones.

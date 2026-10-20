@@ -1,4 +1,5 @@
 #include "SettingsDialog.h"
+#include "PreviewCompactionActions.h"
 #include "ProjectScanner.h"
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
@@ -156,7 +157,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     styleLabel (storageUsage,  11.0f, Pal::Subtext);
     styleLabel (pcmPolicy, 12.0f, Pal::Subtext);
     sizeEstimate.setTitle ("Estimated preview storage");
-    pcmPolicy.setTitle ("WAV storage notice");
+    pcmPolicy.setTitle ("Preview storage notice");
     for (auto* label : { &sizeEstimate, &pcmPolicy })
     {
         label->setJustificationType (juce::Justification::topLeft);
@@ -169,6 +170,21 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     addAndMakeVisible (sizeEstimate);
     addAndMakeVisible (storageUsage);
     addAndMakeVisible (pcmPolicy);
+    RememberUI::iconButton (storageInfo, "info", "About preview storage");
+    storageInfo.setTooltip ("How previews, tail preservation and recovery use disk space");
+    storageInfo.onClick = [this] { showStorageInfo(); };
+    addAndMakeVisible (storageInfo);
+    compactBtn.setTitle ("Compact large previews");
+    compactBtn.setTooltip ("Re-encode previews above the total audio limit, including recovery, into one OGG each");
+    compactBtn.onClick = [this] { compactLargePreviews(); };
+    compactLimit.setTitle ("Compaction limit in MB"); compactLimit.setText ("10", false);
+    compactLimit.setInputRestrictions (9, "0123456789."); compactLimit.setFont (RememberUI::font (13));
+    compactLimit.setTooltip ("Total audio including recovery; 1 MB = 1,000,000 bytes. Saved with OK.");
+    RememberUI::bindColour (compactLimit, juce::TextEditor::backgroundColourId, Pal::Content);
+    RememberUI::bindColour (compactLimit, juce::TextEditor::textColourId, Pal::Text);
+    styleLabel (compactUnits, 12, Pal::Subtext);
+    addAndMakeVisible (compactBtn); addAndMakeVisible (compactLimit); addAndMakeVisible (compactUnits);
+
 
     // Duration presets
     durationCombo.setTitle ("Capture duration");
@@ -282,7 +298,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     loadSettings (std::move (reader));
 }
 
-SettingsDialog::~SettingsDialog() { searchGeneration->fetch_add (1); storageGeneration->fetch_add (1); validationGeneration->fetch_add (1); }
+SettingsDialog::~SettingsDialog() { if (storageInfoPopup != nullptr) storageInfoPopup->dismiss(); searchGeneration->fetch_add (1); storageGeneration->fetch_add (1); validationGeneration->fetch_add (1); }
 
 void SettingsDialog::saveZoom()
 {
@@ -368,6 +384,7 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             safe->projectsFolders = settings->roots;
             safe->recordSeconds = settings->seconds;
             safe->oggQuality = settings->quality;
+            safe->compactLimit.setText (juce::String (settings->compactAboveMB, 2), false);
             safe->recordMono = settings->mono;
             safe->midiVoiceCombo.setSelectedId (settings->midiPreviewVoice, juce::dontSendNotification);
             // JUCE Button::setToggleState ignores changes while disabled.
@@ -438,19 +455,89 @@ void SettingsDialog::updateSizeEstimate()
     double bytes = (double) kVorbisBitrate[q] * 1000.0 * (double) recordSeconds
                    * (recordMono ? kMonoSizeFactor : 1.0) / 8.0;
 
-    const auto pcm = 48000.0 * recordSeconds * (recordMono ? 1 : 2) * sizeof (float);
     const auto size = [] (double value) { return juce::File::descriptionOfSizeInBytes ((juce::int64) value); };
-    sizeEstimate.setText ("At 48 kHz: ~" + size (2.0 * (pcm + bytes)) + " per preview, including recovery copy\n"
-        + juce::String (recordSeconds) + " s " + (recordMono ? "mono" : "stereo") + ": WAV " + size (pcm)
-        + " + OGG ~" + size (bytes) + " per copy", juce::dontSendNotification);
-    sizeEstimate.setTooltip ("Estimate for the full selected duration at 48 kHz, including the current and previous copies. "
-        "WAV size scales with the DAW sample rate: twice at 96 kHz, four times at 192 kHz. "
-        "OGG size varies with content. Temporary capture and encoding files need additional space. "
-        "Existing previews may have different durations, formats or settings.");
-    pcmPolicy.setText ("WAV files stay on disk, even when replacing the whole preview.\n"
-        "Temporary WAVs need extra space while saving; WAV size is 4x at 192 kHz.", juce::dontSendNotification);
-    pcmPolicy.setTooltip ("Both tail preservation and full replacement currently retain WAV + OGG for the current and previous revisions. "
-        "These settings do not remove existing audio files.");
+    sizeEstimate.setText ("At 48 kHz: ~" + size (2.0 * bytes) + " of OGG audio, including recovery copy\n"
+        + juce::String (recordSeconds) + " s " + (recordMono ? "mono" : "stereo") + ": ~" + size (bytes) + " per copy, plus fragment overhead", juce::dontSendNotification);
+    sizeEstimate.setTooltip ("Approximate compressed audio size. Fragment headers, overlaps and old retained ranges add space. "
+        "Duration, sample rate, quality and content affect actual size; existing legacy previews may still contain WAV files.");
+    pcmPolicy.setText ("New previews keep OGG fragments without recoding the old tail.\n"
+        "WAVs are temporary while saving. Use the info button for limits and recovery.", juce::dontSendNotification);
+    pcmPolicy.setTooltip ("Current and previous preview packages are retained. Existing previews are read without bulk migration.");
+}
+
+void SettingsDialog::showStorageInfo()
+{
+    if (storageInfoPopup != nullptr) { storageInfoPopup->dismiss(); return; }
+    class Information final : public juce::Component
+    {
+    public:
+        Information()
+        {
+            title.setText ("How preview storage works", juce::dontSendNotification);
+            title.setFont (RememberUI::font (16, true)); RememberUI::bindColour (title, juce::Label::textColourId, Pal::Text);
+            text.setMultiLine (true); text.setReadOnly (true); text.setCaretVisible (false); text.setScrollbarsShown (true);
+            text.setFont (RememberUI::font (13)); text.setTitle ("Preview storage information");
+            RememberUI::bindColour (text, juce::TextEditor::backgroundColourId, Pal::Content);
+            RememberUI::bindColour (text, juce::TextEditor::textColourId, Pal::Text);
+            text.setText ("New captures are encoded once into short OGG fragments. Keeping the old tail reuses its compressed fragments; it does not repeatedly recode them. A short crossfade is applied during playback.\n\n"
+                "Fragments and their playback index are stored together in a .rmp preview package. The current package and one previous package are kept for recovery. These are not ordinary OGG files. Update the app and plugin together; earlier builds cannot read new packages.\n\n"
+                "Capture WAVs are temporary and removed after their jobs finish. A crash can leave temporary files. Older previews remain readable and may still contain permanent WAVs; adding this version does not bulk-delete or migrate your library.\n\n"
+                "The estimate covers OGG audio, not an exact disk limit. Fragment headers, overlap and retained source ranges add space. Higher quality, duration, sample rate and stereo can increase size. Temporary capture needs about 23 MB for 60 s stereo at 48 kHz, or 92 MB at 192 kHz; mono uses half, and queued captures need additional space.\n\n"
+                "Compact preview audio in a recording's actions, or Compact previews above a chosen MB limit here, replaces fragments and recovery audio with one ordinary OGG at the selected quality. It adds one lossy encoding generation and cannot be undone. A later partial capture converts its retained tail to fragments once; later captures reuse those fragments. Entry sizes and the MB threshold count all audio including recovery. Already compacted audio is not encoded again unless it changes.\n\n"
+                "To bound storage and decoding, a package allows at most 256 source ranges, 16 overlapping layers and 32 MiB. Repeated tiny edits can reach a limit. Remember then preserves the previous preview and reports an error: compact explicitly, capture the full preview or enable Replace whole previews. No automatic lossy flattening is performed.", false);
+            addAndMakeVisible (title); addAndMakeVisible (text); setSize (400, 410);
+        }
+        void resized() override { auto area = getLocalBounds().reduced (12); title.setBounds (area.removeFromTop (30)); text.setBounds (area); }
+    private:
+        RememberUI::Style style { *this };
+        juce::Label title; juce::TextEditor text;
+    };
+    auto content = std::make_unique<Information>(); auto* look = &content->getLookAndFeel();
+    storageInfoPopup = &juce::CallOutBox::launchAsynchronously (std::move (content), storageInfo.getScreenBounds(), nullptr);
+    storageInfoPopup->setLookAndFeel (look);
+}
+
+void SettingsDialog::compactLargePreviews()
+{
+    if (! settingsLoaded || compacting) return;
+    const auto text = compactLimit.getText(); const auto limit = text.getDoubleValue();
+    if (! text.containsOnly ("0123456789.") || text.indexOfChar ('.') != text.lastIndexOfChar ('.')
+        || ! std::isfinite (limit) || limit <= 0 || limit > 1000000)
+    { pcmPolicy.setText ("Enter a positive compaction limit in MB", juce::dontSendNotification); return; }
+    const auto snapshot = ProjectScanner::librarySnapshot();
+    if (snapshot->loading || snapshot->sourceRoot == juce::File{} || snapshot->stale)
+    { pcmPolicy.setText ("Wait for the current library to finish loading, then retry", juce::dontSendNotification); return; }
+    const auto entries = snapshot->entries; const auto root = snapshot->sourceRoot;
+    const auto quality = oggQuality;
+    PreviewCompactionActions::show (PreviewCompactionActions::confirmation (
+        "All previews in the current library above " + juce::String (limit, 2)
+        + " MB of audio, including recovery. Locked/live pending recordings are skipped.\n" + root.getFullPathName()).withAssociatedComponent (this),
+        [safe = juce::Component::SafePointer<SettingsDialog> (this), entries, root, limit, quality] (int response)
+        {
+            if (safe == nullptr || response != 1 || safe->compacting) return;
+            safe->compacting = true; safe->compactBtn.setEnabled (false); safe->compactLimit.setEnabled (false);
+            safe->okBtn.setEnabled (false);
+            safe->pcmPolicy.setText ("Compacting eligible previews in the background...\nOriginal audio is kept until each replacement is validated.", juce::dontSendNotification);
+            if (safe->onBeforeCompaction) for (const auto& entry : entries)
+                if (PreviewCompactionActions::eligible (entry) && entry.audioBytes > limit * 1000000.0) safe->onBeforeCompaction (entry);
+            auto summary = std::make_shared<PreviewCompactionActions::Summary>();
+            ProjectScanner::editAsync ([root, entries, limit, quality, summary]
+            {
+                PreviewCompactionActions::run (root, entries, quality, (juce::int64) std::llround (limit * 1000000), *summary);
+                return juce::Result::ok();
+            }, [safe, summary] (juce::Result result)
+            {
+                if (safe == nullptr) return;
+                safe->compacting = false; safe->compactBtn.setEnabled (true); safe->compactLimit.setEnabled (true);
+                safe->okBtn.setEnabled (true);
+                safe->pcmPolicy.setText (result.failed() ? result.getErrorMessage() : summary->text(), juce::dontSendNotification);
+                safe->pcmPolicy.setTooltip (summary->errors.joinIntoString ("\n"));
+                safe->measuredFolder = {}; safe->updateStorageUsage();
+                if (! summary->errors.isEmpty()) PreviewCompactionActions::show (juce::MessageBoxOptions()
+                    .withTitle ("Compaction needs attention").withAssociatedComponent (safe.getComponent())
+                    .withMessage (summary->text() + "\n\n" + summary->errors.joinIntoString ("\n")).withButton ("OK"));
+            });
+        });
 }
 
 void SettingsDialog::updateStorageUsage()
@@ -471,7 +558,7 @@ void SettingsDialog::updateStorageUsage()
         if (safe == nullptr || token->load() != generation || usage->cancelled) return;
         const auto size = [] (juce::int64 bytes) { return juce::File::descriptionOfSizeInBytes (bytes); };
         const auto text = "Library incl. history: " + size (usage->bytes) + " (PCM " + size (usage->pcmBytes)
-            + ", OGG " + size (usage->previewBytes) + ") | Free: "
+            + ", compressed " + size (usage->previewBytes) + ") | Free: "
             + (usage->freeBytes >= 0 ? size (usage->freeBytes) : juce::String ("unavailable"));
         safe->storageUsage.setText (text, juce::dontSendNotification);
         safe->storageUsage.setTooltip (text);
@@ -549,20 +636,25 @@ void SettingsDialog::searchProjectFolders()
 
 void SettingsDialog::commit()
 {
-    if (appearanceSaving || zoomSaving) return;
+    if (appearanceSaving || zoomSaving || compacting) return;
+    const auto compactText = compactLimit.getText();
+    const auto compactMB = compactText.getDoubleValue();
+    if (! compactText.containsOnly ("0123456789.") || compactText.indexOfChar ('.') != compactText.lastIndexOfChar ('.')
+        || ! std::isfinite (compactMB) || compactMB <= 0 || compactMB > 1000000)
+    { storageUsage.setText ("Enter a positive compaction limit in MB", juce::dontSendNotification); return; }
     validationGeneration->fetch_add (1);
     for (auto* child : getChildren()) child->setEnabled (false);
     auto originalBackup = std::make_shared<juce::File>();
     ProjectScanner::editAsync ([previews = previewsFolder, roots = projectsFolders, fingerprint = rebuildFingerprint, originalBackup,
-                               seconds = recordSeconds, quality = oggQuality, mono = recordMono, midiVoice = midiVoiceCombo.getSelectedId(),
+                               seconds = recordSeconds, quality = oggQuality, mono = recordMono, midiVoice = midiVoiceCombo.getSelectedId(), compactMB,
                                capture = CaptureOptions { manualToggle.getToggleState(), lockToggle.getToggleState(), replaceToggle.getToggleState() }]
     {
         bool validRoot = false;
         for (const auto& root : roots) if (root.isDirectory()) { validRoot = true; break; }
         if (! previews.isDirectory() || ! validRoot)
             return juce::Result::fail ("Select an existing previews folder and at least one accessible project search folder");
-        const auto result = fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice)
-            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice);
+        const auto result = fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice, compactMB)
+            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice, compactMB);
         // Saving accepts the search roots independently of the dialog's draft
         // search, which is cancelled on close. Rebuild the live inventory even
         // if a native filesystem notification is delayed or unavailable.
@@ -644,7 +736,9 @@ void SettingsDialog::resized()
     area.removeFromTop (12);
 
     // ── Recording block ─────────────────────────────────────────────────────
-    recordCaption.setBounds (area.removeFromTop (20));
+    auto recordHeading = area.removeFromTop (30);
+    storageInfo.setBounds (recordHeading.removeFromRight (30));
+    recordCaption.setBounds (recordHeading);
     recordHint   .setBounds (area.removeFromTop (16));
     area.removeFromTop (4);
 
@@ -669,6 +763,11 @@ void SettingsDialog::resized()
     sizeEstimate.setBounds (area.removeFromTop (38));
     pcmPolicy.setBounds (area.removeFromTop (38));
     storageUsage.setBounds (area.removeFromTop (24));
+    area.removeFromTop (6);
+    auto compactRow = area.removeFromTop (32);
+    compactBtn.setBounds (compactRow.removeFromLeft (220)); compactRow.removeFromLeft (8);
+    compactLimit.setBounds (compactRow.removeFromLeft (96)); compactRow.removeFromLeft (6);
+    compactUnits.setBounds (compactRow.removeFromLeft (32));
 
     area.removeFromTop (12);
 
@@ -705,10 +804,11 @@ void SettingsDialog::resized()
     signature.setBounds (bottom.reduced (8, 0));
 }
 
-void SettingsDialog::launch (bool firstRun, std::function<void()> onDone)
+void SettingsDialog::launch (bool firstRun, std::function<void()> onDone, std::function<void (const ProjectEntry&)> beforeCompaction)
 {
     auto* dialog = new SettingsDialog (firstRun);
     dialog->onCompleted = onDone;
+    dialog->onBeforeCompaction = std::move (beforeCompaction);
 
     juce::DialogWindow::LaunchOptions opts;
     opts.dialogTitle               = firstRun ? "Remember - Setup" : "Remember - Settings";

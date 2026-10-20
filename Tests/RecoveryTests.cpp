@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "RecoveryTests.h"
 #include "AtomicJsonTests.h"
 #include "../Shared/LibraryStore.h"
@@ -51,7 +52,7 @@ juce::String publish (const juce::File& folder, float value)
 }
 float sample (const juce::File& file)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
     check (reader != nullptr && reader->lengthInSamples == 4800, "Recovered audio is incomplete or unreadable");
     juce::AudioBuffer<float> samples (2, 1);
@@ -422,7 +423,7 @@ void testRecovery (const juce::File& fixtureRoot)
         const auto lib = library (root, "readers"), folder = entry (lib);
         const auto first = publish (folder, 0.2f), second = publish (folder, 0.6f);
         const auto oldest = folder.getChildFile (".audio").getChildFile (first);
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> openReader (formats.createReaderFor (oldest.getChildFile ("preview.ogg")));
         check (openReader != nullptr, "Cannot hold obsolete reader");
         const auto third = publish (folder, 0.2f);

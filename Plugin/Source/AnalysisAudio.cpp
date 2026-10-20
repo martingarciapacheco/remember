@@ -1,3 +1,4 @@
+#include "../../Shared/PreviewAudio.h"
 #include "AnalysisAudio.h"
 #include <numeric>
 #if JUCE_INTEL && (defined (__SSE2__) || defined (_M_X64))
@@ -13,7 +14,7 @@ namespace
 {
 std::unique_ptr<juce::AudioFormatReader> open (const juce::File& file)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     return std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (file));
 }
 bool supportedRate (double value)

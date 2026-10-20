@@ -1,6 +1,7 @@
 #pragma once
 #include "../../Shared/RememberLookAndFeel.h"
 #include <map>
+#include "TagFilterEditor.h"
 
 // Native, scrollable forms keep essential actions visible at small window sizes.
 class WorkflowForm : public juce::Component
@@ -36,6 +37,16 @@ public:
         auto control = std::make_unique<juce::ComboBox>(); auto& result = *control;
         result.addItemList (values, 1); result.setSelectedId (juce::jmax (1, values.indexOf (value) + 1), juce::dontSendNotification);
         result.setTitle (label); choices[id] = &result; add (label, std::move (control), 34); return result;
+    }
+    juce::TextEditor& tagText (const juce::String& id, const juce::String& label,
+                               const juce::String& value, juce::StringArray tags)
+    {
+        auto control = std::make_unique<TagFilterEditor> (std::move (tags)); auto& result = *control;
+        result.setFont (RememberUI::font()); result.setText (value, false);
+        result.setTitle (label); result.setIndents (8, 6);
+        RememberUI::bindColour (result, juce::TextEditor::backgroundColourId, Pal::Content);
+        RememberUI::bindColour (result, juce::TextEditor::textColourId, Pal::Text);
+        texts[id] = &result; add (label, std::move (control), 34); return result;
     }
     juce::ToggleButton& toggle (const juce::String& id, const juce::String& label, bool value)
     {

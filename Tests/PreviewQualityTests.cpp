@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "PreviewQualityTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Shared/LibraryStore.h"
@@ -58,9 +59,9 @@ void capture (RecordingEngine& engine, bool square, bool mono)
     }
     check (engine.getState() == RecordingEngine::State::Pending, "Preview quality capture failed: " + engine.getLastError());
 }
-float decode (const juce::File& file, int channels, bool pcm, bool square)
+float decode (const juce::File& file, int channels)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
     check (reader && reader->lengthInSamples == frames && (int) reader->numChannels == channels
            && reader->sampleRate == rate, "Preview codec changed length, rate or channels");
@@ -76,9 +77,6 @@ float decode (const juce::File& file, int channels, bool pcm, bool square)
                 const auto value = audio.getSample (ch, i);
                 check (std::isfinite (value), "Codec produced a nonfinite sample");
                 peak = juce::jmax (peak, std::abs (value));
-                if (pcm)
-                    check (value == signal (offset + i, square) * (ch == 1 ? -1 : 1),
-                           "Float PCM lost headroom or changed the captured signal");
             }
         offset += count;
     }
@@ -87,15 +85,19 @@ float decode (const juce::File& file, int channels, bool pcm, bool square)
 juce::var validate (const juce::File& folder, int quality, bool mono, bool square)
 {
     const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
-    const auto pcmPeak = decode (LibraryStore::audioFile (folder, true), mono ? 1 : 2, true, square);
-    const auto oggPeak = decode (LibraryStore::audioFile (folder, false), mono ? 1 : 2, false, square);
+    const auto audio = LibraryStore::audioFile (folder, false);
+    check ((int) metadata["audioStorageVersion"] == 3 && audio.hasFileExtension ("rmp"), "New capture did not use compressed fragment storage");
+    const auto until = juce::Time::getMillisecondCounter() + 5000;
+    while (audio.getSiblingFile ("preview.wav").existsAsFile() && juce::Time::getMillisecondCounter() < until) juce::Thread::sleep (2);
+    check (! audio.getSiblingFile ("preview.wav").existsAsFile(), "Successful capture retained its temporary WAV");
+    const auto pcmPeak = (double) metadata.getProperty ("pcmPeak", -1.0);
+    const auto oggPeak = decode (audio, mono ? 1 : 2);
     const auto gain = (double) metadata.getProperty ("previewGain", 0.0);
     const auto passes = (int) metadata.getProperty ("previewGainPasses", 0);
     check (oggPeak <= 1 && gain > 0 && gain <= 1 && passes >= 1 && passes <= 3,
            "Decoded preview exceeded unity or gain policy is invalid");
     check (std::abs (oggPeak - (double) metadata.getProperty ("previewDecodedPeak", -1.0)) < 1.0e-6
-           && std::abs (pcmPeak - (double) metadata.getProperty ("pcmPeak", -1.0)) < 1.0e-6
-           && metadata.getProperty ("previewGainPolicy", "").toString() == "decoded-sample-peak-guard-v1",
+           && metadata.getProperty ("previewGainPolicy", "").toString() == "segmented-source-peak-guard-v1",
            "Peak metadata does not describe the committed codec output");
     const auto integrity = LibraryStore::recoverEntry (folder);
     check (integrity.result.wasOk() && ! integrity.repaired, "Validated preview has an invalid integrity receipt");
@@ -104,7 +106,7 @@ juce::var validate (const juce::File& folder, int quality, bool mono, bool squar
                "Below-unity square wave did not exercise codec overshoot correction");
     else
         check (pcmPeak > 1 && gain < 1 && (juce::int64) metadata.getProperty ("samplesAboveUnity", 0) > 0,
-               "Headroom fixture did not preserve above-unity float PCM");
+               "Headroom fixture did not measure and attenuate above-unity input");
     std::cout << "QUALITY q=" << quality << " channels=" << (mono ? 1 : 2) << " shape=" << (square ? "square" : "sine")
               << " pcmPeak=" << pcmPeak << " gain=" << gain << " decodedPeak=" << oggPeak << " passes=" << passes << '\n';
     return metadata;
@@ -138,5 +140,5 @@ void testPreviewQuality (const juce::File& root)
                 check (restored.getProperty (field, {}) == first.getProperty (field, {}), "Recovery mixed gain metadata from two revisions");
             check ((bool) restored.getProperty ("favorite", false), "Audio recovery erased an unrelated edit");
         }
-    std::cout << "PASS: OGG q2/q4/q9 mono/stereo decoded sample peaks, complete bit-exact float PCM, input transparency and gain-aware recovery\n";
+    std::cout << "PASS: OGG fragments q2/q4/q9 mono/stereo decoded sample peaks, temporary WAV cleanup, input transparency and gain-aware recovery\n";
 }

@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "LifecycleTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Plugin/Source/PluginProcessor.h"
@@ -60,7 +61,8 @@ void capture (RecordingEngine& engine, double rate, float value, double start = 
     {
         const auto count = juce::jmin (128, total - done);
         juce::AudioBuffer<float> audio (2, count);
-        for (int ch = 0; ch < 2; ++ch) juce::FloatVectorOperations::fill (audio.getWritePointer (ch), value, count);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < count; ++i)
+            audio.setSample (ch, i, value * (float) std::cos (juce::MathConstants<double>::twoPi * (done + i) / 100));
         head.time = start + done / rate;
         engine.processBlock (audio, &head);
         done += count;
@@ -196,11 +198,12 @@ void testLifecycle (const juce::File& root)
             const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
             check (metadata.getProperty ("projectName", "").toString() == "Concurrent " + juce::String (i),
                    "Concurrent pipelines mixed project identities");
-            juce::AudioFormatManager formats; formats.registerBasicFormats();
+            juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
             std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
             juce::AudioBuffer<float> audio (2, 1);
-            check (reader && reader->lengthInSamples == 9600 && reader->read (&audio, 0, 1, 100, true, true)
-                   && std::abs (audio.getSample (0, 0) - 0.2f * (i + 1)) < 0.00001f,
+            // Probe the settled tone, away from Vorbis startup transients.
+            check (reader && reader->lengthInSamples == 9600 && reader->read (&audio, 0, 1, 4000, true, true)
+                   && std::abs (audio.getSample (0, 0) - 0.2f * (i + 1)) < 0.025f,
                    "Concurrent pipelines committed another instance's audio");
         }
         std::cout << "PASS: four concurrent encoding/analysis pipelines complete with isolated identities/audio in "
@@ -262,13 +265,16 @@ void testLifecycle (const juce::File& root)
     }
     check (maximumQueryMs < 200, "UI query waited for background disk/encoding work");
     engine.saveState (saved);
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
     check (reader && reader->sampleRate == 16000 && reader->lengthInSamples == 19200,
            "New prepare changed the format of an older job or reordered captures");
     juce::AudioBuffer<float> sample (2, 1);
-    check (reader->read (&sample, 0, 1, 100, true, true) && std::abs (sample.getSample (0, 0) - 1.25f) < 0.00001f,
-           "Float PCM lost headroom or a newer capture was overwritten");
+    const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
+    check ((double) metadata["pcmPeak"] > 1 && (double) metadata["previewGain"] < 1
+        && reader->read (&sample, 0, 1, 4000, true, true)
+        && std::abs (sample.getSample (0, 0) - 1.25f * (float) (double) metadata["previewGain"]) < 0.035f,
+           "Preview gain or a newer queued capture was overwritten");
     reader.reset();
     engine.prepare (8000, 128, SettingsManager::Snapshot{});
     Head unknown; unknown.known = false;

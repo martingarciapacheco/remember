@@ -1,3 +1,4 @@
+#include "../../Shared/PreviewAudio.h"
 #include "RecordingCore.h"
 #include "KeyDetector.h"
 #include "BpmDetector.h"
@@ -82,7 +83,7 @@ juce::var loadMetadata (const juce::File& folder)
 juce::Result decodedPreviewPeak (const juce::File& file, int channels, int length, float& peak,
                                 const std::function<bool()>& cancelled)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
     if (! reader) return juce::Result::fail ("Cannot decode the newly encoded preview");
     if (reader->numChannels != (unsigned int) channels || reader->lengthInSamples != length)
@@ -853,17 +854,54 @@ void RecordingEngine::Core::refreshHostProject (const HostObservation& observati
         if (! associationBlocked.exchange (true)) contextGeneration = generation.fetch_add (1) + 1;
         return;
     }
-    if (entry.associationProblem.isNotEmpty())
-    {
-        entry.associationProblem.clear();
-        associationBlocked.store (false);
-    }
     if (observation.invalidManualFile)
     {
         entry.verified = false;
         if (! associationBlocked.exchange (true)) contextGeneration = generation.fetch_add (1) + 1;
         fail ("Verify manual association", juce::File (entry.path), "Selected project is missing or its identity changed. Select the project file again");
         return;
+    }
+    // A caption change is not enough to replace a historical recording whose
+    // project file was replaced at the same path. Otherwise adoptExistingEntry
+    // rejects its old identity and Save As copies the preceding project's audio
+    // into a second entry with the historical project's name.
+    if (! observation.explicitAssociation && observation.association == Association::TitleMatch
+        && entry.confirmed && entry.path.isNotEmpty() && host.path.isNotEmpty()
+        && juce::File (entry.path) != juce::File (host.path) && observation.previousExists
+        && entry.fileId != observation.fileId)
+    {
+        bool historicalPath = false, verifiedTarget = false;
+        for (const auto& folder : outputFolder.findChildFiles (juce::File::findDirectories, false))
+        {
+            if (folder.getFileName().startsWithChar ('.') || folder.isSymbolicLink() || LibraryStore::isDeleted (folder)) continue;
+            const auto metadata = loadMetadata (folder);
+            const auto path = metadata.getProperty ("projectPath", "").toString();
+            if (path.isEmpty() || juce::File (path) != juce::File (host.path)) continue;
+            const auto id = metadata.getProperty ("projectFileId", "").toString();
+            const auto hash = metadata.getProperty ("projectFingerprint", "").toString();
+            historicalPath = true;
+            verifiedTarget = verifiedTarget || (id.isNotEmpty() && id == observation.fileId)
+                || (hash.isNotEmpty() && hash == observation.hash) || (id.isEmpty() && hash.isEmpty());
+        }
+        if (historicalPath && ! verifiedTarget)
+        {
+            entry.associationProblem = "Project file identity changed; select its original recording in the app and use Assign path";
+            entry.verified = false;
+            if (! associationBlocked.exchange (true))
+            {
+                contextGeneration = generation.fetch_add (1) + 1;
+                fail ("Verify project association", juce::File (host.path), entry.associationProblem);
+            }
+            return;
+        }
+    }
+    if (entry.associationProblem.isNotEmpty())
+    {
+        entry.associationProblem.clear();
+        associationBlocked.store (false);
+        juce::ScopedLock result (resultsLock);
+        if (lastError.startsWith ("Verify project association"))
+        { lastError.clear(); if (state.load() == State::Error) state.store (State::Idle); }
     }
     daw = host.daw;
     if (host.path.isEmpty())
@@ -1184,7 +1222,7 @@ std::shared_ptr<RecordingEngine::Core::AnalysisJob> RecordingEngine::Core::start
     job->channels = slot.mono ? 1 : 2;
     job->hostBpm = slot.bpm > 0;
     job->generation = slot.generation;
-    job->source = { job->revision->pcm, job->revision->id, previousRevision, previousFingerprint,
+    job->source = { job->revision->segmented ? job->revision->ogg : job->revision->pcm, job->revision->id, previousRevision, previousFingerprint,
                     slot.rate, length, job->channels, prefix, job->hostBpm };
     std::shared_ptr<AnalysisJob> superseded;
     {
@@ -1288,27 +1326,12 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
         const auto oldLength = ! slot.replace && previous.valid() ? juce::jmin (slot.limit, previous.length()) : 0;
         const auto length = juce::jmax (prefix, oldLength);
         if (length <= 0) { fail ("Read capture", slot.capturedPcm, "Capture is empty"); return; }
-        // An analysis reader may outlive a cancelled encoder. Shared ownership
-        // keeps this immutable PCM revision until both phases have stopped.
-        auto revision = std::make_shared<LibraryStore::AudioRevision> (folder);
+        // Readers may outlive a cancelled encoder. Shared ownership keeps the
+        // immutable preview revision until every worker has stopped.
+        auto revision = std::make_shared<LibraryStore::AudioRevision> (folder, true);
         if (auto prepared = revision->prepare(); prepared.failed())
         { fail ("Prepare revision", folder, prepared.getErrorMessage()); return; }
-        auto makeWriter = [&] (const juce::File& file, juce::AudioFormat& format, int bits, int quality)
-        {
-            auto output = std::make_unique<juce::FileOutputStream> (file);
-            if (! output->openedOk() || ! output->setPosition (0) || output->truncate().failed())
-                return std::unique_ptr<juce::AudioFormatWriter>{};
-            std::unique_ptr<juce::OutputStream> stream = std::move (output);
-            return format.createWriterFor (stream, juce::AudioFormatWriterOptions{}
-                .withSampleRate (sampleRate).withNumChannels (channels).withBitsPerSample (bits)
-                .withQualityOptionIndex (quality).withSampleFormat (bits == 32
-                    ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
-                    : juce::AudioFormatWriterOptions::SampleFormat::automatic));
-        };
-        juce::WavAudioFormat wavFormat;
-        auto writer = makeWriter (revision->pcm, wavFormat, 32, 0);
-        if (! writer) { fail ("Create PCM", revision->pcm, "Cannot open float WAV writer"); return; }
-        juce::AudioBuffer<float> fresh (2, 4096), old (2, 4096), merged (channels, 4096);
+        juce::AudioBuffer<float> fresh (2, 4096), old (2, 4096);
         const auto fade = oldLength > prefix ? juce::jmin (prefix, (int) std::round (sampleRate * 0.005)) : 0;
         float peak = 0;
         juce::int64 aboveUnity = 0;
@@ -1338,46 +1361,23 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
                         }
                     }
                     if (! std::isfinite (value)) value = 0;
-                    merged.setSample (ch, i, value);
                     peak = juce::jmax (peak, std::abs (value));
                     if (std::abs (value) > 1) ++aboveUnity;
                 }
-            if (! writer->writeFromAudioSampleBuffer (merged, 0, count))
-            { fail ("Write PCM", revision->pcm, "Float WAV write failed"); return; }
             offset += count;
         }
-        writer.reset();
-        const auto analysis = startAnalysis (revision, slot, length, prefix, integrity.revision, integrity.pcmFingerprint);
-        struct CancelUnusedAnalysis
-        {
-            std::shared_ptr<AnalysisJob> job;
-            ~CancelUnusedAnalysis() { job->cancelRequested.store (true); }
-        } cancelUnused { analysis };
         auto gain = peak > 1 ? 0.98f / peak : 1.0f;
+        float outputGain = 1;
         const auto pcmMs = juce::Time::getMillisecondCounterHiRes() - started;
         const auto oggStarted = juce::Time::getMillisecondCounterHiRes();
-        juce::OggVorbisAudioFormat oggFormat;
         float decodedPeak = 0;
         int gainPasses = 0;
         bool previewValidated = false;
         for (; gainPasses < 3 && ! previewValidated; ++gainPasses)
         {
-            writer = makeWriter (revision->ogg, oggFormat, 16, slot.quality);
-            if (! writer) { fail ("Create OGG", revision->ogg, "Cannot open preview writer"); return; }
-            AnalysisAudio::FileStream finalAudio (revision->pcm, sampleRate);
-            juce::AudioBuffer<float> block (2, 4096), preview (channels, 4096);
-            for (int offset = 0; offset < length;)
-            {
-                if (cancelled()) { state.store (State::Idle); return; }
-                const auto count = juce::jmin (4096, length - offset);
-                if (! finalAudio.read (block, count)) { fail ("Read PCM for OGG", revision->pcm, "Audio read failed"); return; }
-                for (int ch = 0; ch < channels; ++ch) preview.copyFrom (ch, 0, block, ch, 0, count);
-                preview.applyGain (gain);
-                if (! writer->writeFromAudioSampleBuffer (preview, 0, count))
-                { fail ("Write OGG", revision->ogg, "Preview write failed"); return; }
-                offset += count;
-            }
-            writer.reset();
+            const auto packaged = PreviewAudio::write (revision->ogg, slot.capturedPcm, previousFile,
+                sampleRate, channels, prefix, length, slot.quality, gain, cancelled, outputGain);
+            if (packaged.failed()) { fail ("Build segmented preview", revision->ogg, packaged.getErrorMessage()); return; }
             const auto validation = decodedPreviewPeak (revision->ogg, channels, length, decodedPeak, cancelled);
             if (validation.failed())
             {
@@ -1385,10 +1385,18 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
                 fail ("Validate OGG preview", revision->ogg, validation.getErrorMessage()); return;
             }
             previewValidated = decodedPeak <= 1.0f;
-            if (! previewValidated) gain *= 0.98f / decodedPeak;
+            if (! previewValidated) outputGain *= 0.98f / decodedPeak;
         }
         if (! previewValidated)
         { fail ("Limit OGG preview", revision->ogg, "Codec still exceeds unity after three gain passes. Lower its input level or increase OGG quality and retry; the previous preview is retained"); return; }
+        const bool reusableTail = outputGain == 1 && (int) previousMetadata.getProperty ("audioStorageVersion", 0) == 3;
+        const auto analysis = startAnalysis (revision, slot, length, prefix,
+            reusableTail ? integrity.revision : juce::String{}, reusableTail ? integrity.pcmFingerprint : juce::String{});
+        struct CancelUnusedAnalysis
+        {
+            std::shared_ptr<AnalysisJob> job;
+            ~CancelUnusedAnalysis() { job->cancelRequested.store (true); }
+        } cancelUnused { analysis };
         const auto oggMs = juce::Time::getMillisecondCounterHiRes() - oggStarted;
         // Release before waiting: two encoders must not retain both global
         // permits while their analysis workers wait to acquire one.
@@ -1446,10 +1454,11 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
         obj->setProperty ("analysisBpmComputedFrames", analysis->analysis.bpmComputed);
         obj->setProperty ("analysisBpmReusedFrames", analysis->analysis.bpmReused);
         obj->setProperty ("analysisCacheBytes", (juce::int64) analysis->analysis.cacheBytes);
-        obj->setProperty ("previewGain", gain);
+        obj->setProperty ("previewGain", gain * outputGain);
+        obj->setProperty ("previewPlaybackGain", outputGain);
         obj->setProperty ("previewDecodedPeak", decodedPeak);
         obj->setProperty ("previewGainPasses", gainPasses);
-        obj->setProperty ("previewGainPolicy", "decoded-sample-peak-guard-v1");
+        obj->setProperty ("previewGainPolicy", "segmented-source-peak-guard-v1");
         obj->setProperty ("pcmPeak", peak);
         obj->setProperty ("samplesAboveUnity", aboveUnity);
         obj->setProperty ("seamCrossfadeMs", fade > 0 ? 5 : 0);
@@ -1476,6 +1485,7 @@ void RecordingEngine::Core::encodeAndSave (Slot& slot, const juce::var& initialM
         }
         analysis->publication->pcmFingerprint = revision->pcmFingerprint;
         analysis->publication->committed.store (true, std::memory_order_release);
+        revision->pcm.deleteFile(); // Only the verified OGG package is permanent.
         LibraryStore::pruneAudioRevisions (folder);
         {
             juce::ScopedLock lock (resultsLock);
@@ -1749,7 +1759,7 @@ bool RecordingEngine::Core::mergePreview (const juce::File& previousFolder)
     }
     const auto metadata = loadMetadata (previousFolder);
     const auto source = LibraryStore::audioFile (previousFolder, metadata, true);
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (source));
     if (! reader || reader->lengthInSamples <= 0) return false;
     Slot copy;
@@ -1776,7 +1786,7 @@ bool RecordingEngine::Core::forkPreview (const juce::File& previousFolder)
     }
     auto metadata = loadMetadata (previousFolder);
     const auto source = LibraryStore::audioFile (previousFolder, metadata, true);
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (source));
     if (! reader || reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max()) return false;
     Slot copy; copy.rate = reader->sampleRate; copy.limit = copy.count = (int) reader->lengthInSamples;

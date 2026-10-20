@@ -1,17 +1,32 @@
 # Remember — Beta release notes
 
-Thank you for helping test **Remember**. This is a closed beta. Please keep the installer link private and report what you find.
+Thank you for helping test **Remember**. Please report what you find using the details below.
 
 ## What it does
 
 Remember is two pieces that work together:
 
-- **Plugin (VST3)** — drop it on your DAW master bus. The next time the transport plays exactly from zero, the plugin records the next 60 seconds (configurable) and saves a tagged OGG preview with float WAV for later merges.
+- **Plugin (VST3)** — drop it on your DAW master bus. The next time the transport plays exactly from zero, the plugin records the next 60 seconds (configurable) and saves a tagged compressed preview. New captures use OGG fragments in a `.rmp` package, without permanent WAV files.
 - **Browser app** — standalone app to search, tag, favourite, organise into folders, and play back every preview the plugin has saved.
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
-## Changes in 1.0.0-beta5
+## Changes in 1.0.0-beta5 — refreshed 20 October 2026
+
+This replaces the earlier beta5 installer at the same download URL. Check the
+commit in the app/plugin or `release-manifest.json` to identify the build.
+
+- New previews keep compressed OGG fragments in portable `.rmp` packages. Partial captures reuse the old tail without repeated lossy encoding, with short playback crossfades. Current and previous packages support recovery; capture WAVs are temporary. Older previews/settings remain readable and are not bulk-migrated or deleted.
+- Settings adds an **i** button next to Recording with format, storage estimates, recovery and fragmentation-limit explanations. Reaching a fragment limit preserves the previous preview and requests a full capture/replacement.
+- Update the app and plugin together to read new `.rmp` previews; older builds cannot read this format.
+- Added explicit preview compaction from a recording's `...` menu or Settings above an editable size threshold (default 10 MB, including recovery audio). This re-encodes to one OGG and removes old fragments and recovery audio after validation. It is irreversible, adds a lossy encoding generation and may increase size at higher quality. Locked and live/unverified pending recordings are skipped; compaction never starts automatically.
+- Recording rows show their total audio size. Settings shows storage estimates and actual usage, including recovery and legacy files.
+- Used sounds now exports saved generator/wrapper state as FL Studio `.fst` presets by drag or Save copy. Supported saved formats display explicit preset names; other formats say Preset not available. Exported state still needs the original plugin and external content; it is not rendered audio.
+- First-run setup helps create or choose a dedicated previews folder. Filter dialogs suggest existing tags with Up/Down, Enter and Escape support, and Clear filters also resets the folder selection.
+- Assign path targets the selected library recording even when another preview is loaded. Saving Settings refreshes project discovery in the background; prepared plugins follow changes to the output folder for their next capture without reloading.
+- Capture from any position starts automatically on playback, seeks and loops, without arming. Preview locking and full replacement remain available.
+
+### Included from the earlier beta5 build
 
 - Added **Used sounds** for saved FL Studio projects: samples, per-pattern/channel MIDI and generator names, with playlist/all-loaded filters. Audition samples or MIDI, seek in the dedicated player, and drag or save sample/MIDI copies without modifying the project. Missing samples can be located for the current session. The main preview stays loaded while auditioning.
 - Added selectable MIDI audition sounds (Simple piano, Saw, Square and Sine), sample-backed audition and bounded streaming. Audition covers up to 30 seconds; MIDI export includes the complete pattern and tempo, without instrument audio or DAW effects.
@@ -106,11 +121,11 @@ Project-file auto-association is implemented per host (different DAWs expose the
 
 ## Known limitations in this beta
 
-- Settings changes (duration, OGG quality, mono and output folder) take effect together at the next plugin preparation, such as a sample-rate change or project/plugin reload. Project-search roots are refreshed during discovery.
+- Duration, OGG quality and mono changes apply at the next plugin preparation, such as a sample-rate change or project/plugin reload. The output folder follows Settings in the background, normally within one second, for the next capture; captures already started or queued keep their original destination. Project-search roots refresh during discovery.
 - The Windows installer is **unsigned**. SmartScreen warning is expected.
 - The automated capture matrix covers 44.1/48/88.2/96/192 kHz and blocks of 32/64/128/512/2048 samples. These are synthetic fixtures; DAW smoke tests remain pending.
 - Capture queues are limited to 16 MiB per prepared bank, 64 MiB per instance (including retired banks), and 256 MiB across the process. Temporary WAV stores the capture; at most two encoding/analysis jobs run concurrently. Codecs, analysis buffers, JUCE and host memory add to these queue budgets.
-- Current and previous revisions retain float 32-bit PCM plus OGG. At 48 kHz/60 s stereo, PCM alone is about 23 MB decimal per revision. Settings show complete estimated and measured storage usage.
+- New recordings retain current and previous compressed `.rmp` packages, without permanent WAVs. Temporary float capture still needs about 23 MB per 60 seconds of stereo at 48 kHz, plus compressed output and queued jobs. Legacy WAVs remain until explicitly replaced or compacted; crashes can leave temporary recovery files. Storage estimates are approximate.
 
 ## Reporting bugs
 
@@ -124,6 +139,9 @@ Please file issues at: https://github.com/martingarciapacheco/remember/issues/ne
 5. The plugin version shown in the footer or app header (e.g. `v1.0.0-beta5  abc1234`)
 
 ## Keyboard shortcuts (browser app)
+
+The [README keyboard reference](README.md#keyboard-shortcuts-app) also covers
+transport/navigation, selection gestures, tag suggestions and Used sounds.
 
 | Key | Action |
 |---|---|

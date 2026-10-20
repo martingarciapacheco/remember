@@ -1,3 +1,4 @@
+#include "../../Shared/PreviewAudio.h"
 #include "WaveformPlayerComponent.h"
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
@@ -145,13 +146,20 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     assignBtn.onClick = [this]
     {
         if (! assignBtn.isEnabled()) return;
+        const auto target = projectAssignmentTarget();
+        if (! target)
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon,
+                "Assign project path", "Select one available recording in the library first.");
+            return;
+        }
         fileChooser = std::make_unique<juce::FileChooser> (
             "Select project file",
             juce::File::getSpecialLocation (juce::File::userMusicDirectory),
             "*.als;*.flp;*.ptx;*.song;*.npr;*.rpp;*.cpr;*.bwproject");
 
         auto safe = juce::Component::SafePointer<WaveformPlayerComponent> (this);
-        auto selected = currentEntry;
+        auto selected = *target;
         fileChooser->launchAsync (
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [safe, selected] (const juce::FileChooser& fc) mutable
@@ -238,6 +246,16 @@ WaveformPlayerComponent::~WaveformPlayerComponent()
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+std::optional<ProjectEntry> WaveformPlayerComponent::projectAssignmentTarget() const
+{
+    const auto selection = assignmentSelection ? assignmentSelection() : juce::Array<ProjectEntry> { currentEntry };
+    if (selection.size() != 1) return std::nullopt;
+    const auto& entry = selection.getReference (0);
+    if (entry.metadataFile == juce::File{} || entry.pending || entry.trashed || entry.storageError.isNotEmpty())
+        return std::nullopt;
+    return entry;
+}
+
 void WaveformPlayerComponent::suspendOutput()
 {
     if (transport.isPlaying()) togglePlay();
@@ -319,7 +337,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
         if (entry.auditionNotes) for (const auto& note : *entry.auditionNotes)
         { ticket->low = juce::jmin (ticket->low, note.key); ticket->high = juce::jmax (ticket->high, note.key); }
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (entry.auditionReader ? entry.auditionReader() : std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (entry.previewOgg)));
         if (generation->load() != request) return;
         if (reader) ticket->source = std::make_unique<ReadAheadSource> (std::move (reader), entry.auditionReader ? 8192 : 0);

@@ -1,4 +1,5 @@
 #include "UsedSounds.h"
+#include "UsedSoundPresets.h"
 #include <map>
 #include <set>
 #include <algorithm>
@@ -32,6 +33,10 @@ juce::String text (const uint8_t* p, size_t n, bool unicode)
 struct Channel
 {
     juce::String name, plugin, vstName, samplePath;
+    const uint8_t* state = nullptr; // Borrowed from readProject's file buffer only.
+    size_t stateSize = 0;
+    std::vector<std::pair<const uint8_t*, size_t>> presetEvents;
+    bool hasPluginState = false;
     int type = -1, root = 60;
 };
 juce::Array<juce::File> factoryDirectories()
@@ -132,10 +137,12 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
     int channel = -1, pattern = 0; bool unicode = false, mixer = false, extendedNotes = false, playlistUnsupported = false;
     juce::String dataPath;
     size_t pos = 22, count = 0, noteCount = 0;
+    const uint8_t* versionEvent = nullptr; size_t versionEventSize = 0, presetBytes = 0;
     while (pos < (size_t) size)
     {
         if ((++count & 255) == 0 && cancelled && cancelled()) return fail ("Cancelled");
         if (count > 2000000) return fail ("Too many project events.");
+        const auto eventStart = pos;
         const int id = bytes[pos++];
         uint64_t length = id < 64 ? 1 : id < 128 ? 2 : id < 192 ? 4 : 0;
         // FL 25+ added a three-byte project flag in the DWORD opcode range.
@@ -157,6 +164,7 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
         if (id == 199)
         {
             out.version = text (p, n, false);
+            versionEvent = bytes + eventStart; versionEventSize = pos - eventStart;
             unicode = out.version.getIntValue() >= 12;
             if (out.version.getIntValue() < 10) return fail ("This reader requires FL Studio 10 or newer.");
         }
@@ -207,13 +215,21 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
         else if (channel >= 0 && ! mixer)
         {
             auto& ch = channels[channel];
+            if (id == 201) { ch.presetEvents.clear(); ch.hasPluginState = false; }
+            if (id == 201 || id == 212 || id == 213 || id == 203 || id == 128 || id == 155)
+                ch.presetEvents.emplace_back (bytes + eventStart, pos - eventStart);
+            if (id == 213) ch.hasPluginState = n > 0;
             if (id == 21) ch.type = p[0];
             else if (id == 192 || id == 203) ch.name = text (p, n, unicode);
             else if (id == 196) ch.samplePath = text (p, n, unicode);
-            else if (id == 201) ch.plugin = text (p, n, unicode);
+            else if (id == 201) { ch.plugin = text (p, n, unicode); ch.vstName.clear(); ch.state = nullptr; ch.stateSize = 0; }
             else if (id == 135) ch.root = juce::jlimit (0, 127, (int) u32 (p));
-            else if (id == 213 && ch.plugin.containsIgnoreCase ("fruity wrapper") && n >= 4)
+            else if (id == 213)
             {
+                ch.state = nullptr; ch.stateSize = 0;
+                if (! ch.plugin.containsIgnoreCase ("fruity wrapper"))
+                { ch.state = p; ch.stateSize = n; continue; }
+                if (n < 4) continue;
                 // Read only the wrapper's named metadata fields; never load plugin state/code.
                 size_t offset = 4;
                 while (offset + 12 <= n)
@@ -221,10 +237,12 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
                     const auto field = u32 (p + offset);
                     const auto fieldSize = juce::ByteOrder::littleEndianInt64 (p + offset + 4);
                     offset += 12;
-                    if (fieldSize > n - offset) break;
+                    if (fieldSize > n - offset) { ch.state = nullptr; ch.stateSize = 0; break; }
                     if (field == 54) ch.vstName = text (p + offset, (size_t) fieldSize, false);
+                    if (field == 53) { ch.state = p + offset; ch.stateSize = (size_t) fieldSize; }
                     offset += (size_t) fieldSize;
                 }
+                if (offset != n) { ch.state = nullptr; ch.stateSize = 0; }
             }
         }
     }
@@ -266,6 +284,25 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
         {
             sound.kind = Kind::Generator; sound.instrument = ch.vstName.isNotEmpty() ? ch.vstName : ch.plugin;
             sound.name = sound.instrument; sound.sample = {}; sound.sourcePath.clear();
+            sound.presetName = Presets::read (sound.instrument, ch.state, ch.stateSize, ch.plugin.containsIgnoreCase ("fruity wrapper"));
+            size_t dataSize = versionEventSize;
+            for (const auto& event : ch.presetEvents) dataSize += event.second;
+            if (ch.hasPluginState && versionEvent != nullptr && dataSize <= 64 * 1024 * 1024
+                && presetBytes + dataSize <= 128 * 1024 * 1024)
+            {
+                // Plugin preset (0x30), as used by FL Studio's Save preset as.
+                // Preserve encoded plugin/wrapper events byte for byte, including
+                // opaque state. Never include another channel, MIDI or mixer data.
+                auto preset = std::make_shared<juce::MemoryBlock>();
+                juce::MemoryOutputStream output (*preset, false);
+                output.write ("FLhd", 4); output.writeInt (6); output.writeShort (0x30);
+                output.writeShort (1); output.writeShort ((short) out.ppq);
+                output.write ("FLdt", 4); output.writeInt ((int) dataSize);
+                output.write (versionEvent, versionEventSize);
+                for (const auto& event : ch.presetEvents) output.write (event.first, event.second);
+                output.flush(); sound.presetData = std::move (preset); presetBytes += dataSize;
+            }
+            else sound.exportError = ch.hasPluginState ? "Preset export exceeds the safe size limit" : "Plugin state is not saved in this project";
             out.sounds.push_back (std::move (sound));
         }
     }
@@ -279,9 +316,23 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
 juce::String exportName (const juce::String& project, const Sound& sound, double bpm, const juce::String& key)
 {
     auto name = safePart (project) + "_" + safePart (sound.channelName.isNotEmpty() ? sound.channelName : sound.name);
+    if (sound.kind == Kind::Generator)
+        return name + "_" + safePart (sound.presetName.isNotEmpty() ? sound.presetName : sound.instrument)
+            + "_ch" + juce::String (sound.channelId + 1) + ".fst";
     if (sound.kind == Kind::Midi) name += "_" + safePart (sound.patternName) + "_ch" + juce::String (sound.channelId + 1) + "_p" + juce::String (sound.patternId);
     name += "_" + (bpm > 0 ? juce::String (bpm, bpm == std::floor (bpm) ? 0 : 2) : "Unknown") + "BPM_" + safePart (key);
     return name + (sound.kind == Kind::Midi ? ".mid" : sound.sample.getFileExtension());
+}
+
+juce::Result writePreset (const Sound& sound, const juce::File& target)
+{
+    if (sound.kind != Kind::Generator || ! sound.presetData || sound.presetData->getSize() == 0)
+        return juce::Result::fail (sound.exportError.isNotEmpty() ? sound.exportError : "Saved plugin state is unavailable");
+    juce::FileOutputStream stream (target);
+    if (! stream.openedOk() || ! stream.setPosition (0) || stream.truncate().failed()
+        || ! stream.write (sound.presetData->getData(), sound.presetData->getSize()))
+        return juce::Result::fail ("Cannot write preset export");
+    stream.flush(); return stream.getStatus();
 }
 
 juce::Result writeMidi (const Sound& sound, double bpm, const juce::File& target)

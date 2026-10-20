@@ -1,6 +1,7 @@
 #include "ProjectListComponent.h"
 #include "WorkflowForm.h"
 #include "TagsEditorDialog.h"
+#include "PreviewCompactionActions.h"
 
 namespace
 {
@@ -36,11 +37,14 @@ void report (juce::Component::SafePointer<ProjectListComponent> safe, juce::Resu
 
 void ProjectListComponent::configureWorkflow()
 {
-    for (auto* button : { &filtersBtn, &collectionBtn }) addAndMakeVisible (*button);
+    for (auto* button : { &filtersBtn, &collectionBtn, &clearFiltersBtn }) addAndMakeVisible (*button);
     for (auto* combo : { &collectionCombo, &sortCombo, &viewCombo }) addAndMakeVisible (*combo);
     filtersBtn.setTitle ("Filter projects"); filtersBtn.onClick = [this] { showFilters(); };
     collectionBtn.setTitle ("Save or remove smart collection"); collectionBtn.setTooltip ("Save the current filters as a smart collection");
     collectionBtn.onClick = [this] { saveCollection(); };
+    clearFiltersBtn.setTitle ("Clear filters");
+    clearFiltersBtn.setTooltip ("Reset search, favorites, folder and project filters");
+    clearFiltersBtn.onClick = [this] { clearFilters(); };
     sortCombo.setTitle ("Sort projects");
     sortCombo.addItemList ({ "Latest capture", "Oldest capture", "Name", "BPM ascending", "BPM descending" }, 1);
     sortCombo.setSelectedId (1, juce::dontSendNotification);
@@ -64,6 +68,17 @@ void ProjectListComponent::configureWorkflow()
     };
 }
 
+void ProjectListComponent::clearFilters()
+{
+    filter = {}; folderFilter.clear(); folderFilters.clear(); showFavOnly = false;
+    searchBox.setText ({}, false);
+    favFilterBtn.setToggleState (false, juce::dontSendNotification);
+    sortCombo.setSelectedId (1, juce::dontSendNotification);
+    collectionCombo.setSelectedId (1, juce::dontSendNotification);
+    if (onFiltersCleared) onFiltersCleared();
+    applyFilter();
+}
+
 void ProjectListComponent::showFilters()
 {
     auto form = std::make_unique<WorkflowForm> ("Filter projects");
@@ -73,7 +88,7 @@ void ProjectListComponent::showFilters()
     juce::StringArray daws { "Any DAW" };
     for (const auto& e : allEntries) if (e.daw.isNotEmpty()) daws.addIfNotAlreadyThere (e.daw);
     form->choice ("daw", "DAW", daws, filter.daw.isEmpty() ? "Any DAW" : filter.daw);
-    form->text ("tags", "All these tags", filter.tags).setTooltip ("Comma-separated tags; every tag must match");
+    form->tagText ("tags", "All these tags", filter.tags, ProjectScanner::getAllUniqueTags()).setTooltip ("Comma-separated tags; every tag must match");
     auto states = statuses(); states.insert (0, "Any status");
     form->choice ("status", "Project status", states, filter.status.isEmpty() ? "Any status" : filter.status);
     auto& fromDate = form->text ("from", "Captured from", filter.dateFrom); fromDate.setTooltip ("YYYY-MM-DD; leave empty for any date");
@@ -204,6 +219,7 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
     const bool canRecover = ! clicked.trashed && (! clicked.pending || clicked.pendingOwner != LibraryStore::OwnerState::Active);
     menu.addItem (16, "Check and repair recording", canRecover);
     if (clicked.pending) menu.addItem (17, "Keep recording", canRecover && clicked.storageError.isEmpty());
+    menu.addItem (18, "Compact preview audio...", PreviewCompactionActions::eligible (clicked));
     menu.addSeparator();
     const bool selected = ! selection.isEmpty(), trash = view == 3;
     menu.addItem (1, "Project details", ! trash && clicked.storageError.isEmpty());
@@ -224,6 +240,7 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
         if (r == 13) { if (rename) rename(); return; }
         if (r == 14) { if (open) open(); return; }
         if (r == 15) { ProjectScanner::openProjectAsync (clicked, true, [safe] (juce::Result result) { report (safe, result); }); return; }
+        if (r == 18) { safe->compactRecording (clicked); return; }
         if (r == 16 || r == 17) { if (recover) recover (r == 17); return; }
         if (r == 11)
         {
@@ -231,9 +248,7 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
         }
         if (r == 10)
         {
-            safe->filter = {}; safe->folderFilter.clear(); safe->folderFilters.clear(); safe->showFavOnly = false; safe->searchBox.clear();
-            safe->favFilterBtn.setToggleState (false, juce::dontSendNotification); safe->sortCombo.setSelectedId (1, juce::dontSendNotification);
-            safe->collectionCombo.setSelectedId (1, juce::dontSendNotification); safe->applyFilter(); return;
+            safe->clearFilters(); return;
         }
         if (r == 1 && ! selection.isEmpty()) { safe->editDetails (clicked); return; }
         const char* actions[] = { "", "", "addTags", "removeTags", "addFolder", "removeFolder", "favorite", "unfavorite", "status", "trash" };
@@ -241,6 +256,31 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
         if (r < 10) safe->bulkEdit (selection, actions[r]);
     });
 }
+void ProjectListComponent::compactRecording (ProjectEntry entry)
+{
+    if (! PreviewCompactionActions::eligible (entry)) return;
+    PreviewCompactionActions::show (PreviewCompactionActions::confirmation (entry.name).withAssociatedComponent (this),
+        [safe = juce::Component::SafePointer<ProjectListComponent> (this), entry] (int response)
+        {
+            if (safe == nullptr || response != 1) return;
+            if (safe->onBeforeStorageChange) safe->onBeforeStorageChange (entry);
+            auto summary = std::make_shared<PreviewCompactionActions::Summary>();
+            ProjectScanner::editAsync ([entry, summary]
+            {
+                const auto settings = ProjectScanner::readSettings();
+                if (settings.result.failed()) return settings.result;
+                PreviewCompactionActions::run (settings.previews, { entry }, settings.quality, 0, *summary);
+                return juce::Result::ok();
+            }, [safe, summary] (juce::Result result)
+            {
+                if (safe == nullptr) return;
+                PreviewCompactionActions::show (juce::MessageBoxOptions().withTitle ("Preview compaction")
+                    .withAssociatedComponent (safe.getComponent()).withButton ("OK").withMessage (
+                    result.failed() ? result.getErrorMessage() : summary->text() + "\n" + summary->errors.joinIntoString ("\n")));
+            });
+        });
+}
+
 void ProjectListComponent::bulkEdit (juce::Array<ProjectEntry> entries, juce::String operation)
 {
     if (entries.isEmpty()) return;

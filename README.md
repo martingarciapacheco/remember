@@ -2,11 +2,16 @@
 
 **Current beta: 1.0.0-beta5 · Windows x64 · standalone app + VST3.**
 
+Beta5 refreshed on **20 October 2026**. The download keeps the same filename;
+check the commit shown in the app/plugin or the release's `release-manifest.json`
+to distinguish builds. Install the app and plugin together: older beta5 builds
+cannot read the new `.rmp` preview format. Existing WAV/OGG previews remain readable.
+
 ## Install and record your first preview
 
 1. Download `Remember-1.0.0-beta5-setup.exe` from the [beta release](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta5). The installer includes both the app and plugin.
 2. Close Remember and your DAW before installing. Setup requests administrator access to install the system VST3. This beta is unsigned; Windows may show an unknown-publisher warning.
-3. Open Remember from the Start menu. Choose a previews folder and add the folders containing your DAW projects in Settings. Adding a search folder starts a recursive search; saving with OK also refreshes the project index in the background, even after Settings closes. Existing recordings stay in their original library if you change that destination.
+3. Open Remember from the Start menu. The first-run guide helps create or choose a dedicated previews folder. Then add the folders containing your DAW projects in Settings. Adding a search folder starts a recursive search; saving with OK also refreshes the project index in the background, even after Settings closes. Existing recordings stay in their original library if you change that destination.
 4. Load Remember as a VST3 insert on your DAW master bus. Save the project, then play from exactly the beginning. The default capture lasts up to 60 seconds; stopping earlier keeps a capture of at least one second.
 5. Open the browser to listen, organise the recording or reopen its project. If automatic association is ambiguous, use the plugin's **Associate → Select project file** action. For a permanent idea without a saved project, choose **Keep recording without a file**.
 
@@ -18,13 +23,14 @@ in the tray; choose **Exit** from the tray menu to quit.
 
 ## Features at a glance
 
-- **Capture:** automatic recording from transport zero, manual capture, preview locking and replacement options. Audio passes through unchanged. Shorter recaptures preserve the existing tail.
-- **Library:** search, favourites, tags, nested folders, multiple folder selection, filters, smart collections, notes, bulk organisation and a recoverable 30-day trash. Project associations follow verified file moves and renames; backups are excluded where recognised.
+- **Capture:** automatic recording from transport zero or any position when enabled, preview locking and replacement options. Audio passes through unchanged. Shorter recaptures preserve the existing tail using compressed fragments without repeatedly encoding it.
+- **Library:** search, favourites, tags, nested folders, multiple folder selection, filters with tag suggestions, smart collections, notes, bulk organisation and a recoverable 30-day trash. Clear filters resets search, favourites, folders and project filters together. Project associations follow verified file moves and renames; backups are excluded where recognised.
 - **Playback:** seekable waveform, queue, shuffle, repeat Off/All/One/Single, loudness normalization, volume/mute, output-device selection, media keys and Windows taskbar controls.
 - **Musical tools:** BPM/key analysis with manual corrections and a BPM-synchronised metronome with its own saved volume.
-- **Used sounds for FL Studio:** inspect samples, MIDI patterns and generators from the last saved `.flp`; filter by playlist usage, audition samples/MIDI and drag or save copies of samples and `.mid` files. MIDI audition offers piano, saw, square and sine sounds; supported sample channels use their source sample.
+- **Used sounds for FL Studio:** inspect samples, MIDI patterns and generators from the last saved `.flp`; filter by playlist usage, audition samples/MIDI and drag or save copies of samples, `.mid` files and saved generator state as FL Studio `.fst` presets. Supported formats show saved preset names. MIDI audition offers piano, saw, square and sine sounds; supported sample channels use their source sample.
 - **Appearance:** System, Light and Dark themes, interface zoom, shared typography and keyboard shortcuts.
 - **Recovery:** recording integrity checks, repair and revision audition/restoration when complete recoverable audio survives.
+- **Storage:** self-contained `.rmp` previews, per-recording audio size, background usage estimates and explicit compaction for one recording or entries above a configurable size threshold.
 
 Used sounds currently reads saved FL Studio projects only. It cannot see unsaved
 edits or samples inside opaque instrument/plugin states. MIDI audition does not
@@ -38,11 +44,38 @@ Remember version, reproduction steps and the relevant `app.log` or `plugin.log`
 from `%APPDATA%\Remember\logs`. Real DAW/device testing and Windows installation,
 upgrade and uninstallation remain part of beta acceptance.
 
+## Preview storage and compaction
+
+New captures store compressed OGG fragments in self-contained `.rmp` packages.
+Partial recaptures reuse the old tail without repeated lossy encoding, with short
+playback crossfades. Current and previous packages support recovery. WAV files
+are temporary capture storage; older WAV/OGG recordings remain readable and are
+not automatically migrated or deleted. Settings' Recording **i** button explains
+format, estimates, temporary space and fragmentation limits. If a package reaches
+a limit, the previous preview survives and Remember asks for a full capture or
+replacement.
+
+Choose **Compact preview audio...** from a recording's `...` menu, or use
+Settings' **Compact previews above** action (default 10 decimal MB). The threshold
+and the size beside the recording date include recovery audio and legacy WAVs.
+Compaction runs in the background using the saved quality setting, validates one
+ordinary OGG, then removes old fragments and recovery audio. **This cannot be
+undone and adds a lossy encoding generation.** A higher quality can increase size.
+Locked previews and pending captures with live or unverified owners are skipped.
+No library is compacted automatically.
+
+Unchanged compacted audio is not encoded again. The first later partial capture
+converts its retained tail to fragments once; subsequent captures reuse them.
+Busy files are reported and cleanup can be retried without another encode.
+Actual savings depend on duration, quality, content and retained revisions.
+
 ## Technical reference
 
 Two-piece JUCE 8 project for Windows that auto-captures 60-second audio previews from a DAW master bus and organises them in a standalone browser app.
 
-The selected workflow improvements are documented in [FUNCIONALIDADES.md](FUNCIONALIDADES.md): shared manual capture, preview locking and replacement options; filters and smart collections; bulk organisation, notes and musical corrections; playback queue, shuffle and loudness normalization; and a recoverable 30-day trash.
+Earlier workflow implementation notes are in [FUNCIONALIDADES.md](FUNCIONALIDADES.md).
+This README describes the current behavior, including automatic capture from any
+position, segmented preview storage and compaction.
 
 ## Interface design
 
@@ -99,7 +132,7 @@ sound. The main project's controls and waveform remain visible and loaded.
 An audition pauses the main output and releases its audio device, keeping its
 project and position. Closing Used sounds only unloads the audition player.
 MIDI auditions have about 4 dB more instrument gain; sample gain is unchanged.
-Generator rows use a compact 52-pixel layout.
+Generator rows use a 72-pixel layout with saved preset details and export controls.
 
 The button immediately right of Repeat enables the metronome (off on startup).
 It uses the supplied `Metronome4.wav`, embedded in the executable, and follows
@@ -134,35 +167,46 @@ FL 26's 88-byte playlist records were verified against local saved projects.
 The reader is native C++ and has no Python/PyFLP runtime dependency.
 
 `RememberAppTests --used-sounds` checks FLP parsing, associations and playlist scope,
+saved preset metadata and lossless `.fst` state export, including drag copies,
 malformed/cancelled input, exported MIDI pitch/timing/tempo, four audition voices,
 sample audition, and native component snapshots at 640 × 480 and 1024 × 768.
 It also checks Image-Line's bundled NewStuff/LIVE projects when installed.
+Generators shows explicit saved preset names for supported state formats (VST
+program files, Diva `.h2p` metadata, the verified Pigments archive version, and
+SynthMaster 3). Other formats show `Preset not available`; channel and sample
+resource names are never used as a substitute. Drag or Save copy exports the
+saved generator/wrapper state as an FL Studio `.fst` even when the name cannot
+be read. Copies require the original plugin and any external content to load;
+they are not rendered audio or portable VST presets. State preparation runs on
+the existing worker, with 64 MiB per preset and 128 MiB per inventory limits.
 `RememberAppTests --inspect-used-sounds <FLP-or-library-directory>` provides a
 read-only compatibility report. `--inspect-used-sounds-ui` also checks publication
 and prepares temporary MIDI exports without modifying the library or projects.
 
 ### Plugin (`Plugin/`)
-A transparent VST3 that hooks the master bus, records up to 60 s (configurable) when the transport plays exactly from zero, detects BPM and musical key, and writes a preview per project. Recording and project discovery keep running with the editor closed, including offline exports. Captures shorter than one second are discarded; shorter re-recordings replace the beginning and preserve the existing tail, with a 5 ms crossfade inside the end of the replaced prefix. Float 32-bit WAV retains headroom for later merges. Each new OGG is fully decoded before publication: if its sample peaks exceed unity, it is encoded again from the unchanged PCM with a lower gain, for up to three attempts. Failure preserves the previous preview. Metadata records the final gain, decoded peak and number of attempts; recovery restores these together. This controls decoded sample peaks; it does not measure intersample true peaks. Mono stores one channel; supported input/output buses must match and be mono or stereo.
+A transparent VST3 that hooks the master bus, captures automatically from zero (or from any transport position when enabled), detects BPM and musical key, and writes a preview per project. Recording and project discovery keep running with the editor closed, including offline exports. Captures shorter than one second are discarded; shorter re-recordings replace the beginning and preserve the existing tail with a 5 ms playback crossfade. New audio is encoded into immutable OGG fragments inside a self-contained `.rmp` preview package. Preserved fragments are copied without transcoding. Temporary float WAV captures are removed when their jobs finish; new revisions keep no permanent PCM. Decoded sample peaks are checked before publication; source gain and, if needed, playback gain prevent sample peaks above unity without reencoding old fragments. Failure preserves the previous preview. Metadata records gain, decoded peak and validation attempts; recovery restores these together. This does not measure intersample true peaks. Mono stores one channel; input/output buses must match and be mono or stereo.
 
-`metadata.json` selects immutable `preview.wav` and `preview.ogg` files under `.audio/<revision UUID>/`. Only complete revisions are published. The current and preceding audio revisions are retained; older committed revisions are pruned after a successful save. Capture uses temporary WAV and bounded queues (up to 16 MiB per prepared bank, 64 MiB per instance including retired banks, 256 MiB across the process). At most two encoding/analysis jobs run concurrently. These limits cover capture queues and job concurrency, rather than total process memory.
+`metadata.json` selects an immutable `preview.rmp` under `.audio/<revision UUID>/` (`audioStorageVersion: 3`). Its index references embedded OGG source ranges and playback gain envelopes; each package is portable without external audio assets. Only complete, checksum-verified revisions are published. The current and preceding packages are retained; older committed revisions are pruned after a successful save when their owners/readers permit it. One-second fragments include 20 ms source context and 5 ms seams. Limits are 256 source ranges/assets, 16 simultaneous layers/envelopes and 32 MiB per package. Reaching a limit fails safely with an instruction to capture the full preview or enable full replacement; there is no automatic lossy flattening. Legacy WAV/OGG revisions stay readable; no library-wide migration or deletion is performed. On a verified legacy entry's next capture, the retained tail is encoded once from its original WAV. Capture queues remain bounded (16 MiB per prepared bank, 64 MiB per instance including retired banks, 256 MiB process-wide), with at most two encoding/analysis jobs concurrently. Each package reader canonically decodes short assets from frame zero into an LRU cache capped at four assets and 8 MiB, keeping seeks and resampling independent of Vorbis packet-seek behavior. These are not total-process memory limits.
 
 Real-time playback publishes to the bounded queue without waiting. An export explicitly marked non-real-time by the host can wait for temporary storage to drain, with a five-second waiting limit per block. This preserves accelerated exports without allocating a full-duration capture buffer. A host that exports faster than real time without setting that flag uses the real-time policy; queue overflow is reported and the previous committed preview is retained.
 
 Musical analysis uses filtered conversion to 22.05 kHz with separate channel contributions. Confidence thresholds return unknown key/tempo on insufficient evidence; host BPM has priority. Metadata records confidence, source and detected tempo variation. Synthetic regression fixtures cover 24 keys, antiphase, silence, noise and fixed/changing tempos; accuracy on real music still requires validation.
 
-Discovery, temporary capture writing, encoding and musical analysis use separate workers. Analysis starts from a completed immutable PCM revision while OGG encoding proceeds; encoding and analysis share the two-job process limit. The encoder releases its permit before waiting for analysis. Discovery reuses a candidate inventory for up to 30 seconds, polls confirmed projects once per second, and shares cached host captions across instances for 250 ms. Project hashes check cancellation between reads; stale observations are rejected after state restoration.
+Discovery, temporary capture writing, encoding and musical analysis use separate workers. Analysis reads the completed immutable package after encoding and decoded-peak validation; encoding and analysis share the two-job process limit. The encoder releases its permit before waiting for analysis. Discovery reuses a candidate inventory for up to 30 seconds, polls confirmed projects once per second, and shares cached host captions across instances for 250 ms. Project hashes check cancellation between reads; stale observations are rejected after state restoration.
 
 App and plugin share the same file fingerprint implementation. On Windows it uses CNG SHA-256 with 64 KiB reads and a separate hash state per call. Cancelled, short or length-changing reads produce no digest. Native hash creation failure uses the existing buffered JUCE implementation, also retained on other platforms. File identities and existing project/audio receipts keep their SHA-256 format. Native handles are released on every return; hashing stays on background workers. The API follows Microsoft's [CNG hash lifecycle](https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/nf-bcrypt-bcryptcreatehash).
 
 Sample-rate changes and analysis use a centred Blackman-windowed sinc converter on background threads. The output timeline starts at source frame zero; same-rate PCM is copied exactly. Its cutoff is 95% of the smaller Nyquist frequency, with a bounded coefficient table (8 MiB) and input cache. Channels remain separate. Conversion and coefficient preparation check cancellation; unsupported or extreme rates fail rather than allocating an unbounded filter. Readers and cache metadata share one output-length calculation, including exact half-frame durations. Analysis metadata uses version 4. Earlier previews are updated through a new recording, without rewriting existing library audio automatically.
 
-Partial re-recordings reuse chroma and spectral-flux windows from the unchanged tail of the preceding published revision. Reuse requires its verified PCM checksum, revision ID, sample rate, channels and duration to match. The changed prefix, sinc lookahead and overlapping FFT history are recomputed; global key, tempo and confidence are estimated again. Only the required prefix is decoded and resampled for analysis. Each worker retains at most 512 KiB of feature vectors, with a 16 MiB process limit; unavailable budget causes complete analysis without retention. Cache entries retain neither PCM nor a decoder and are released with the retained core. Cache misses, restored sessions and changed formats use complete analysis. Unpublished or cancelled revisions are excluded from reuse. Encoding, merging and integrity checks still cover the full retained recording. Frame counts, samples analysed and retained bytes are recorded in metadata/logs and restored together during audio recovery.
+Partial re-recordings reuse chroma and spectral-flux windows from the unchanged tail of the preceding published revision. Reuse requires its verified audio checksum, revision ID, sample rate, channels and duration to match. The changed prefix, sinc lookahead and overlapping FFT history are recomputed; global key, tempo and confidence are estimated again. Only the required prefix is decoded and resampled for analysis. Each worker retains at most 512 KiB of feature vectors, with a 16 MiB process limit; unavailable budget causes complete analysis without retention. Cache entries retain neither PCM nor a decoder and are released with the retained core. Cache misses, restored sessions, changed formats, legacy import and whole-package gain correction use complete analysis. Unpublished or cancelled revisions are excluded from reuse. Encoding covers fresh audio; peak and integrity checks still cover the full retained recording. Frame counts, samples analysed and retained bytes are recorded in metadata/logs and restored together during audio recovery.
 
 Closing an instance requests cancellation and returns without joining background I/O. The retained worker makes a final command pass so diagnostics accepted during its last blocked batch survive closure. The core owns buffers and temporary files until all native workers have exited. On Windows, module references keep that code loaded after the host releases its DLL reference; the cleanup thread finishes with [FreeLibraryAndExitThread](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-freelibraryandexitthread). A storage operation that remains blocked retains its resources until it returns. This deferred cleanup uses the capture budget of the closed instance.
 
 Entries use stable UUID folders, independent of their display names. The associated DAW filename (without extension) determines the name of a file-linked entry. Renaming or moving that file preserves its entry; Save As creates a separate entry and publishes a complete new audio revision. Ordinary restored plugin names and track names are not used to identify projects. Unsaved captures live in isolated `.pending/<uuid>` folders. Naming them makes them available in the browser; **Associate → Keep recording without a file** makes the recording permanent, editable and independent of host titles. Closing discards ordinary pending audio, even if named. An explicit Keep that fails preserves its audio for recovery.
 
 **Associate → Select project file** binds a recording to an existing supported DAW file, including `.bwproject`. It preserves pending audio and reuses a verified entry for that file when one exists, merging the new prefix with its prior tail. Associating a previously kept idea also retains the original idea. Manual choices survive DAW state restoration. The editor shows automatic, manual, ambiguous or unassigned association; its tooltip identifies the path and evidence category (`direct`, `inferred`, `explicit` or `unknown`). These categories are not calibrated probabilities. **Use automatic association** starts a fresh association and retains permanent recordings.
+
+The app's **Assign path** captures the single selected library recording when the file picker opens, independently of the last preview played. Empty or multiple selections require selecting one recording first. If an automatic title change points to a historical project whose file identity no longer matches, the plugin pauses capture and asks for **Assign path** on that original recording. It resumes using that recording after reassignment, without copying the preceding project's preview into a duplicate.
 
 A manually selected file takes precedence over title-only captions. It is rechecked by filesystem identity or fingerprint and can follow a move within configured roots. A missing file or a reused path with different identity blocks new captures until it is selected again. A direct file path from the host can establish a legitimate atomic save or a subsequent Save As. Without that direct path, a save that changes both file identity and content needs explicit reselection. Multiple title matches remain ambiguous; a new candidate may take up to 30 seconds to appear in the discovery inventory.
 
@@ -212,7 +256,7 @@ The app and plugin share `%APPDATA%/Remember/config.json` for:
 - `audioDeviceState` — saved output device configuration
 - `windowState` — saved browser window bounds
 
-Duration, OGG quality, mono and the initial output folder are read together at plugin preparation (including a sample-rate change or project/plugin reload). The prepared plugin also follows output-folder changes from app Settings in the background, normally within one second, without reopening its editor or reloading. Each capture fixes its destination when it starts. A recording already captured or queued keeps its previous output folder and settings; changing the library does not redirect that recording or transfer the old library's history. New captures use the format loaded at preparation and the latest published output folder. Returning to a library reuses its project entry. Each audio revision records its preparation configuration revision and fingerprint; its library destination can follow a later folder change. Search roots are reread during project discovery. The settings dialog warns that WAV files remain on disk in both tail-preservation and replacement modes. It shows the estimated WAV + OGG size per copy and per preview including recovery at 48 kHz, updates the estimate with duration, mono and quality, and explains sample-rate scaling and extra temporary storage. It also shows actual library usage including recovery and free volume space; these read-only measurements run in the background. A 60-second stereo float WAV at 48 kHz uses about 23 MB decimal per revision, plus OGG and the retained preceding revision.
+Duration, OGG quality, mono and the initial output folder are read together at plugin preparation (including a sample-rate change or project/plugin reload). The prepared plugin also follows output-folder changes from app Settings in the background, normally within one second, without reopening its editor or reloading. Each capture fixes its destination when it starts. A recording already captured or queued keeps its previous output folder and settings; changing the library does not redirect that recording or transfer the old library's history. New captures use the format loaded at preparation and the latest published output folder. Returning to a library reuses its project entry. Each audio revision records its preparation configuration revision and fingerprint; its library destination can follow a later folder change. Search roots are reread during project discovery. Settings shows approximate OGG payload sizes for the current and recovery copies, updating with duration, mono and quality. The nearby accessible **i** button explains fragment overhead, temporary capture WAVs, legacy files, recovery copies and storage limits. Actual library usage includes hidden history and free disk space; measurements run on workers. Temporary WAV capture requires about 23 MB per 60 seconds of stereo at 48 kHz (about 92 MB at 192 kHz), plus compressed output and any queued captures. A crash can leave temporary recovery files. Estimates are not exact disk limits.
 
 The plugin editor loads and saves output settings on a separate worker. Its controls wait for confirmation, failures remain visible across timer refreshes, and a successful folder change applies to the next capture. Closing the editor does not wait for storage; an accepted configuration edit still finishes safely in the background.
 
@@ -243,6 +287,9 @@ Processor creation queues output-folder loading and logger initialization. Savin
 | Delete / Backspace | Move the selected recording(s) to Trash, with confirmation |
 | Enter (Used sounds list focused) | Audition the selected sample or MIDI pattern |
 | Enter / Escape (inline rename focused) | Save / cancel the name change |
+| Up / Down (tag filter editor focused) | Select an existing-tag suggestion |
+| Enter (tag filter suggestion selected) | Insert the selected tag |
+| Escape (tag suggestions open) | Dismiss the suggestions |
 | Media Previous / Next | Previous / next preview |
 | Media Play/Pause, Play, Pause, Stop | Control the main preview through Windows media commands |
 
@@ -270,9 +317,9 @@ Configure `Plugin/` with `-DREMEMBER_BUILD_TESTS=ON -DREMEMBER_COPY_PLUGIN_AFTER
 
 Additional suites cover concurrent metadata writers, failed revision commits, deleted-entry tombstones, bounded log rotation, musical analysis and the capture matrix (44.1/48/88.2/96/192 kHz and 32/64/128/512/2048 samples). Configure `App/` with `-DREMEMBER_BUILD_TESTS=ON`, build `RememberAppTests`, and run `ctest --test-dir App/build -C Release --output-on-failure` for rapid/corrupt preview loading and closure during loading.
 
-`RememberPreviewQuality` decodes complete mono/stereo OGG previews at qualities 2/4/9 using above-unity sine and below-unity square fixtures. It checks sample peaks, bit-exact float PCM, input transparency and recovery of consistent gain metadata. `RememberResampling` checks passband/alias rejection, 25 file rate pairs, 25 centred mono impulses, block-size invariance, file/memory equivalence, EOF and cancellation. Synthetic measurements are independent of musical accuracy and physical device/host acceptance.
+`RememberPreviewQuality` decodes complete mono/stereo OGG previews at qualities 2/4/9 using above-unity sine and below-unity square fixtures. It checks sample peaks, temporary WAV cleanup, input transparency and recovery of consistent gain metadata. `RememberResampling` checks passband/alias rejection, 25 file rate pairs, 25 centred mono impulses, block-size invariance, file/memory equivalence, EOF and cancellation. Synthetic measurements are independent of musical accuracy and physical device/host acceptance. `RememberSegmentedPreviews` checks 60 equal/variable prefix updates with bit-identical retained audio, bounded storage, seeking, fades, checksums, cancellation, package relocation, explicit fragment limits and rate/channel changes.
 
-`RememberFeatureCache` compares every cached chroma/flux window and all estimate/confidence fields with complete analysis at five sample rates after changing a musical prefix. It checks publication/checksum/format invalidation, host BPM transitions, cancellation/retry, PCM-header mismatches and exhaustion/release of the actual process budget with 58 instances analysing 120-second recordings. A recording-engine fixture validates commit acknowledgement, partial reuse, recovery after PCM corruption and a mono/sample-rate change against full analysis of the actual committed WAV.
+`RememberFeatureCache` compares every cached chroma/flux window and all estimate/confidence fields with complete analysis at five sample rates after changing a musical prefix. It checks publication/checksum/format invalidation, host BPM transitions, cancellation/retry, PCM-header mismatches and exhaustion/release of the actual process budget with 58 instances analysing 120-second recordings. A recording-engine fixture validates commit acknowledgement, partial reuse, recovery after audio corruption and a mono/sample-rate change against full analysis of the actual committed audio.
 
 Musical accuracy uses a separate labelled corpus. `RememberTests.exe --music-corpus <manifest.json> <report.json>` runs the production PCM analysis with no host BPM or feature reuse. A schema-1 manifest contains `entries` with a unique `id`, `file` (relative to the manifest or absolute), audio `sha256`, and at least one of `referenceBpm` or `referenceKey`. BPM `0` and key `Unknown` label unknown values; an omitted field is unlabelled. Keys use note names with optional sharp/flat plus `major`/`minor`. Use PCM WAV input with one or two channels and at most 180 seconds. Failed inputs and abstentions remain in labelled accuracy denominators. BPM accuracy uses 4% relative tolerance; half/double accuracy is reported separately and does not include triple tempo. Completion means that every input was processed, rather than an accuracy acceptance gate.
 
@@ -323,7 +370,7 @@ Storage recovery also interrupts two real writers after their first receipts and
 
 Processor settings fixtures hold the real configuration snapshot read at construction/restoration, then change the file and prepare a new bank. They verify that constructor/save/restore callbacks return during the held read, the new destination and exact settings fingerprint win, and the kept recording retains its identity and resampled tail. Another fixture closes the processor during the held read and checks deferred native cleanup. These holds are controlled test gates, rather than a measurement of a physically stalled drive.
 
-`RememberSustainedCapture` runs four simultaneous mono/stereo recordings for 120 seconds at 192 kHz and checks the full PCM tails, revision receipts, drops, capture reservations and Windows process memory. It also reconfigures during a 75-second capture, changes library/rate/mono with settings held, verifies the retained 120-second tail, then closes during a 90-second capture with discovery held. Those lifecycle timelines run faster than real time through actual files; the first four-instance capture uses 120 seconds of wall time. Run `RememberTests.exe --capture-lifecycle` to exercise the lifecycle case separately. The suite is labelled `stress`; use `ctest --test-dir Plugin/build -C Release -LE stress --output-on-failure` for the shorter suites. The stress callback percentiles measure the engine alone, and the fixture's memory threshold is not a product memory guarantee.
+`RememberSustainedCapture` runs four simultaneous mono/stereo recordings for 120 seconds at 192 kHz and checks the complete compressed timelines and readable tails, revision receipts, drops, capture reservations and Windows process memory. It also reconfigures during a 75-second capture, changes library/rate/mono with settings held, verifies the retained 120-second tail, then closes during a 90-second capture with discovery held. Those lifecycle timelines run faster than real time through actual files; the first four-instance capture uses 120 seconds of wall time. Run `RememberTests.exe --capture-lifecycle` to exercise the lifecycle case separately. The suite is labelled `stress`; use `ctest --test-dir Plugin/build -C Release -LE stress --output-on-failure` for the shorter suites. The stress callback percentiles measure the engine alone, and the fixture's memory threshold is not a product memory guarantee.
 
 App tests also exercise cache reuse at 44.1/48/96/192 kHz, seek/EOF, simulated blocked reads, deferred decoder cleanup, the 64 MiB process cache limit and a fake output driver (pause/idle release, hidden playback, disconnect/retry and native selector closure). Callback percentiles refer to the cache source itself, rather than complete hardware output.
 

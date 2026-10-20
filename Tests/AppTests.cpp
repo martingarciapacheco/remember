@@ -87,6 +87,10 @@ int main (int argc, char** argv)
                     << " playlist=" << used[0] << "/" << used[1] << "/" << used[2]
                     << " error=" << inventory.result.getErrorMessage() << "\n";
                 if (inventory.result.failed()) ++failed;
+                for (const auto& sound : inventory.sounds) if (sound.kind == UsedSounds::Kind::Generator)
+                    std::cout << "  generator=" << sound.instrument << " channel=" << sound.channelId
+                        << " preset=" << (sound.presetName.isNotEmpty() ? sound.presetName : "<unavailable>")
+                        << " stateBytes=" << (sound.presetData ? sound.presetData->getSize() : 0) << "\n";
                 if (inspectUi && inventory.result.wasOk())
                 {
                     ProjectEntry entry; entry.projectPath = project.getFullPathName(); entry.name = project.getFileNameWithoutExtension();

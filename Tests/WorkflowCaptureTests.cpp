@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "WorkflowCaptureTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Plugin/Source/PluginProcessor.h"
@@ -11,11 +12,12 @@
 namespace
 {
 void check (bool passed, const char* message) { if (! passed) throw std::runtime_error (message); }
-template<class Fn> void waitFor (Fn condition)
+template<class Fn> void waitAt (int line, Fn condition)
 {
     const auto until = juce::Time::getMillisecondCounter() + 15000;
-    while (! condition()) { check (juce::Time::getMillisecondCounter() < until, "Capture workflow timed out"); juce::Thread::sleep (5); }
+    while (! condition()) { if (juce::Time::getMillisecondCounter() >= until) throw std::runtime_error ("Capture workflow timed out at line " + std::to_string (line)); juce::Thread::sleep (5); }
 }
+#define waitFor(...) waitAt (__LINE__, __VA_ARGS__)
 struct Head : juce::AudioPlayHead
 {
     bool playing = true; double seconds = 0;
@@ -29,9 +31,10 @@ void render (RecordingEngine& engine, double start, double seconds, float value,
     for (int done = 0; done < samples; done += audio.getNumSamples())
     {
         audio.setSize (2, juce::jmin (128, samples - done), false, false, true);
-        audio.clear(); for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < audio.getNumSamples(); ++i) audio.setSample (ch, i, value);
+        audio.clear(); for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < audio.getNumSamples(); ++i)
+            audio.setSample (ch, i, value * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * (done + i) / 8000));
         head.seconds = start + done / 8000.0; engine.processBlock (audio, &head);
-        check (audio.getSample (0, 0) == value, "Capture options changed passthrough audio");
+        check (audio.getSample (0, 0) == value * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * done / 8000), "Capture options changed passthrough audio");
         if (done % 4096 == 0) juce::Thread::sleep (1);
     }
     if (stopAfter)
@@ -130,23 +133,26 @@ void testWorkflowCapture (const juce::File& root)
         render (engine, 12, 2, 0.3f);
         const auto manifest = movedLibrary.getChildFile (engine.getAssociationInfo().id).getChildFile ("metadata.json");
         const auto firstRevision = committedMetadata (manifest)["audioRevision"].toString();
+        waitFor ([&] { return engine.getState() == RecordingEngine::State::Done; });
         check (manifest.existsAsFile(), "Live folder change did not redirect the next preview");
         // Two takes separated by a seek while the host stays playing. There is
         // no stopped callback and no arming request between these positions.
         render (engine, 24, 2, 0.4f, false);
         render (engine, 36, 2, 0.5f);
         waitFor ([&] { return committedMetadata (manifest)["audioRevision"].toString() != firstRevision; });
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         const auto hasCaptured = [&] (float value)
         {
             const auto info = LibraryStore::readJson (manifest);
             auto captured = std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (
                 LibraryStore::audioFile (manifest.getParentDirectory(), info, true)));
             juce::AudioBuffer<float> sample (2, 1);
-            return captured && captured->read (&sample, 0, 1, 0, true, true)
-                && std::abs (sample.getSample (0, 0) - value) < 0.00001f;
+            const auto readable = captured && captured->read (&sample, 0, 1, 4000, true, true);
+            return readable
+                && std::abs (sample.getSample (0, 0) - value) < 0.02f;
         };
         waitFor ([&] { return hasCaptured (0.5f); });
+        waitFor ([&] { return engine.getState() == RecordingEngine::State::Done; });
         render (engine, 48, 2, 0.6f, false);
         render (engine, 6, 2, 0.7f);
         waitFor ([&] { return hasCaptured (0.7f); });
@@ -161,6 +167,10 @@ void testWorkflowCapture (const juce::File& root)
         const auto baseline = committedMetadata (manifest);
         check ((double) baseline["durationSeconds"] >= 4.99, "Initial full preview was incomplete");
         const auto revision = baseline["audioRevision"].toString();
+        auto baselineReader = PreviewAudio::open (LibraryStore::audioFile (folder, baseline, false));
+        juce::AudioBuffer<float> baselineTail (2, 1024);
+        check (baselineReader && baselineReader->read (&baselineTail, 0, 1024, 32000, true, true), "Cannot read original tail");
+        baselineReader.reset();
         engine.setCaptureOptions ({ true, false, false });
         render (engine, 10, 2, 0.2f);
         juce::var merged;
@@ -172,10 +182,12 @@ void testWorkflowCapture (const juce::File& root)
         });
         if (! ((double) merged["durationSeconds"] > 4.99 && (double) merged["preservedTailSeconds"] > 2.9))
             throw std::runtime_error (("Short manual capture did not preserve the old tail: " + juce::JSON::toString (merged)).toStdString());
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         auto reader = std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (LibraryStore::audioFile (folder, merged, true)));
-        juce::AudioBuffer<float> sample (2, 1); check (reader && reader->read (&sample, 0, 1, 32000, true, true), "Cannot read preserved tail");
-        check (std::abs (sample.getSample (0, 0) - 0.1f) < 0.00001f, "Tail changed under prefix policy"); reader.reset();
+        juce::AudioBuffer<float> sample (2, 1024); check (reader && reader->read (&sample, 0, 1024, 32000, true, true), "Cannot read preserved tail");
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 1024; ++i)
+            check (sample.getSample (ch, i) == baselineTail.getSample (ch, i), "Tail changed under prefix policy");
+        reader.reset();
         const auto mergedRevision = merged["audioRevision"].toString();
         engine.setCaptureOptions ({ true, true, false }); render (engine, 20, 2, 0.3f); juce::Thread::sleep (100);
         check (committedMetadata (manifest)["audioRevision"].toString() == mergedRevision, "Global lock changed preview audio");

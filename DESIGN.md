@@ -7,10 +7,17 @@ ellipsis action. Its native resizable window groups Samples, MIDI and Generators
 with explicit In playlist / All loaded sounds scope. MIDI rows include a bounded
 piano-roll preview, keyboard audition and external file dragging; sample dragging
 always copies the original. Keep project reading, export preparation and audition
-synthesis on workers. Sample rows are 60 and Generator rows 52 logical pixels high; Drag and Save copy
+synthesis on workers. Sample rows are 60 and Generator rows 72 logical pixels high; Drag and Save copy
 sit side by side. Clicking a sample/MIDI row auditions it on release; a drag
 exports without triggering playback. MIDI audio is synthesized during playback
 using a bounded read-ahead ring, without WAV files or whole-pattern PCM caches.
+Generator rows show the plugin, an explicit saved preset name (or Preset not
+available), then channel and usage. Keep names accessible in full; never infer
+a preset from a renamed channel. Drag and Save copy export an FL Studio plugin
+preset (.fst) containing the saved plugin/wrapper state, even if its name is
+unavailable. Preserve opaque state bytes and keep export preparation on workers.
+The category hint explains the file format; accessibility explains that the
+saved preset may have parameter edits. Missing state disables export explicitly.
 Used sounds owns a separate compact player with a seekable waveform/piano roll.
 The main project player, controls, waveform and layout stay in the main window
 throughout. Opening/closing the dialog never clears, reparents or reloads it.
@@ -195,3 +202,32 @@ row actions, settings and recovery plus the full app regression. Review native
 snapshots at 640 × 480 and 1024 × 768, plugin default size, and dialogs. Check
 long names, no search results, empty library, disabled controls and focus. Keep
 audio/storage behavior and bounded list/tag component creation intact.
+
+## Preview storage information
+
+The library toolbar places Clear filters immediately after the smart-collection
+save button. It resets search, favorites, folder selections and project filters;
+saved collections remain available. Keep the actions and count visible at the
+minimum size. The Tags filter opens an anchored, scrollable list of existing
+library tags on focus/click, filters the current comma-separated token as the
+user types, and supports pointer selection and Up/Down/Return/Escape. Use one
+recycled list rather than creating a component for every tag.
+
+When preview storage has not been configured, the desktop app opens a dedicated
+setup dialog explaining that plugin recordings live in this folder and
+recommending a dedicated location. Create or choose folder opens the native
+directory picker, including its new-folder action. Save only a valid writable
+selection, on a worker, preserving other config fields. Cancel/Later leaves setup
+pending for the next launch; configured but unavailable drives never trigger it.
+
+Recording settings places a 30-pixel original vector info button beside its heading, with accessible title, description, tooltip and keyboard focus. Its anchored, dismissible callout follows the live semantic palette and uses readable, selectable, scrollable text. Explain compressed fragments, the `.rmp` container, current/previous recovery, temporary WAVs, legacy compatibility, approximate size and explicit safe fragmentation limits. Draft estimates update without writing saved settings.
+
+Preview rows reserve the end of their metadata line for the recording date and
+total audio size, including recovery. Measure on the scanner worker and cache
+with the entry metadata; never enumerate files while painting. Each row's
+ellipsis menu offers Compact preview audio. Settings places a compact button,
+editable positive MB limit (10 by default), and units below the storage summary.
+Before either operation, explain the selected OGG quality, lossy generation,
+permanent removal of fragments/recovery, and one conversion on a later partial
+capture. Keep encoding, validation and cleanup on workers; release the selected
+player's reader first. Report partial failures and actual storage change.

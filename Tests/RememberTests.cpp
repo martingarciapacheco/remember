@@ -1,3 +1,5 @@
+#include "../Shared/PreviewAudio.h"
+#include "SegmentedPreviewTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../App/Source/ProjectScanner.h"
 #include "../Shared/LibraryStore.h"
@@ -80,10 +82,10 @@ void capture (RecordingEngine& engine, double seconds, float level, bool offline
         int count = juce::jmin (256, samples - done);
         juce::AudioBuffer<float> buffer (2, count);
         for (int ch = 0; ch < 2; ++ch)
-            for (int i = 0; i < count; ++i) buffer.setSample (ch, i, level);
+            for (int i = 0; i < count; ++i) buffer.setSample (ch, i, level * (float) std::cos (juce::MathConstants<double>::twoPi * (done + i) / 100));
         head.time = start + (double) done / rate;
         engine.processBlock (buffer, &head, offline);
-        require (buffer.getSample (0, 0) == level, "Plugin changed the input audio");
+        require (buffer.getSample (0, 0) == level * (float) std::cos (juce::MathConstants<double>::twoPi * done / 100), "Plugin changed the input audio");
         done += count;
     }
     if (sendStop)
@@ -116,7 +118,7 @@ juce::File entryNamed (const juce::File& previews, const juce::String& name)
 juce::AudioBuffer<float> readAudio (const juce::File& file)
 {
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
     if (! reader) throw std::runtime_error ("Audio is unreadable: " + file.getFullPathName().toStdString());
     juce::AudioBuffer<float> audio (2, (int) reader->lengthInSamples);
@@ -230,6 +232,10 @@ int main (int argc, char** argv)
         {
             testWorkflowCapture (root); root.deleteRecursively(); return 0;
         }
+        if (argc > 1 && juce::String (argv[1]) == "--segmented")
+        { testSegmentedPreviews (root); root.deleteRecursively(); return 0; }
+        if (argc > 1 && juce::String (argv[1]) == "--compaction")
+        { testPreviewCompaction (root); root.deleteRecursively(); return 0; }
         if (argc > 1 && juce::String (argv[1]) == "--frontend")
         {
             testPluginFrontend (root);
@@ -348,11 +354,11 @@ int main (int argc, char** argv)
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Partial capture wasn't saved");
             auto partial = readAudio (LibraryStore::audioFile (originalFolder, true));
             require (partial.getNumSamples() == fullLength, "Short re-record truncated the preview");
-            require (std::abs (partial.getSample (0, 100) + 0.4f) < 0.00001f, "New beginning not replaced");
-            require (std::abs (partial.getSample (0, 79999) - full.getSample (0, 80000)) < 0.00001f,
+            require (std::abs (partial.getSample (0, 100) + 0.4f) < 0.025f, "New beginning not replaced");
+            require (std::abs (partial.getSample (0, 79999) - full.getSample (0, 80000)) < 0.025f,
                      "Partial re-record left a discontinuity at the untouched tail");
             for (int i = 79960; i < 80000; ++i)
-                require (partial.getSample (0, i) >= -0.40001f && partial.getSample (0, i) <= 0.20001f,
+                require (partial.getSample (0, i) >= -0.425f && partial.getSample (0, i) <= 0.425f,
                          "Prefix crossfade overshot its endpoints");
             for (int i = 80000; i < fullLength; ++i)
                 require (partial.getSample (0, i) == full.getSample (0, i), "Untouched tail changed");
@@ -366,7 +372,7 @@ int main (int argc, char** argv)
             capture (engine, 1.0, 0.6f);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Exactly one second was discarded");
             auto oneSecond = readAudio (LibraryStore::audioFile (originalFolder, true));
-            require (std::abs (oneSecond.getSample (0, 100) - 0.6f) < 0.00001f, "One second wasn't saved");
+            require (std::abs (oneSecond.getSample (0, 100) - 0.6f) < 0.025f, "One second wasn't saved");
             engine.setProjectName ("manual override");
             require (engine.getProjectName() == song.getFileNameWithoutExtension(), "Manual name overrode the DAW");
             auto renamed = projects.getChildFile ("Renamed.flp");
@@ -394,8 +400,8 @@ int main (int argc, char** argv)
             require (entries (previews).size() == 2, "Reopen duplicated a project");
             auto second = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
             auto first = readAudio (LibraryStore::audioFile (originalFolder, true));
-            require (std::abs (second.getSample (0, 100) + 0.1f) < 0.00001f, "Offline export audio wasn't saved");
-            require (std::abs (first.getSample (0, 100) - 0.6f) < 0.00001f, "Save As changed the original audio");
+            require (std::abs (second.getSample (0, 100) + 0.1f) < 0.025f, "Offline export audio wasn't saved");
+            require (std::abs (first.getSample (0, 100) - 0.6f) < 0.025f, "Save As changed the original audio");
             // prepareToPlay can happen again without an intervening stopped block.
             restored.prepare (8000, 256, SettingsManager::Snapshot{});
             capture (restored, 1.2, 0.3f, false, 0, false);
@@ -461,7 +467,7 @@ int main (int argc, char** argv)
                      "Pending association did not publish its verified project and completed metadata");
             require (LibraryStore::audioFile (associatedFolder, associatedMetadata, false).existsAsFile(), "Pending OGG lost during association");
             const auto associatedAudio = readAudio (LibraryStore::audioFile (associatedFolder, associatedMetadata, true));
-            require (associatedAudio.getNumSamples() == 9600 && std::abs (associatedAudio.getSample (0, 100) - 0.35f) < 0.00001f,
+            require (associatedAudio.getNumSamples() == 9600 && std::abs (associatedAudio.getSample (0, 100) - 0.35f) < 0.025f,
                      "Pending PCM duration/content changed during association");
         }
         require (entryNamed (previews, "NewlySaved").exists(), "Saved pending audio was deleted on close");
@@ -492,19 +498,22 @@ int main (int argc, char** argv)
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Pending audio couldn't merge into an existing entry");
             auto merged = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
             require (merged.getNumSamples() == fullLength, "Pending association lost the existing tail");
-            require (std::abs (merged.getSample (0, 100) + 0.25f) < 0.00001f, "Pending prefix wasn't associated");
+            require (std::abs (merged.getSample (0, 100) + 0.25f) < 0.025f, "Pending prefix wasn't associated");
             require (entries (previews).size() == 4, "Pending association duplicated an existing entry");
             engine.prepare (16000, 256, SettingsManager::Snapshot{});
             capture (engine, 1.2, 0.45f, false, 0, true, 16000);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Sample rate change failed");
             auto resampled = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
             require (resampled.getNumSamples() == 2 * fullLength, "Sample rate change lost preview duration");
-            require (std::abs (resampled.getSample (0, 32000) - merged.getSample (0, 16000)) < 0.0001f, "Sample rate change changed the tail");
+            if (std::abs (resampled.getSample (0, 32000) - merged.getSample (0, 16000)) >= 0.025f)
+                throw std::runtime_error ("Sample rate change changed the tail: " + std::to_string (merged.getSample (0, 16000))
+                    + " -> " + std::to_string (resampled.getSample (0, 32000)) + " "
+                    + juce::JSON::toString (meta (entryNamed (previews, "Version2"))).toStdString());
             capture (engine, 1.2, 0.15f, false, 0, true, 16000);
             capture (engine, 1.2, -0.55f, false, 0, true, 16000);
             await ([&] { return engine.getState() == RecordingEngine::State::Done; }, "Queued re-records weren't saved");
             auto queued = readAudio (LibraryStore::audioFile (entryNamed (previews, "Version2"), true));
-            require (std::abs (queued.getSample (0, 100) + 0.55f) < 0.0001f, "Older capture overwrote a newer queued capture");
+            require (std::abs (queued.getSample (0, 100) + 0.55f) < 0.025f, "Older capture overwrote a newer queued capture");
         }
         std::cout << "PASS: saved template isolation, pending association to existing preview, sample rate change\n";
         auto scanned = ProjectScanner::scan (previews, { projects });
@@ -554,8 +563,8 @@ int main (int argc, char** argv)
             require (engine.getState() == RecordingEngine::State::Done, "Pipeline did not recover its corrupt previous PCM");
             const auto merged = readAudio (LibraryStore::audioFile (folder, true));
             require (meta (folder).getProperty ("previousAudioRevision", "").toString() == original
-                && merged.getNumSamples() == 24000 && std::abs (merged.getSample (0, 100) - 0.9f) < 0.00001f
-                && std::abs (merged.getSample (0, 12000) - 0.2f) < 0.00001f,
+                && merged.getNumSamples() == 24000 && std::abs (merged.getSample (0, 100) - 0.9f) < 0.025f
+                && std::abs (merged.getSample (0, 12000) - 0.2f) < 0.025f,
                 "Fresh prefix was merged into a corrupt/unverified tail instead of the last complete revision");
             std::cout << "PASS: recording pipeline recovers corrupt previous PCM before preserving its tail\n";
         }

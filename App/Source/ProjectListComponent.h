@@ -63,6 +63,7 @@ public:
 
     // Filter entries by folder membership. Empty string = no filter (show all).
     // Selecting "A" also includes entries in subfolders like "A/B".
+    std::function<void()> onFiltersCleared;
     void setFolderFilter (const juce::String& folderPath);
     void setFolderFilters (const juce::StringArray& paths);
 
@@ -110,14 +111,16 @@ private:
     void applyFilter();
     void configureWorkflow();
     void showFilters();
+    void clearFilters();
     void showActions (ProjectEntry, ProjectRowComponent*);
     void editDetails (ProjectEntry);
+    void compactRecording (ProjectEntry);
     void saveCollection();
     void restoreRecording (ProjectEntry);
     void bulkEdit (juce::Array<ProjectEntry>, juce::String operation);
     LibraryFilter filter;
     juce::ComboBox collectionCombo, sortCombo, viewCombo;
-    juce::TextButton filtersBtn { "Filters" }, collectionBtn { "+" };
+    juce::TextButton filtersBtn { "Filters" }, collectionBtn { "+" }, clearFiltersBtn { "Clear filters" };
     juce::var collections;
     int view = 1;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -140,6 +143,6 @@ private:
     juce::String folderFilter;            // empty = no filter
     juce::StringArray folderFilters;
 
-    int toolbarHeight() const { return getWidth() - RememberUI::appSectionGap - RememberUI::appOuterMargin < 650 ? 132 : 92; }
+    int toolbarHeight() const { return getWidth() - RememberUI::appSectionGap - RememberUI::appOuterMargin < 760 ? 132 : 92; }
     static constexpr int kRowH     = RememberUI::recordingRowHeight;
 };

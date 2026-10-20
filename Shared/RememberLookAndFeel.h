@@ -17,7 +17,7 @@ inline constexpr int recordingRowPadding = 6;
 inline constexpr int recordingRowActionSize = 32;
 inline constexpr int soundRowHeight = 60;
 inline constexpr int midiSoundRowHeight = 116;
-inline constexpr int generatorSoundRowHeight = 52;
+inline constexpr int generatorSoundRowHeight = 72;
 inline constexpr float surfaceRadius = 12.0f;
 inline constexpr int appOuterMargin = 6;
 inline constexpr int appSectionGap = 6;
@@ -128,12 +128,18 @@ public:
     using juce::ListBox::ListBox;
     void paintOverChildren (juce::Graphics& g) override
     {
+        const auto radius = (float) getProperties().getWithDefault ("rememberListRadius", recordingRowRadius);
         juce::Path corners;
         corners.setUsingNonZeroWinding (false);
         corners.addRectangle (getLocalBounds().toFloat());
-        corners.addRoundedRectangle (getLocalBounds().toFloat(), recordingRowRadius);
+        corners.addRoundedRectangle (getLocalBounds().toFloat(), radius);
         g.setColour (colour (Pal::BgDeep));
         g.fillPath (corners);
+        if ((bool) getProperties().getWithDefault ("rememberListOutline", false))
+        {
+            g.setColour (colour (Pal::Border));
+            g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), juce::jmax (0.0f, radius - 0.5f), 1.0f);
+        }
     }
 };
 
@@ -245,6 +251,12 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
         p.addStar (b.getCentre(), 5, 3.7f, 7.5f);
         if (filled) g.fillPath (p);
         else g.strokePath (p, juce::PathStrokeType (1.4f));
+    }
+    else if (kind == "info")
+    {
+        g.drawEllipse (b.reduced (2), 1.5f);
+        g.fillEllipse (b.getCentreX() - 0.9f, b.getY() + 4.2f, 1.8f, 1.8f);
+        g.drawLine (b.getCentreX(), b.getY() + 8, b.getCentreX(), b.getBottom() - 4, 1.6f);
     }
     else if (kind == "settings")
     {

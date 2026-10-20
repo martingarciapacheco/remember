@@ -6,6 +6,8 @@
 #include "../App/Source/ProjectListComponent.h"
 #include "../App/Source/WaveformPlayerComponent.h"
 #include "../App/Source/WorkflowForm.h"
+#include "../App/Source/PreviewFolderSetup.h"
+#include "../App/Source/MainComponent.h"
 #include "../Shared/LibraryStore.h"
 #include "../Shared/OrganizationUndo.h"
 #include <iostream>
@@ -76,6 +78,14 @@ void testWorkflowFeatures (const juce::File& root)
     check (ProjectScanner::saveSettings (library, { projects }, 30, 4, false, &capture).wasOk(), "Cannot save capture toggles");
     const auto loaded = ProjectScanner::readSettings();
     check (loaded.capture.manual && loaded.capture.locked && loaded.capture.replace, "Capture options did not round-trip");
+    const auto configBefore = LibraryStore::configFile().loadFileAsString();
+    check (PreviewFolderSetup::saveFolder (root.getChildFile ("does-not-exist")).failed()
+        && LibraryStore::configFile().loadFileAsString() == configBefore, "Invalid preview folder changed settings");
+    check (PreviewFolderSetup::saveFolder (library).wasOk(), "Preview setup could not save a folder");
+    const auto afterSetup = ProjectScanner::readSettings();
+    check (afterSetup.previews == library && afterSetup.roots == loaded.roots && afterSetup.capture.manual
+        && afterSetup.capture.locked && afterSetup.capture.replace && afterSetup.seconds == 30,
+        "Preview setup overwrote other recording or search settings");
     juce::Array<ProjectEntry> entries;
     for (int i = 0; i < 4; ++i)
     {
@@ -253,6 +263,22 @@ void testWorkflowFeatures (const juce::File& root)
         popup (list, "Preview actions", 11);
         waitFor ([] { for (const auto& e : ProjectScanner::librarySnapshot()->entries) if (e.tags.contains ("Batch tag")) return false; return true; });
         auto* filters = find<juce::TextButton> (list, "Filter projects"); check (filters != nullptr, "Filters trigger missing"); filters->onClick(); waitFor ([] { return form() != nullptr; });
+        auto* tagInput = find<TagFilterEditor> (*form(), "All these tags");
+        check (tagInput != nullptr, "Filter tags lack suggestions");
+        tagInput->setText ("tech", false); tagInput->showSuggestions();
+        auto* suggestions = find<juce::ListBox> (*form(), "Existing tags");
+        check (suggestions && suggestions->getModel()->getNumRows() == 1, "Existing tags did not filter by typed text");
+        snapshot (*form(), "workflow-tag-suggestions");
+        form()->setSize (480, 360); tagInput->showSuggestions();
+        snapshot (*form(), "workflow-tag-suggestions-minimum");
+        check (suggestions->getBottom() < tagInput->getY(), "Compact tag suggestions are clipped below the viewport");
+        form()->setSize (580, 540); tagInput->showSuggestions();
+        suggestions->getModel()->returnKeyPressed (0);
+        check (tagInput->getText() == "Techno, ", "Choosing an existing tag did not complete the current token");
+        tagInput->setText ("Techno, unlikely-tag", false); tagInput->showSuggestions();
+        suggestions->getModel()->returnKeyPressed (0);
+        check (tagInput->getText() == "Techno, unlikely-tag", "Empty suggestions selected a nonexistent tag");
+        tagInput->setText ({}, false); suggestions->setVisible (false);
         find<juce::TextEditor> (*form(), "Minimum BPM")->setText ("128"); find<juce::TextEditor> (*form(), "Maximum BPM")->setText ("134");
         snapshot (*form(), "workflow-filters"); accept (*form()); waitFor ([&] { return list.getNumRows() == 3; });
         popup (list, "Save or remove smart collection", 1); waitFor ([] { return form() != nullptr; });
@@ -260,6 +286,10 @@ void testWorkflowFeatures (const juce::File& root)
         auto* collection = find<juce::ComboBox> (list, "Smart collections");
         waitFor ([&] { return collection && collection->getNumItems() == 2; });
         popup (list, "Preview actions", 10); check (list.getNumRows() == 4, "Clear filters did not restore library");
+        collection->setSelectedId (2, juce::dontSendNotification); collection->onChange();
+        auto* clear = find<juce::TextButton> (list, "Clear filters");
+        check (clear && clear->getX() > find<juce::TextButton> (list, "Save or remove smart collection")->getRight(), "Clear filters is not beside save");
+        clear->onClick(); check (list.getNumRows() == 4 && collection->getSelectedId() == 1, "Clear filters button did not reset the saved collection");
         collection->setSelectedId (2, juce::dontSendNotification); collection->onChange(); check (list.getNumRows() == 3, "Saved smart collection did not apply its BPM range");
         auto* views = find<juce::ComboBox> (list, "Library view"); check (views != nullptr, "Missing/trash views unavailable");
         views->setSelectedId (2, juce::dontSendNotification); views->onChange(); check (list.getNumRows() == 3, "Missing project panel ignored filter or included verified file");
@@ -287,5 +317,77 @@ void testWorkflowFeatures (const juce::File& root)
     trash = ProjectScanner::scanTrash (library);
     const auto secondDeleted = juce::Time::fromISO8601 (trash[0].deletedAt);
     check (LibraryStore::purgeExpiredTrash (library, secondDeleted + juce::RelativeTime::days (30)).wasOk() && ! trash[0].metadataFile.existsAsFile(), "Expired trash was not removed at 30 days");
+    {
+        const auto assignmentLibrary = root.getChildFile ("assignment-library");
+        for (const auto* name : { "KE PENA PROD", "MOJO" })
+        {
+            const auto folder = assignmentLibrary.getChildFile (name);
+            check (folder.createDirectory().wasOk(), "Cannot create assignment fixture");
+            writeAudio (folder.getChildFile ("preview.ogg"), juce::String (name) == "MOJO" ? 0.6f : 0.1f);
+            juce::var data (new juce::DynamicObject());
+            data.getDynamicObject()->setProperty ("projectId", folder.getFileName());
+            data.getDynamicObject()->setProperty ("projectName", folder.getFileName());
+            check (LibraryStore::writeJsonAtomically (folder.getChildFile ("metadata.json"), data).wasOk(), "Cannot write assignment metadata");
+        }
+        const auto project = projects.getChildFile ("KE PENA PROD.rpp");
+        check (project.replaceWithText ("assignment fixture"), "Cannot write assigned project");
+        // Keep the project outside automatic search roots until manual assignment.
+        check (ProjectScanner::saveSettings (assignmentLibrary, {}, 30, 4, false).wasOk(), "Cannot configure assignment library");
+        ProjectScanner::refreshAsync();
+        waitFor ([&] { const auto s = ProjectScanner::librarySnapshot(); return s->sourceRoot == assignmentLibrary && ! s->loading && s->entries.size() == 2; });
+        MainComponent scene;
+        scene.setSize (1024, 768);
+        ProjectListComponent* list = nullptr;
+        WaveformPlayerComponent* player = nullptr;
+        for (auto* child : scene.getChildren())
+        {
+            if (auto* value = dynamic_cast<ProjectListComponent*> (child)) list = value;
+            if (auto* value = dynamic_cast<WaveformPlayerComponent*> (child)) player = value;
+        }
+        check (list && player, "Assignment scene lacks list/player");
+        juce::ListBox* rows = nullptr;
+        for (auto* child : list->getChildren()) if (auto* value = dynamic_cast<juce::ListBox*> (child)) rows = value;
+        check (rows != nullptr, "Assignment scene lacks rows");
+        ProjectEntry mojo, missing;
+        int missingRow = -1, mojoRow = -1;
+        for (int i = 0; i < list->visibleEntries().size(); ++i)
+        {
+            const auto& e = list->visibleEntries()[i];
+            if (e.name == "MOJO") { mojo = e; mojoRow = i; }
+            else { missing = e; missingRow = i; }
+        }
+        check (missingRow >= 0 && mojoRow >= 0, "Assignment fixture entries missing");
+        const auto mojoMetadata = mojo.metadataFile.loadFileAsString();
+        const auto mojoAudio = ProjectIdentity::fingerprint (mojo.previewOgg);
+        const auto missingAudio = ProjectIdentity::fingerprint (missing.previewOgg);
+        player->loadEntry (mojo);
+        waitFor ([&] { return player->hasLoadedEntry(); });
+        // Keyboard selection does not play/load the selected recording.
+        rows->selectRow (missingRow);
+        auto target = player->projectAssignmentTarget();
+        check (target && target->metadataFile == missing.metadataFile && target->projectId == missing.projectId,
+            "Assign path targeted the last played preview instead of the selected recording");
+        snapshot (scene, "assignment-selected");
+        scene.setSize (640, 480); snapshot (scene, "assignment-selected-minimum");
+        rows->deselectAllRows(); check (! player->projectAssignmentTarget(), "Assignment fell back to last playback without selection");
+        rows->selectRow (missingRow); rows->selectRow (mojoRow, false, false);
+        check (! player->projectAssignmentTarget(), "Ambiguous assignment accepted multiple selected recordings");
+        rows->selectRow (mojoRow);
+        // The picker keeps the identity captured when it opened, even if the
+        // selection/playback changes before its asynchronous completion.
+        target->projectPath = project.getFullPathName();
+        bool committed = false;
+        ProjectScanner::editAsync ([target] { return target->save ({ "projectPath" }); }, [&] (juce::Result r)
+        { check (r.wasOk(), "Selected recording assignment failed"); committed = true; });
+        waitFor ([&] { return committed; });
+        const auto assigned = ProjectScanner::scan (assignmentLibrary, {});
+        check (assigned.size() == 2, "Assignment created a duplicate entry");
+        const auto saved = LibraryStore::readJson (missing.metadataFile);
+        check (saved["projectId"].toString() == missing.projectId && saved["projectPath"].toString() == project.getFullPathName(),
+            "Assignment did not preserve the selected recording identity");
+        check (mojo.metadataFile.loadFileAsString() == mojoMetadata && ProjectIdentity::fingerprint (mojo.previewOgg) == mojoAudio
+            && ProjectIdentity::fingerprint (missing.previewOgg) == missingAudio, "Assignment changed another recording or preview audio");
+        std::cout << "PASS: Assign path pins selected recording with different last playback, rejects empty/multiple selection and preserves both previews without duplicates\n";
+    }
     std::cout << "PASS: shared capture settings, combined filters, smart serialization, musical overrides, native details, multiselect, queue/history/shuffle/repeat, volume/mute, loudness, trash restore and 30-day retention\n";
 }

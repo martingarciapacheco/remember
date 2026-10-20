@@ -23,7 +23,9 @@ public:
     std::function<void()> onCompleted;
 
     // Launches this dialog as a modal DialogWindow.
-    static void launch (bool firstRun, std::function<void()> onDone);
+    static void launch (bool firstRun, std::function<void()> onDone,
+                        std::function<void (const ProjectEntry&)> beforeCompaction = {});
+    std::function<void (const ProjectEntry&)> onBeforeCompaction;
 
 private:
     RememberUI::Style uiStyle { *this };
@@ -34,7 +36,15 @@ private:
     void refreshLabels();
     void rebuildFoldersList();
     void updateSizeEstimate();
+    void showStorageInfo();
+    juce::TextButton storageInfo;
+    juce::Component::SafePointer<juce::CallOutBox> storageInfoPopup;
     void updateStorageUsage();
+    void compactLargePreviews();
+    juce::TextButton compactBtn { "Compact previews above" };
+    juce::TextEditor compactLimit;
+    juce::Label compactUnits { {}, "MB" };
+    bool compacting = false;
     void loadSettings (std::function<ProjectScanner::SettingsSnapshot()> reader);
     void saveAppearance();
     std::shared_ptr<std::atomic<uint64_t>> storageGeneration { std::make_shared<std::atomic<uint64_t>> (0) };

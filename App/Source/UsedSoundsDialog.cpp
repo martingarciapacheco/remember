@@ -45,12 +45,14 @@ public:
         const bool missing = sound.sourcePath.isNotEmpty() && sound.sample == juce::File{};
         midiRow = sound.kind == UsedSounds::Kind::Midi;
         generatorRow = sound.kind == UsedSounds::Kind::Generator;
+        if (generatorRow) setDescription (sound.channelName + ", " + sound.instrument + ", " + presetDetail()
+            + ", " + (sound.inPlaylist ? "In playlist" : "Loaded in project") + ". Last saved project; parameters may have changed after loading the preset.");
         missingSample = missing;
         play.setVisible (sound.kind != UsedSounds::Kind::Generator);
         play.setEnabled (! missing && (bool) dialog.onAudition);
         locateButton.setVisible (missing);
-        save.setVisible (sound.kind != UsedSounds::Kind::Generator);
-        drag.setVisible (sound.kind != UsedSounds::Kind::Generator);
+        save.setVisible (true);
+        drag.setVisible (true);
         drag.setEnabled (file != juce::File{}); save.setEnabled (file != juce::File{});
         const auto exportHint = file != juce::File{} ? juce::String ("Drag a copy to Explorer or another application")
             : sound.exportError.isNotEmpty() ? sound.exportError : "Original sample is unavailable";
@@ -82,14 +84,20 @@ public:
         const auto& sound = dialog.data->sounds[index];
         g.setColour (RememberUI::colour (isSelected ? Pal::Selected : Pal::Content));
         g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (0, 2), RememberUI::controlRadius);
-        const auto textRight = generatorRow ? getWidth() - 12 : getWidth() - actionWidth() - 20;
+        const auto textRight = getWidth() - actionWidth() - 20;
         g.setFont (RememberUI::font (14, true)); g.setColour (RememberUI::colour (Pal::Text));
         g.drawText (sound.name, generatorRow ? 12 : 52, generatorRow ? 6 : 10, juce::jmax (0, textRight - (generatorRow ? 12 : 52)), 21, juce::Justification::centredLeft, true);
         g.setFont (RememberUI::font (12)); g.setColour (RememberUI::colour (Pal::Subtext));
         const auto detail = sound.kind == UsedSounds::Kind::Sample ? sound.channelName + " / " + (sound.sample == juce::File{} ? "Sample missing" : sound.sample.getFileExtension().substring (1).toUpperCase())
             : sound.kind == UsedSounds::Kind::Generator ? sound.channelName + " / " + (sound.inPlaylist ? "In playlist" : "Loaded in project")
             : (sound.sourcePath.isNotEmpty() ? "Sample audition" : "Default instrument") + juce::String (" / ") + juce::String ((int) sound.notes.size()) + " notes";
-        g.drawText (detail, generatorRow ? 12 : 52, generatorRow ? 27 : 32, juce::jmax (0, textRight - (generatorRow ? 12 : 52)), 19, juce::Justification::centredLeft, true);
+        if (generatorRow)
+        {
+            g.setColour (RememberUI::colour (Pal::Text));
+            g.drawText (presetDetail(), 12, 27, juce::jmax (0, textRight - 12), 19, juce::Justification::centredLeft, true);
+            g.setColour (RememberUI::colour (Pal::Subtext));
+        }
+        g.drawText (detail, generatorRow ? 12 : 52, generatorRow ? 47 : 32, juce::jmax (0, textRight - (generatorRow ? 12 : 52)), 19, juce::Justification::centredLeft, true);
         if (sound.kind == UsedSounds::Kind::Midi)
         {
             auto bounds = juce::Rectangle<float> (52, 58, (float) juce::jmax (1, textRight - 60), 46);
@@ -122,6 +130,11 @@ public:
         locateButton.setBounds (controls.removeFromLeft (72));
     }
 private:
+    juce::String presetDetail() const
+    {
+        const auto& preset = dialog.data->sounds[index].presetName;
+        return preset.isNotEmpty() ? "Preset: " + preset : juce::String ("Preset not available");
+    }
     UsedSoundsDialog& dialog;
     size_t index = 0; bool isSelected = false, dragged = false;
     bool midiRow = false, generatorRow = false, missingSample = false;
@@ -218,14 +231,17 @@ void UsedSoundsDialog::load()
             if (cancel()) return juce::Result::fail ("Cancelled");
             juce::File file;
             if (sound.kind == UsedSounds::Kind::Sample) file = sound.sample;
-            else if (sound.kind == UsedSounds::Kind::Midi)
+            else if (sound.kind == UsedSounds::Kind::Midi || sound.kind == UsedSounds::Kind::Generator)
             {
                 file = staging.getChildFile (UsedSounds::exportName (source.name, sound, bpm, key));
-                const auto result = directoryResult.failed() ? directoryResult : UsedSounds::writeMidi (sound, bpm, file);
+                const auto result = directoryResult.failed() ? directoryResult
+                    : sound.kind == UsedSounds::Kind::Generator ? UsedSounds::writePreset (sound, file) : UsedSounds::writeMidi (sound, bpm, file);
+                sound.presetData.reset(); // The staging file owns the exported state now.
                 if (result.failed())
                 {
                     file = {}; sound.exportError = result.getErrorMessage();
-                    next->warnings.addIfNotAlreadyThere ("Some MIDI exports are unavailable: " + sound.exportError);
+                    next->warnings.addIfNotAlreadyThere ((sound.kind == UsedSounds::Kind::Generator
+                        ? "Some preset exports are unavailable: " : "Some MIDI exports are unavailable: ") + sound.exportError);
                 }
             }
             files->push_back (file);
@@ -251,6 +267,9 @@ void UsedSoundsDialog::setCategory (UsedSounds::Kind kind)
     samples.setToggleState (kind == UsedSounds::Kind::Sample, juce::dontSendNotification);
     midis.setToggleState (kind == UsedSounds::Kind::Midi, juce::dontSendNotification);
     plugins.setToggleState (kind == UsedSounds::Kind::Generator, juce::dontSendNotification);
+    hint.setText (kind == UsedSounds::Kind::Generator
+        ? "Drag copies the saved plugin state as an FL Studio preset (.fst)."
+        : "MIDI exports contain notes. Audio exports copy the original sample.", juce::dontSendNotification);
     filter();
 }
 void UsedSoundsDialog::filter()

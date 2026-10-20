@@ -25,6 +25,7 @@ struct ProjectEntry
     juce::String      metadataStamp; // disk identity/mtime/size used for publication invalidation
     juce::String      storageError; // unreadable/incomplete entries remain visible for repair/discard
     juce::String      recordedAt;
+    juce::int64       audioBytes = -1; // Worker-measured audio, including retained recovery.
     juce::String      status { "Idea" }, notes, bpmSource;
     double bpmOverride = 0, keyConfidence = 0;
     juce::String keyOverride;
@@ -69,6 +70,7 @@ public:
         int interfaceZoom = 100;
         int midiPreviewVoice = 1;
         CaptureOptions capture;
+        double compactAboveMB = 10;
     };
     enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc, Manual };
     struct LibrarySnapshot
@@ -130,10 +132,10 @@ public:
     static juce::File getPreviewsFolder();
     static void       setPreviewsFolder (const juce::File& folder);
     static juce::Result saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                      int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0);
+                                      int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1);
     static juce::Result rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                          int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                         juce::File& originalBackup, const CaptureOptions* capture = nullptr, int midiVoice = 0);
+                                         juce::File& originalBackup, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1);
 
     // Multiple folders where the user keeps DAW projects. Defaults to a single
     // entry pointing at the user's Desktop if nothing has been configured.

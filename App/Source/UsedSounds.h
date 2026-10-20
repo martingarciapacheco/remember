@@ -17,6 +17,8 @@ struct Sound
 {
     Kind kind = Kind::Sample;
     juce::String name, channelName, instrument, patternName, sourcePath, exportError;
+    juce::String presetName; // Explicit metadata from the saved state; empty means unavailable.
+    std::shared_ptr<const juce::MemoryBlock> presetData; // FL Studio .fst; generators only.
     juce::File sample;
     int channelId = -1, patternId = 0, rootNote = 60;
     bool inPlaylist = false;
@@ -41,6 +43,7 @@ Voice voiceFromId (int);
 juce::String voiceName (Voice);
 juce::String exportName (const juce::String& project, const Sound&, double bpm, const juce::String& key);
 juce::Result writeMidi (const Sound&, double bpm, const juce::File& target);
+juce::Result writePreset (const Sound&, const juce::File& target);
 // Streaming synthesis on the playback worker; borrowed notes and bounded buffers.
 std::unique_ptr<juce::AudioFormatReader> createPreviewReader (const Sound&,
     std::shared_ptr<const std::vector<Note>>, double bpm, Voice);

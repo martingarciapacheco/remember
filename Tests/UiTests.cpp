@@ -5,6 +5,8 @@
 #include "../App/Source/TagsEditorDialog.h"
 #include "../App/Source/MainComponent.h"
 #include "../App/Source/SettingsDialog.h"
+#include "../App/Source/PreviewCompactionActions.h"
+#include "../App/Source/PreviewFolderSetup.h"
 #include "../App/Source/RecoveryChoiceDialog.h"
 #include "../Shared/LibraryStore.h"
 #include "../Shared/AppearanceSettings.h"
@@ -234,6 +236,16 @@ void testFrontendDesign (const juce::File& root)
             if (child->getTitle() == "Filter projects") filters = dynamic_cast<juce::TextButton*> (child);
         }
         check (count && filters && count->getText() == "1 item", "Recording count is missing or stale");
+        juce::TextButton* clear = nullptr;
+        juce::TextButton* save = nullptr;
+        for (auto* child : list->getChildren())
+        {
+            if (child->getTitle() == "Clear filters") clear = dynamic_cast<juce::TextButton*> (child);
+            if (child->getTitle() == "Save or remove smart collection") save = dynamic_cast<juce::TextButton*> (child);
+        }
+        check (clear && save && clear->getX() == save->getRight() + 8
+            && list->getLocalBounds().contains (clear->getBounds()) && ! clear->getBounds().intersects (count->getBounds()),
+            "Clear filters is clipped or overlaps the count");
         check (list->getX() + count->getRight() == rightEdge, "Recording count does not share the outer trailing edge");
         check (count->getY() == filters->getY() && count->getHeight() == filters->getHeight()
             && ! count->getBounds().intersects (filters->getBounds()), "Recording count is not aligned with Filters");
@@ -326,6 +338,10 @@ void testFrontendDesign (const juce::File& root)
             viewport->setViewPosition (10000, 0);
             check (body->getChildComponent (count - 1)->getRight() <= viewport->getViewArea().getRight(), "Last overflow DAW cannot be reached");
         }
+    }
+    {
+        PreviewFolderSetup setup ([] {});
+        saveImage (setup, "apple-preview-folder-setup.png", true);
     }
     scene->setSize (1920, 1080);
     check (list->getX() + rows->getRight() == 1914 && list->getX() == 222,
@@ -479,6 +495,32 @@ void testFrontendDesign (const juce::File& root)
             check (recordingSwitches[i]->getBounds().getCentreY() - recordingSwitches[i - 1]->getBounds().getCentreY() == 30,
                 "Record in mono and the remaining switches have unequal spacing");
         check (folders != nullptr, "Settings has no folder list");
+        juce::TextButton* compact = nullptr;
+        juce::TextEditor* compactLimit = nullptr;
+        for (auto* child : settings.getChildren())
+        {
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "Compact large previews") compact = button;
+            if (auto* editor = dynamic_cast<juce::TextEditor*> (child); editor && editor->getTitle() == "Compaction limit in MB") compactLimit = editor;
+        }
+        check (compact && compactLimit && compact->isEnabled() && compactLimit->getText().getDoubleValue() == 10,
+            "Settings lacks the default 10 MB compaction controls");
+        check (compact->getRight() < compactLimit->getX() && compactLimit->getBottom() <= folders->getY(),
+            "Compaction controls overlap each other or project folders");
+        const auto beforeCompactionPrompt = LibraryStore::configFile().loadFileAsString();
+        compact->onClick();
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        auto* compactionPrompt = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (compactionPrompt->findColour (juce::AlertWindow::backgroundColourId) == RememberUI::colour (Pal::BgDeep),
+            "Compaction confirmation does not follow the shared appearance");
+        const auto promptOptions = PreviewCompactionActions::confirmation ("All previews including recovery");
+        check (compactionPrompt->getName() == promptOptions.getTitle() && promptOptions.getMessage().contains ("including recovery")
+            && promptOptions.getMessage().contains ("lossy") && promptOptions.getMessage().contains ("cannot be undone"),
+            "Compaction confirmation omits total size, quality loss or permanent deletion");
+        saveImage (*compactionPrompt, "apple-preview-compaction-confirm.png", true);
+        compactionPrompt->exitModalState (0);
+        awaitUi ([] { return juce::Component::getCurrentlyModalComponent() == nullptr; });
+        check (LibraryStore::configFile().loadFileAsString() == beforeCompactionPrompt,
+            "Cancelling compaction changed saved settings");
         juce::Label* estimate = nullptr;
         juce::Label* wavNotice = nullptr;
         juce::ComboBox* duration = nullptr;
@@ -490,7 +532,7 @@ void testFrontendDesign (const juce::File& root)
             if (auto* label = dynamic_cast<juce::Label*> (child))
             {
                 if (label->getTitle() == "Estimated preview storage") estimate = label;
-                if (label->getTitle() == "WAV storage notice") wavNotice = label;
+                if (label->getTitle() == "Preview storage notice") wavNotice = label;
             }
             if (auto* combo = dynamic_cast<juce::ComboBox*> (child))
             {
@@ -505,7 +547,7 @@ void testFrontendDesign (const juce::File& root)
         }
         check (estimate && wavNotice && duration && quality && mono && replace, "Settings lacks accessible preview storage estimates");
         check (estimate->getText().contains ("recovery copy") && wavNotice->isVisible()
-            && wavNotice->getText().contains ("WAV files stay on disk")
+            && wavNotice->getText().contains ("OGG fragments")
             && wavNotice->getBottom() <= folders->getY(), "WAV and recovery storage notice is missing or overlaps folders");
         const auto configBeforeEstimate = LibraryStore::configFile().loadFileAsString();
         const auto originalEstimate = estimate->getText();
@@ -519,13 +561,33 @@ void testFrontendDesign (const juce::File& root)
         check (longSize > stereoSize * 1.9 && longSize < stereoSize * 2.1, "Doubling duration did not double preview storage estimate");
         mono->setToggleState (true, juce::dontSendNotification); mono->onClick();
         const auto monoSize = estimate->getText().fromFirstOccurrenceOf ("~", false, false).getDoubleValue();
-        check (monoSize < longSize * 0.6 && monoSize > longSize * 0.4, "Mono storage estimate does not reflect reduced WAV size");
+        check (monoSize <= longSize * 0.65 && monoSize > longSize * 0.5, "Mono storage estimate does not reflect reduced OGG size");
         const auto beforeQuality = estimate->getText();
         quality->setSelectedId (9, juce::sendNotificationSync);
         check (estimate->getText() != beforeQuality, "OGG quality did not update storage estimate");
         replace->setToggleState (! originalReplace, juce::dontSendNotification);
-        check (wavNotice->isVisible() && wavNotice->getText().contains ("even when replacing"), "Replacement hides the permanent WAV cost");
+        check (wavNotice->isVisible() && wavNotice->getText().contains ("WAVs are temporary"), "Replacement lost the temporary WAV explanation");
         saveImage (settings, "apple-settings-storage-estimate.png", true);
+        juce::TextButton* information = nullptr;
+        for (auto* child : settings.getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "About preview storage") information = button;
+        check (information && information->getProperties()["rememberIcon"].toString() == "info"
+            && information->getWidth() >= 30 && information->getY() < duration->getY(), "Preview information lacks its accessible i icon near recording options");
+        information->onClick();
+        auto* popup = dynamic_cast<juce::CallOutBox*> (juce::Component::getCurrentlyModalComponent());
+        check (popup != nullptr, "Storage information did not open an anchored callout");
+        juce::TextEditor* explanation = nullptr;
+        for (auto* child : popup->getChildren())
+            if (auto* editor = childOf<juce::TextEditor> (*child)) explanation = editor;
+        check (explanation && explanation->isReadOnly() && explanation->getText().contains (".rmp")
+            && explanation->getText().contains ("256") && explanation->getText().contains ("temporary")
+            && explanation->getText().contains ("recode"), "Storage information omitted format, limits or temporary files");
+        saveImage (*popup, "apple-settings-storage-info-light.png", true);
+        RememberUI::setAppearanceMode (RememberAppearance::Dark);
+        saveImage (*popup, "apple-settings-storage-info-dark.png", true);
+        RememberUI::setAppearanceMode (RememberAppearance::Light);
+        popup->dismiss();
+        awaitUi ([] { return juce::Component::getCurrentlyModalComponent() == nullptr; });
         duration->setSelectedId (originalDuration, juce::sendNotificationSync);
         quality->setSelectedId (originalQuality, juce::sendNotificationSync);
         mono->setToggleState (originalMono, juce::dontSendNotification); mono->onClick();

@@ -1,5 +1,6 @@
 #include "UsedSoundsTests.h"
 #include "../App/Source/UsedSoundsDialog.h"
+#include "../App/Source/UsedSoundPresets.h"
 #include "../App/Source/SettingsDialog.h"
 #include "../App/Source/WaveformPlayerComponent.h"
 #include "../Shared/LibraryStore.h"
@@ -13,6 +14,20 @@ struct UsedSoundsTestAccess
     static void noAutoPlay (UsedSoundsDialog& dialog) { dialog.autoPlayAudition = false; }
     static bool hasWaveform (WaveformPlayerComponent& player) { return player.waveform != nullptr; }
     static juce::ListBox& list (UsedSoundsDialog& dialog) { return dialog.list; }
+    static void unnamedGenerator (UsedSoundsDialog& dialog)
+    {
+        for (auto& sound : dialog.data->sounds) if (sound.kind == UsedSounds::Kind::Generator) sound.presetName.clear();
+        dialog.list.updateContent();
+    }
+    static void longGenerator (UsedSoundsDialog& dialog)
+    {
+        for (auto& sound : dialog.data->sounds) if (sound.kind == UsedSounds::Kind::Generator)
+        {
+            sound.presetName = juce::String::fromUTF8 ("Melodía de medianoche / Long saved preset name with layered keys and evolving textures");
+            sound.channelName = "An independently renamed channel with a very long descriptive title";
+        }
+        dialog.list.updateContent();
+    }
     static void audition (UsedSoundsDialog& dialog, size_t index) { dialog.audition (index); }
     static void stop (UsedSoundsDialog& dialog) { dialog.stopAudition(); }
     static void sampleAudition (UsedSoundsDialog& dialog)
@@ -115,7 +130,16 @@ juce::File fixture (const juce::File& folder, int major = 21, int playlistClips 
     number (data, 64, 0); number (data, 21, 0); text (data, 203, "Piano sample");
     text (data, 201, ""); text (data, 196, "Samples/tone.wav"); number (data, 135, 60);
     number (data, 64, 7); number (data, 21, 4); text (data, 203, juce::String::fromUTF8 ("Lead sintético")); text (data, 201, "Fruity Wrapper");
-    juce::MemoryOutputStream vst; vst.writeInt (10); vst.writeInt (54); vst.writeInt64 (6); vst.write ("Serum\0", 6);
+    juce::MemoryOutputStream preset;
+    preset.write ("CcnK", 4); preset.writeIntBigEndian (52); preset.write ("FPCh", 4);
+    preset.writeIntBigEndian (1); preset.writeIntBigEndian (1234); preset.writeIntBigEndian (1); preset.writeIntBigEndian (1);
+    const juce::String presetName = "LD Midnight";
+    preset.write (presetName.toRawUTF8(), presetName.getNumBytesAsUTF8());
+    preset.writeRepeatedByte (0, 28 - presetName.getNumBytesAsUTF8()); preset.writeIntBigEndian (0);
+    juce::MemoryOutputStream vst; vst.writeInt (major >= 25 ? 12 : 10);
+    // State before name: preset resolution must not depend on wrapper field order.
+    vst.writeInt (53); vst.writeInt64 ((juce::int64) preset.getDataSize()); vst.write (preset.getData(), preset.getDataSize());
+    vst.writeInt (54); vst.writeInt64 (6); vst.write ("Serum\0", 6);
     blob (data, 213, vst.getData(), vst.getDataSize());
     number (data, 64, 8); number (data, 21, 5); text (data, 201, "Automation");
     number (data, 65, 1); juce::MemoryOutputStream notes;
@@ -148,6 +172,35 @@ void snapshot (juce::Component& component, const juce::String& name)
 }
 void testUsedSounds (const juce::File& root)
 {
+    {
+        auto read = [] (const char* plugin, const juce::MemoryOutputStream& state, bool wrapper = true)
+        { return UsedSounds::Presets::read (plugin, (const uint8_t*) state.getData(), state.getDataSize(), wrapper); };
+        juce::MemoryOutputStream keys; keys.writeInt (1); keys.writeByte (11); keys.write ("Grand Piano", 11);
+        check (read ("FL Keys", keys, false).isEmpty(), "FL Keys resource name mistaken for preset");
+        check (read ("Other native", keys, false).isEmpty(), "Guessed unknown native preset");
+        juce::MemoryOutputStream diva;
+        const juce::String program = "#pgm=Presets/ARP City Sine.h2p\n/*@Meta\n";
+        diva.writeInt (program.getNumBytesAsUTF8()); diva.write (program.toRawUTF8(), program.getNumBytesAsUTF8());
+        check (read ("Diva(x64)", diva) == "ARP City Sine", "Diva explicit program path");
+        juce::MemoryOutputStream pigments;
+        const juce::String archive = "22 serialization::archive 10 0 7 0 7 12 Aquatic Keys 0 OriginalPresetName 4 Init";
+        pigments.write (archive.toRawUTF8(), archive.getNumBytesAsUTF8());
+        check (read ("Pigments", pigments) == "Aquatic Keys", "Pigments current name confused with original preset");
+        juce::MemoryOutputStream envelope; envelope.writeInt (1); envelope.writeInt (1); envelope.writeInt (64);
+        envelope.writeRepeatedByte (0, 68); envelope.writeInt (3);
+        envelope.writeInt64 ((juce::int64) pigments.getDataSize()); envelope.write (pigments.getData(), pigments.getDataSize());
+        check (read ("Pigments", envelope) == "Aquatic Keys", "FL component envelope");
+        for (size_t size = 0; size < envelope.getDataSize(); ++size)
+            check (UsedSounds::Presets::read ("Pigments", (const uint8_t*) envelope.getData(), size, true).isEmpty(), "Truncated envelope accepted");
+        juce::MemoryOutputStream synth;
+        synth.writeInt (8 + 16 + 1 + 5); synth.writeInt (1); synth.write ("133kt3msr3mskcle", 16);
+        synth.writeByte (4); synth.write ("Init\0", 5);
+        check (read ("SynthMaster3", synth) == "Init", "SynthMaster3 named state");
+        juce::MemoryOutputStream unknown; unknown.write ("Lead 01 preset=Fake", 19);
+        check (read ("Serum2", unknown).isEmpty(), "Arbitrary state text treated as preset");
+        juce::MemoryOutputStream control; control.writeInt (1); control.writeByte (3); control.write ("A\nB", 3);
+        check (read ("FL Keys", control, false).isEmpty(), "Control character accepted in preset name");
+    }
     const auto config = LibraryStore::configFile(); const auto savedConfig = config.loadFileAsString(); const bool hadConfig = config.existsAsFile();
     struct Restore
     {
@@ -179,6 +232,8 @@ void testUsedSounds (const juce::File& root)
         check (modernDir.createDirectory().wasOk(), "Modern fixture directory");
         const auto modern = UsedSounds::readProject (fixture (modernDir, major, clips));
         check (modern.result.wasOk() && modern.bpm == 128.5 && modern.sounds.size() == 5, "FL 25/26 three-byte flag or playlist layout failed");
+        for (const auto& sound : modern.sounds) if (sound.kind == UsedSounds::Kind::Generator)
+            check (sound.instrument == "Serum" && sound.presetName == "LD Midnight", "Modern wrapper marker lost plugin/preset metadata");
         int usedModern = 0; for (const auto& sound : modern.sounds) if (sound.inPlaylist) ++usedModern;
         check (usedModern == 4, "FL 25/26 playlist stride picked phantom used patterns");
     }
@@ -208,9 +263,34 @@ void testUsedSounds (const juce::File& root)
     {
         if (sound.inPlaylist) ++used;
         if (sound.kind == UsedSounds::Kind::Midi && sound.channelId == 0) midi = &sound;
-        if (sound.kind == UsedSounds::Kind::Generator) serum = sound.name == "Serum";
+        if (sound.kind == UsedSounds::Kind::Generator) serum = sound.name == "Serum" && sound.presetName == "LD Midnight";
     }
     check (used == 4 && serum && midi && midi->notes.size() == 2 && midi->sample == sample, "Association or usage wrong");
+    for (const auto& sound : inventory.sounds) if (sound.kind == UsedSounds::Kind::Generator)
+    {
+        const auto presetFile = dir.getChildFile (UsedSounds::exportName ("Test", sound, 0, ""));
+        check (presetFile.hasFileExtension ("fst") && UsedSounds::writePreset (sound, presetFile).wasOk(), "Preset export failed without tempo");
+        juce::MemoryBlock presetBytes; check (presetFile.loadFileAsData (presetBytes), "Preset copy missing");
+        const auto* raw = (const uint8_t*) presetBytes.getData();
+        check (presetBytes.getSize() > 22 && std::memcmp (raw, "FLhd", 4) == 0
+            && juce::ByteOrder::littleEndianShort (raw + 8) == 0x30
+            && juce::ByteOrder::littleEndianInt (raw + 18) == presetBytes.getSize() - 22, "Invalid FL Studio plugin preset envelope");
+        // Reinsert the exported plugin events into a project to verify identity,
+        // active preset, and byte-for-byte state preservation through a second export.
+        juce::MemoryOutputStream reloaded;
+        reloaded.write (raw, 8); reloaded.writeShort (0); reloaded.writeShort (1); reloaded.writeShort (96);
+        reloaded.write ("FLdt", 4); reloaded.writeInt ((int) presetBytes.getSize() - 22 + 5);
+        number (reloaded, 64, 0); number (reloaded, 21, 4); reloaded.write (raw + 22, presetBytes.getSize() - 22);
+        auto roundtripFile = dir.getChildFile ("preset-roundtrip.flp");
+        check (roundtripFile.replaceWithData (reloaded.getData(), reloaded.getDataSize()), "Roundtrip fixture");
+        const auto roundtrip = UsedSounds::readProject (roundtripFile);
+        check (roundtrip.result.wasOk() && roundtrip.sounds.size() == 1
+            && roundtrip.sounds[0].instrument == sound.instrument && roundtrip.sounds[0].presetName == sound.presetName
+            && roundtrip.sounds[0].presetData && *roundtrip.sounds[0].presetData == presetBytes, "Preset state changed in roundtrip");
+        auto unavailable = sound; unavailable.presetData.reset(); unavailable.presetName.clear();
+        check (UsedSounds::writePreset (unavailable, dir.getChildFile ("absent.fst")).failed()
+            && ! dir.getChildFile ("absent.fst").exists(), "Unavailable state produced an empty preset");
+    }
     std::cout << "Pattern name: " << midi->patternName << "; note beat: " << midi->notes[1].beat << "; version: " << inventory.version << "\n";
     check (midi->patternName == juce::String::fromUTF8 ("Melodía"), "Unicode pattern name wrong");
     check (midi->notes[1].beat == 1, "Note timing wrong");
@@ -350,8 +430,30 @@ void testUsedSounds (const juce::File& root)
         RememberUI::setAppearanceMode (RememberAppearance::Dark);
         dialog.setCategory (UsedSounds::Kind::Generator);
         check (UsedSoundsTestAccess::list (dialog).getRowHeight() == RememberUI::generatorSoundRowHeight
-            && RememberUI::generatorSoundRowHeight < RememberUI::soundRowHeight, "Generators are not compact");
+            && RememberUI::generatorSoundRowHeight < RememberUI::midiSoundRowHeight, "Generators are not compact");
+        auto* generator = UsedSoundsTestAccess::list (dialog).getComponentForRowNumber (0);
+        check (generator && generator->getDescription().contains ("Preset: LD Midnight"), "Preset missing from accessible generator row");
+        dragFrom (*generator, { 100, 36 });
+        check (! mayMove && juce::File (draggedFiles.back()).hasFileExtension ("fst")
+            && juce::File (draggedFiles.back()).existsAsFile(), "Generator row did not drag a preset copy");
+        juce::TextButton* presetDrag = nullptr;
+        for (auto* child : generator->getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "Drag") presetDrag = button;
+        check (presetDrag && presetDrag->isVisible() && presetDrag->isEnabled(), "Preset drag button missing");
+        const auto draggedPreset = draggedFiles.back(); dragFrom (*presetDrag, { 20, 15 });
+        check (draggedFiles.back() == draggedPreset && clicks == 2, "Preset button/row drag differs or auditions");
+        UsedSoundsTestAccess::unnamedGenerator (dialog);
+        generator = UsedSoundsTestAccess::list (dialog).getComponentForRowNumber (0);
+        check (generator && generator->getDescription().contains ("Preset not available"), "Unknown preset is not explicit");
+        dragFrom (*generator, { 100, 36 });
+        check (draggedFiles.back() == draggedPreset, "Unknown name prevented saved-state export");
+        dialog.setSize (640, 480); snapshot (dialog, "used-sounds-generators-unavailable.png");
+        UsedSoundsTestAccess::longGenerator (dialog);
+        dialog.setSize (640, 480); snapshot (dialog, "used-sounds-generators-minimum.png");
+        dialog.setSize (1024, 768);
         snapshot (dialog, "used-sounds-generators-dark.png");
+        RememberUI::setAppearanceMode (RememberAppearance::Light);
+        snapshot (dialog, "used-sounds-generators-light.png");
         RememberUI::setAppearanceMode (RememberAppearance::System);
     }
     {

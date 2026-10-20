@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "ConfigurationTests.h"
 #include "AppearanceTests.h"
 #include "TypographyTests.h"
@@ -211,7 +212,8 @@ void capture (RecordingEngine& engine, double rate, float level, double seconds 
     {
         const auto count = juce::jmin (128, total - done);
         juce::AudioBuffer<float> audio (2, count);
-        for (int ch = 0; ch < 2; ++ch) juce::FloatVectorOperations::fill (audio.getWritePointer (ch), level, count);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < count; ++i)
+            audio.setSample (ch, i, level * (float) std::cos (juce::MathConstants<double>::twoPi * (done + i) / 100));
         head.time = done / rate; engine.processBlock (audio, &head); done += count;
     }
     head.playing = false; head.time = seconds;
@@ -237,12 +239,12 @@ struct BlockedMetadata
 };
 void audioIs (const juce::File& folder, double rate, int channels, float level)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
     check (reader && reader->sampleRate == rate && reader->numChannels == (unsigned int) channels,
            "A queued capture changed format across configuration versions");
     juce::AudioBuffer<float> sample (channels, 1);
-    check (reader->read (&sample, 0, 1, 100, true, true) && std::abs (sample.getSample (0, 0) - level) < 0.00001f,
+    check (reader->read (&sample, 0, 1, 100, true, true) && std::abs (sample.getSample (0, 0) - level) < 0.025f,
            "Captures were reordered or written to the wrong library");
 }
 bool settingsReady (RememberEditor& editor)
@@ -566,8 +568,15 @@ void testConfiguration (const juce::File& fixtureRoot)
                "Preparation waited for/read settings on its caller or reported a stale duration");
         auto editor = std::unique_ptr<RememberEditor> (static_cast<RememberEditor*> (processor.createEditor()));
         Head head; juce::AudioBuffer<float> block (2, 128);
-        juce::FloatVectorOperations::fill (block.getWritePointer (0), 0.8f, 128);
-        juce::FloatVectorOperations::fill (block.getWritePointer (1), -0.2f, 128);
+        const auto fillBlock = [&] (int offset)
+        {
+            for (int i = 0; i < 128; ++i)
+            {
+                const auto tone = (float) std::cos (juce::MathConstants<double>::twoPi * (offset + i) / 100);
+                block.setSample (0, i, 0.8f * tone); block.setSample (1, i, -0.2f * tone);
+            }
+        };
+        fillBlock (0);
         processor.getEngine().processBlock (block, &head);
         check (statusContains (*editor, "Capturing audio; reading recording settings"), "Pending preparation was hidden by a stale duration");
         const auto saving = juce::Time::getMillisecondCounterHiRes();
@@ -588,7 +597,7 @@ void testConfiguration (const juce::File& fixtureRoot)
         // The configured duration is 15 s; keep settings held through 17 s.
         // The first and final configured samples must survive late trimming.
         for (int done = 128; done < 17 * 8000; done += 128)
-        { head.time = done / 8000.0; processor.getEngine().processBlock (block, &head); }
+        { fillBlock (done); head.time = done / 8000.0; processor.getEngine().processBlock (block, &head); }
         head.playing = false; head.time = 17; processor.getEngine().processBlock (block, &head);
         const auto id = processor.getEngine().getAssociationInfo().id;
         const auto folder = second.getChildFile (".pending").getChildFile (id);
@@ -597,13 +606,13 @@ void testConfiguration (const juce::File& fixtureRoot)
         fields->setProperty ("oggQuality", 2); fields->setProperty ("recordMono", false); fields->setProperty ("dataRevision", 24);
         check (LibraryStore::writeJsonAtomically (sharedConfig, value).wasOk(), "Cannot replace settings during preparation");
         gate->release.signal(); saved (processor.getEngine(), true);
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
         juce::AudioBuffer<float> sample (1, 1);
         check (reader && reader->numChannels == 1 && reader->sampleRate == 8000 && reader->lengthInSamples == 120000,
                "Delayed settings changed channel count, rate or duration");
-        for (auto offset : { 0, 127, 119999 })
-            check (reader->read (&sample, 0, 1, offset, true, true) && std::abs (sample.getSample (0, 0) - 0.3f) < 0.00001f,
+        for (auto offset : { 100, 8000, 119900 })
+            check (reader->read (&sample, 0, 1, offset, true, true) && std::abs (sample.getSample (0, 0) - 0.3f) < 0.025f,
                    "Delayed preparation lost the first sample or failed to average both mono channels");
         const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
         check (metadata.getProperty ("settingsFingerprint", "").toString() == expected.fingerprint
@@ -654,11 +663,11 @@ void testConfiguration (const juce::File& fixtureRoot)
         gate->release.signal();
         await ([&] { return processor.getEngine().getAssociationInfo().confirmed; }, "Processor manual restoration did not confirm after reading");
         saved (processor.getEngine()); audioIs (previous, 16000, 1, 0.7f);
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (previous, true)));
         juce::AudioBuffer<float> tail (1, 1);
         check (reader && reader->lengthInSamples == 38400 && reader->read (&tail, 0, 1, 28000, true, true)
-               && std::abs (tail.getSample (0, 0) - 0.2f) < 0.0001f, "Restoration changed the kept tail during resampling");
+               && std::abs (tail.getSample (0, 0) - 0.2f) < 0.025f, "Restoration changed the kept tail during resampling");
         const auto metadata = LibraryStore::readJson (previous.getChildFile ("metadata.json"));
         check (metadata.getProperty ("settingsFingerprint", "").toString() == prepared.fingerprint
                && (int) metadata.getProperty ("recordSeconds", 0) == 45 && (int) metadata.getProperty ("oggQuality", 0) == 9
@@ -735,11 +744,11 @@ void testConfiguration (const juce::File& fixtureRoot)
         check (LibraryStore::writeJsonAtomically (sharedConfig, value).wasOk(), "Cannot restore preparation settings");
         processor.prepareToPlay (8000, 128); capture (engine, 8000, 0.7f); saved (engine);
         audioIs (folder, 8000, 1, 0.7f);
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
         juce::AudioBuffer<float> tail (1, 1);
         check (reader && reader->lengthInSamples == 19200 && reader->read (&tail, 0, 1, 15000, true, true)
-               && std::abs (tail.getSample (0, 0) - 0.2f) < 0.00001f, "Settings retry lost the previous confirmed tail");
+               && std::abs (tail.getSample (0, 0) - 0.2f) < 0.025f, "Settings retry lost the previous confirmed tail");
         fields->setProperty ("previewsFolder", second.getFullPathName());
         check (LibraryStore::writeJsonAtomically (sharedConfig, value).wasOk(), "Cannot restore settings after error fixture");
         std::cout << "PASS: damaged settings preserve confirmed audio, show their path and recover on a new preparation\n";

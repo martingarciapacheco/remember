@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "StressTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Shared/LibraryStore.h"
@@ -179,16 +180,16 @@ void testSustainedCapture (const juce::File& root)
         check (folder != juce::File{}, "Sustained capture did not publish an entry");
         const auto m = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
         check ((double) m.getProperty ("durationSeconds", 0) == seconds, "Sustained capture was truncated");
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
-        for (const auto pcm : { true, false })
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         {
-            const auto file = LibraryStore::audioFile (folder, m, pcm);
+            const auto file = LibraryStore::audioFile (folder, m, false);
             std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
             check (reader && reader->lengthInSamples == (juce::int64) rate * seconds && reader->sampleRate == rate
-                && reader->numChannels == (i % 2 == 1 ? 1u : 2u), "Sustained WAV/OGG rate, duration or channels changed");
+                && reader->numChannels == (i % 2 == 1 ? 1u : 2u), "Sustained preview rate, duration or channels changed");
             juce::AudioBuffer<float> probe (2, 1);
             check (reader->read (&probe, 0, 1, reader->lengthInSamples - 1, true, true), "Sustained audio tail is unreadable");
-            (pcm ? pcmBytes : oggBytes) += file.getSize();
+            check (! file.getSiblingFile ("preview.wav").existsAsFile(), "Sustained capture retained permanent PCM");
+            oggBytes += file.getSize();
         }
         check (LibraryStore::recoverEntry (folder).result.wasOk(), "Sustained published audio failed receipt verification");
     }
@@ -276,10 +277,13 @@ void testLongCaptureLifecycle (const juce::File& root)
     auto render = [&] (int rate, int seconds, float left, float right, bool stop)
     {
         Head head; juce::AudioBuffer<float> audio (2, 512);
-        juce::FloatVectorOperations::fill (audio.getWritePointer (0), left, 512);
-        juce::FloatVectorOperations::fill (audio.getWritePointer (1), right, 512);
         for (int position = 0; position < rate * seconds; position += 512)
         {
+            for (int i = 0; i < 512; ++i)
+            {
+                const auto tone = (float) std::cos (juce::MathConstants<double>::twoPi * 400 * (position + i) / rate);
+                audio.setSample (0, i, left * tone); audio.setSample (1, i, right * tone);
+            }
             head.sample = position; engine->processBlock (audio, &head, true);
             if (position % (512 * 128) == 0) sampleMemory();
             if (engine->getDroppedCaptures() != 0 || engine->getState() == RecordingEngine::State::Error)
@@ -324,18 +328,18 @@ void testLongCaptureLifecycle (const juce::File& root)
     std::cout << "LONG_LIFECYCLE newPublicationMs=" << juce::Time::getMillisecondCounterHiRes() - lifecycleStarted << std::endl;
     auto probe = [] (const juce::File& folder, int rate, int channels, int seconds, int offset, float level)
     {
-        juce::AudioFormatManager formats; formats.registerBasicFormats();
+        juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
         juce::AudioBuffer<float> sample (channels, 1);
         check (reader && reader->sampleRate == rate && reader->numChannels == (unsigned) channels
                && reader->lengthInSamples == (juce::int64) rate * seconds && reader->read (&sample, 0, 1, offset, true, true)
-               && std::abs (sample.getSample (0, 0) - level) < 0.00001f, "Long preparation changed rate/channels/prefix/tail");
+               && std::abs (sample.getSample (0, 0) - level) < 0.025f, "Long preparation changed rate/channels/prefix/tail");
     };
-    probe (folderA, 192000, 2, 120, 0, 0.4f);
+    probe (folderA, 192000, 2, 120, 96000, 0.4f);
     probe (folderA, 192000, 2, 120, 192000 * 100, 0.2f);
-    probe (folderA, 192000, 2, 120, 192000 * 120 - 1, 0.2f);
-    probe (folderB, 96000, 1, 60, 0, 0.4f);
-    probe (folderB, 96000, 1, 60, 96000 * 60 - 1, 0.4f);
+    probe (folderA, 192000, 2, 120, 192000 * 120 - 96000, 0.2f);
+    probe (folderB, 96000, 1, 60, 48000, 0.4f);
+    probe (folderB, 96000, 1, 60, 96000 * 60 - 48000, 0.4f);
     const auto metaA = LibraryStore::readJson (folderA.getChildFile ("metadata.json"));
     const auto metaB = LibraryStore::readJson (folderB.getChildFile ("metadata.json"));
     check (metaA.getProperty ("settingsFingerprint", "").toString() == older.fingerprint

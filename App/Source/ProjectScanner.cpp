@@ -248,7 +248,7 @@ static juce::Result saveConfigField (const juce::String& field, const juce::var&
 }
 
 static juce::var recordingSettingsPatch (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1)
 {
     juce::var patch (new juce::DynamicObject());
     auto* object = patch.getDynamicObject();
@@ -260,6 +260,7 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
     object->setProperty ("oggQuality", juce::jlimit (0, 10, quality));
     object->setProperty ("recordMono", mono);
     if (midiVoice != 0) object->setProperty ("midiPreviewVoice", juce::jlimit (1, 4, midiVoice));
+    if (compactAboveMB > 0 && std::isfinite (compactAboveMB)) object->setProperty ("compactAboveMB", compactAboveMB);
     if (capture)
     {
         const auto options = capture->patch();
@@ -269,19 +270,19 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
 }
 
 juce::Result ProjectScanner::saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono, const CaptureOptions* capture, int midiVoice)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture, int midiVoice, double compactAboveMB)
 {
-    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice), true);
+    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice, compactAboveMB), true);
 }
 juce::Result ProjectScanner::rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                              int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                             juce::File& originalBackup, const CaptureOptions* capture, int midiVoice)
+                                             juce::File& originalBackup, const CaptureOptions* capture, int midiVoice, double compactAboveMB)
 {
     originalBackup = {};
     const auto current = readSettings();
     if (current.result.wasOk() || ! current.canRebuild)
         return juce::Result::fail ("Configuration is valid or unavailable: " + configFilePath().getFullPathName() + ". Reload Settings before saving");
-    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice),
+    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice, compactAboveMB),
                                             fingerprint, originalBackup);
 }
 
@@ -339,6 +340,8 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
     snapshot.appearance = appearanceFromConfig (config);
     snapshot.interfaceZoom = (int) config.getProperty ("appZoom", 100);
     snapshot.midiPreviewVoice = juce::jlimit (1, 4, (int) config.getProperty ("midiPreviewVoice", 1));
+    const auto limit = (double) config.getProperty ("compactAboveMB", 10.0);
+    snapshot.compactAboveMB = std::isfinite (limit) && limit > 0 ? limit : 10;
     return snapshot;
 }
 juce::File ProjectScanner::getPreviewsFolder() { return previewsFromConfig (loadConfig()); }
@@ -926,6 +929,7 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
             e.previewOgg   = LibraryStore::audioFile (dir, json, false);
             e.metadataFile = metaFile;
             e.metadataStamp = stamp;
+            e.audioBytes = LibraryStore::measureEntryAudio (dir, cancelled);
 
             if (auto* tagArr = json.getProperty ("tags", juce::var()).getArray())
                 for (auto& t : *tagArr)

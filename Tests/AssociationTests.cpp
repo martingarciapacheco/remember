@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "AssociationTests.h"
 #include "../Plugin/Source/RecordingEngine.h"
 #include "../Plugin/Source/PluginProcessor.h"
@@ -28,7 +29,8 @@ void capture (RecordingEngine& engine, float level, double seconds = 1.2)
     for (int done = 0; done < total;)
     {
         const auto count = juce::jmin (128, total - done); juce::AudioBuffer<float> audio (2, count);
-        for (int ch = 0; ch < 2; ++ch) juce::FloatVectorOperations::fill (audio.getWritePointer (ch), level, count);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < count; ++i)
+            audio.setSample (ch, i, level * (float) std::cos (juce::MathConstants<double>::twoPi * (done + i) / 100));
         head.time = done / 8000.0; engine.processBlock (audio, &head); done += count;
     }
     head.playing = false; head.time = seconds; juce::AudioBuffer<float> stop (2, 128); stop.clear(); engine.processBlock (stop, &head);
@@ -44,14 +46,17 @@ void sourceIs (RecordingEngine& engine, Association source, bool confirmed = tru
     await ([&] { const auto info = engine.getAssociationInfo(); return info.source == source && info.confirmed == confirmed; }, "Association source/confirmation did not change");
 }
 juce::var meta (const juce::File& folder) { return LibraryStore::readJson (folder.getChildFile ("metadata.json")); }
-void audioIs (const juce::File& folder, float level, int sample = 100, int length = 0)
+void audioIs (const juce::File& folder, float level, int sample = 4000, int length = 0)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
     check (reader && (length == 0 || reader->lengthInSamples == length), "Association lost or truncated its PCM");
     juce::AudioBuffer<float> point (2, 1);
-    check (reader->read (&point, 0, 1, sample, true, true) && std::abs (point.getSample (0, 0) - level) < 0.00001f,
-           "Association wrote a different recording or changed its tail");
+    check (reader->read (&point, 0, 1, sample, true, true), "Cannot read associated audio");
+    const auto expected = level * (float) std::cos (juce::MathConstants<double>::twoPi * sample / 100);
+    if (std::abs (point.getSample (0, 0) - expected) >= 0.025f)
+        throw std::runtime_error ("Association audio differs: expected=" + std::to_string (expected)
+            + " decoded=" + std::to_string (point.getSample (0, 0)) + " sample=" + std::to_string (sample));
 }
 void retire() { await ([] { return BackgroundRetirement::pending() == 0; }, "Association resources did not retire"); }
 }
@@ -97,13 +102,66 @@ void testAssociation (const juce::File& fixtureRoot)
         retire();
         std::cout << "PASS: " << scenario.daw << " " << scenario.folder << " host/manual associations use the official preview project\n";
     }
+    {
+        const auto assignmentLibrary = root.getChildFile ("assignment-library");
+        const auto missingProject = root.getChildFile ("KE PENA assignment.rpp");
+        const auto mojoProject = root.getChildFile ("MOJO assignment.rpp");
+        check (assignmentLibrary.createDirectory().wasOk() && missingProject.replaceWithText ("original KE PENA")
+            && mojoProject.replaceWithText ("MOJO"), "Cannot create historical assignment fixture");
+        auto assignmentSettings = settings; assignmentSettings.previews = assignmentLibrary;
+        juce::String missingId;
+        {
+            RecordingEngine engine ([missingProject] { return HostProject { true, "KE PENA assignment", missingProject.getFullPathName(), "REAPER" }; });
+            engine.prepare (8000, 128, assignmentSettings); sourceIs (engine, Association::HostPath);
+            capture (engine, 0.2f); saved (engine); missingId = engine.getAssociationInfo().id;
+        }
+        retire();
+        check (missingProject.moveFileTo (root.getChildFile ("previous KE PENA.rpp"))
+            && missingProject.replaceWithText ("replaced KE PENA project"), "Cannot replace historical project identity");
+        std::atomic<bool> switchProject { false };
+        {
+            RecordingEngine engine ([&]
+            {
+                return switchProject.load() ? HostProject { true, "KE PENA assignment", {}, "REAPER" }
+                    : HostProject { true, "MOJO assignment", mojoProject.getFullPathName(), "REAPER" };
+            });
+            engine.prepare (8000, 128, assignmentSettings); sourceIs (engine, Association::HostPath);
+            capture (engine, 0.6f); saved (engine); const auto mojoId = engine.getAssociationInfo().id;
+            switchProject.store (true);
+            await ([&] { return engine.getState() == RecordingEngine::State::Error; },
+                "Historical identity mismatch copied the preceding preview instead of requesting assignment");
+            check (! engine.getAssociationInfo().verified && engine.getLastError().contains ("Assign path"),
+                "Historical identity conflict lacks an actionable assignment error");
+            capture (engine, 0.9f);
+            check (assignmentLibrary.findChildFiles (juce::File::findDirectories, false).size() == 2,
+                "Historical identity conflict created a duplicate entry");
+            audioIs (assignmentLibrary.getChildFile (missingId), 0.2f);
+            audioIs (assignmentLibrary.getChildFile (mojoId), 0.6f);
+            // The app's Assign path updates this original manifest in place.
+            juce::var assigned (new juce::DynamicObject());
+            assigned.getDynamicObject()->setProperty ("projectFileId", ProjectIdentity::fileId (missingProject));
+            assigned.getDynamicObject()->setProperty ("projectFingerprint", ProjectIdentity::fingerprint (missingProject));
+            check (LibraryStore::patchJson (assignmentLibrary.getChildFile (missingId).getChildFile ("metadata.json"), assigned).wasOk(),
+                "Cannot assign historical project identity");
+            await ([&] { const auto info = engine.getAssociationInfo(); return info.verified && info.id == missingId; },
+                "App assignment did not unblock and reuse the original recording");
+            audioIs (assignmentLibrary.getChildFile (missingId), 0.2f);
+            capture (engine, 0.8f); saved (engine);
+            audioIs (assignmentLibrary.getChildFile (missingId), 0.8f);
+            audioIs (assignmentLibrary.getChildFile (mojoId), 0.6f);
+            check (assignmentLibrary.findChildFiles (juce::File::findDirectories, false).size() == 2,
+                "App assignment or resumed capture duplicated the historical recording");
+        }
+        retire();
+        std::cout << "PASS: historical replaced-file identity blocks title-only preview copying; app assignment reuses the original and preserves MOJO\n";
+    }
     juce::XmlElement kept ("RememberState"); juce::String keepId;
     {
         RecordingEngine engine ([] { return HostProject{}; }); engine.prepare (8000, 128, settings);
         engine.setProjectName ("Idea"); capture (engine, 0.2f, 2.4); saved (engine, true);
         keepId = engine.getAssociationInfo().id; engine.keepRecording ("Kept idea"); sourceIs (engine, Association::ManualRecording);
         await ([&] { return meta (library.getChildFile (keepId)).getProperty ("projectAssociation", "").toString() == "manual-recording"; }, "Keep did not publish permanent metadata");
-        engine.saveState (kept); audioIs (library.getChildFile (keepId), 0.2f, 100, 19200);
+        engine.saveState (kept); audioIs (library.getChildFile (keepId), 0.2f, 4000, 19200);
         engine.setProjectName ("Renamed idea");
         await ([&] { return meta (library.getChildFile (keepId)).getProperty ("projectName", "").toString() == "Renamed idea"; }, "Kept recording cannot be renamed");
         engine.saveState (kept);
@@ -128,7 +186,7 @@ void testAssociation (const juce::File& fixtureRoot)
         capture (engine, 0.4f, 2.4); saved (engine, true);
         linkId = engine.getAssociationInfo().id; engine.associateProjectFile (selected); sourceIs (engine, Association::ManualFile);
         await ([&] { return LibraryStore::audioFile (library.getChildFile (linkId), false).existsAsFile(); }, "Manual file did not promote pending audio");
-        audioIs (library.getChildFile (linkId), 0.4f, 100, 19200);
+        audioIs (library.getChildFile (linkId), 0.4f, 4000, 19200);
         check (engine.getAssociationInfo().confidence == "explicit" && engine.getAssociationInfo().verified, "Manual file has no explicit/verified evidence");
         engine.saveState (linked);
         engine.associateProjectFile (projects.getChildFile ("missing.rpp"));
@@ -178,7 +236,7 @@ void testAssociation (const juce::File& fixtureRoot)
         check (engine.getAssociationInfo().id != originalId && engine.getAssociationInfo().path.isEmpty(), "Homonymous Save As stayed on the previous path");
         capture (engine, 0.7f); saved (engine, true);
         engine.associateProjectFile (songB); sourceIs (engine, Association::ManualFile); capture (engine, 0.9f); saved (engine);
-        audioIs (library.getChildFile (originalId), 0.3f, 100, 19200);
+        audioIs (library.getChildFile (originalId), 0.3f, 4000, 19200);
         check (engine.getAssociationInfo().path == songB.getFullPathName(), "Manual resolution picked the other homonym");
         ProjectIdentity::CandidateIndex index; check (index.rebuild ({ a, b }), "Cannot index homonyms");
         check (index.resolve ("Same", "REAPER").isEmpty() && index.wasLastResolutionAmbiguous(), "Resolver lost ambiguity");
@@ -319,7 +377,7 @@ void testAssociation (const juce::File& fixtureRoot)
         capture (engine, 0.9f);
         check (meta (previews.getChildFile (id)).getProperty ("audioRevision", "").toString() == initialRevision,
                "An unverifiable host overwrote the last valid preview");
-        audioIs (previews.getChildFile (id), 0.3f, 100, 19200);
+        audioIs (previews.getChildFile (id), 0.3f, 4000, 19200);
         std::unique_ptr<RememberEditor> editor (static_cast<RememberEditor*> (processor.createEditor())); editor->timerCallback();
         bool warning = false;
         for (auto* child : editor->getChildren())
@@ -331,7 +389,7 @@ void testAssociation (const juce::File& fixtureRoot)
                "Restoring candidate access did not unblock recording");
         capture (engine, 0.7f); saved (engine);
         check (engine.getAssociationInfo().id == id, "Candidate recovery switched the saved recording identity");
-        audioIs (previews.getChildFile (id), 0.7f, 100, 19200); audioIs (previews.getChildFile (id), 0.3f, 15000, 19200);
+        audioIs (previews.getChildFile (id), 0.7f, 4000, 19200); audioIs (previews.getChildFile (id), 0.3f, 15000, 19200);
         const auto anotherOfflineRoot = root.getChildFile ("checked-search-still-offline");
         config.getDynamicObject()->setProperty ("projectsRootFolders", juce::Array<juce::var> { projectsRoot.getFullPathName(), anotherOfflineRoot.getFullPathName() });
         check (LibraryStore::patchJson (LibraryStore::configFile(), config).wasOk(), "Cannot seed manual override search error");
@@ -342,7 +400,7 @@ void testAssociation (const juce::File& fixtureRoot)
         juce::Thread::sleep (1200); // Include a stable discovery poll using the still-offline search root.
         check (engine.getAssociationInfo().problem.isEmpty() && engine.getAssociationInfo().verified,
                "Unrelated search-root failure invalidated a directly verified manual file");
-        capture (engine, 0.5f); saved (engine); audioIs (previews.getChildFile (id), 0.5f, 100, 19200);
+        capture (engine, 0.5f); saved (engine); audioIs (previews.getChildFile (id), 0.5f, 4000, 19200);
         editor.reset();
     }
     retire(); std::cout << "PASS: failed search preserves identity/audio, publishes native editor error, blocks unverified capture, recovers and accepts a verified manual file\n";

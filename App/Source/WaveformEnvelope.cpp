@@ -1,9 +1,10 @@
+#include "../../Shared/PreviewAudio.h"
 #include "WaveformEnvelope.h"
 #include "LoudnessMeter.h"
 
 juce::Result WaveformEnvelope::read (const juce::File& file, const std::function<bool()>& cancelled)
 {
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     if (cancelled()) return juce::Result::ok();
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
     if (! reader || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0

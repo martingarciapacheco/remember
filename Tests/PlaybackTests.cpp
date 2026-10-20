@@ -1,6 +1,8 @@
 #include "PlaybackTests.h"
 #include "../App/Source/ReadAheadSource.h"
 #include "../App/Source/MetronomeSource.h"
+#include "../App/Source/WaveformEnvelope.h"
+#include "../Shared/PreviewAudio.h"
 #include "../Shared/BackgroundRetirement.h"
 #include <iostream>
 #include <stdexcept>
@@ -8,11 +10,19 @@
 namespace
 {
 void check (bool value, const char* error) { if (! value) throw std::runtime_error (error); }
-template <class Condition> void await (Condition condition)
+template <class Condition> void awaitAt (int line, Condition condition)
 {
     const auto end = juce::Time::getMillisecondCounter() + 5000;
-    while (! condition()) { check (juce::Time::getMillisecondCounter() < end, "Read-ahead fixture timed out"); juce::Thread::sleep (2); }
+    while (! condition())
+    {
+        if (juce::Time::getMillisecondCounter() >= end)
+            throw std::runtime_error ("Read-ahead fixture timed out at line " + std::to_string (line)
+                + "; bytes=" + std::to_string (ReadAheadSource::processBufferBytes())
+                + "; retiring=" + std::to_string (BackgroundRetirement::pending()));
+        juce::Thread::sleep (2);
+    }
 }
+#define await(...) awaitAt (__LINE__, __VA_ARGS__)
 struct Control
 {
     juce::WaitableEvent blocked, release { true };
@@ -44,8 +54,38 @@ public:
 struct Unblock { std::shared_ptr<Control> state; ~Unblock() { state->release.signal(); } };
 }
 
-void testPlayback (const juce::File&)
+void testPlayback (const juce::File& root)
 {
+    {
+        const auto wav = root.getChildFile ("package-playback.wav"), package = root.getChildFile ("package-playback.rmp");
+        juce::WavAudioFormat format; std::unique_ptr<juce::OutputStream> stream (wav.createOutputStream());
+        auto writer = format.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (48000).withNumChannels (2).withBitsPerSample (24));
+        check (writer != nullptr, "Cannot create package playback fixture");
+        juce::AudioBuffer<float> original (2, 240000);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < original.getNumSamples(); ++i)
+            original.setSample (ch, i, 0.3f * (float) std::sin (juce::MathConstants<double>::twoPi * (440 + ch * 251) * i / 48000));
+        check (writer->writeFromAudioSampleBuffer (original, 0, original.getNumSamples()), "Cannot write playback fixture"); writer.reset();
+        check (PreviewAudio::write (package, wav, {}, 48000, 2, 240000, 240000, 4, 1).wasOk(), "Cannot create playback package");
+        const auto partial = root.getChildFile ("package-partial.rmp");
+        check (PreviewAudio::write (partial, wav, package, 48000, 2, 72000, 240000, 4, 1).wasOk(), "Cannot create playback splice");
+        auto reference = PreviewAudio::open (partial); ReadAheadSource source (PreviewAudio::open (partial));
+        check (reference && source.valid() && source.getTotalLength() == 240000, "App cannot open segmented preview");
+        source.setActive (true);
+        for (const int position : { 0, 47880, 71880, 153600, 239744 })
+        {
+            source.setNextReadPosition (position); source.requestPrefill(); await ([&] { return source.ready (256); });
+            juce::AudioBuffer<float> actual (2, 256), expected (2, 256);
+            check (reference->read (&expected, 0, 256, position, true, true), "Cannot read package reference");
+            source.getNextAudioBlock ({ &actual, 0, 256 });
+            check (source.getNextReadPosition() == position + 256, "Package seek skipped frames");
+            for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 256; ++i)
+                check (actual.getSample (ch, i) == expected.getSample (ch, i), "Read-ahead altered a fragment seam or tail");
+        }
+        WaveformEnvelope envelope;
+        check (envelope.read (partial, [] { return false; }).wasOk() && ! envelope.channels[0].empty()
+            && envelope.decodedPeak > 0 && std::isfinite (envelope.normalizationGain), "App waveform cannot analyse a segmented preview");
+        std::cout << "PASS: app segmented preview read-ahead, seeks at chunk/splice/EOF boundaries and waveform\n";
+    }
     {
         juce::AudioTransportSource transport;
         MetronomeSource metronome (transport);
@@ -123,6 +163,9 @@ void testPlayback (const juce::File&)
         check (pacer.advance (200) && ! pacer.advance (200.001), "A delayed display frame caused catch-up repaints");
     }
     std::cout << "PASS: 60/120 Hz sub-block cursor interpolation, stalled/partial audio, seeks, and 30/60/120/144/240 Hz display pacing\n";
+    // Earlier UI fixtures and this test's package reader retire asynchronously.
+    // Wait before recording a baseline that all subsequent cleanup must reach.
+    await ([] { return BackgroundRetirement::pending() == 0; });
     const auto baseline = ReadAheadSource::processBufferBytes();
     double maximumCallbackMs = 0;
     std::vector<double> callbackTimes;

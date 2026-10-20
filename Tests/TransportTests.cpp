@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "TransportTests.h"
 #include "../Plugin/Source/PluginProcessor.h"
 #include "../Plugin/Source/PluginEditor.h"
@@ -72,11 +73,13 @@ void testTransportLoops (const juce::File& root)
             juce::AudioBuffer<float> storage (2, blockSize); juce::MidiBuffer midi;
             auto deliver = [&] (int count, float value)
             {
-                for (int ch = 0; ch < 2; ++ch) juce::FloatVectorOperations::fill (storage.getWritePointer (ch), value, count);
+                for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < count; ++i)
+                    storage.setSample (ch, i, value * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * (head.sample + i) / rate));
                 juce::AudioBuffer<float> block (storage.getArrayOfWritePointers(), 2, count);
                 const auto start = juce::Time::getMillisecondCounterHiRes(); processor.processBlock (block, midi);
                 callbacks.push_back (juce::Time::getMillisecondCounterHiRes() - start);
-                check (block.getSample (0, 0) == value && block.getSample (1, count - 1) == value,
+                check (block.getSample (0, 0) == value * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * head.sample / rate)
+                    && block.getSample (1, count - 1) == value * (float) std::cos (juce::MathConstants<double>::twoPi * 400 * (head.sample + count - 1) / rate),
                        "Transport changed passthrough audio " + label);
                 check (engine.getState() != RecordingEngine::State::Error, "Transport capture failed: " + engine.getLastError());
             };
@@ -98,22 +101,33 @@ void testTransportLoops (const juce::File& root)
                     return engine.getState() == RecordingEngine::State::Done;
                 }, "Transport save timed out " + label);
             };
+            juce::AudioBuffer<float> originalTail (2, 2);
             auto audioIs = [&] (float prefix)
             {
-                juce::AudioFormatManager formats; formats.registerBasicFormats();
+                juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
                 std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (LibraryStore::audioFile (folder, true)));
                 juce::AudioBuffer<float> probe (2, 1);
                 check (reader && reader->sampleRate == rate && reader->lengthInSamples == rate * 3 / 2
                        && reader->numChannels == (settings.mono ? 1u : 2u), "Transport changed duration/rate/channels " + label);
-                for (auto sample : { 0, rate * 11 / 8, rate * 3 / 2 - 1 })
+                check (reader->read (&probe, 0, 1, rate / 2, true, true)
+                    && std::abs (probe.getSample (0, 0) - prefix) < 0.025f, "Transport saved the wrong prefix " + label);
+                int tailIndex = 0;
+                for (auto sample : { rate * 11 / 8, rate * 3 / 2 - 1 })
                 {
                     check (reader->read (&probe, 0, 1, sample, true, true), "Cannot read transport prefix/tail");
-                    check (std::abs (probe.getSample (0, 0) - (sample == 0 ? prefix : 0.2f)) < 0.00001f,
+                    check (probe.getSample (0, 0) == originalTail.getSample (0, tailIndex++),
                            "A short/skipped loop changed confirmed prefix/tail " + label);
                 }
                 check (LibraryStore::recoverEntry (folder).result.wasOk(), "Transport receipt verification failed");
             };
             render (rate * 3 / 2, 0.2f, true); saved();
+            {
+                auto original = PreviewAudio::open (LibraryStore::audioFile (folder, false));
+                check (original != nullptr, "Cannot read original transport preview");
+                int i = 0;
+                for (auto sample : { rate * 11 / 8, rate * 3 / 2 - 1 })
+                    check (original->read (&originalTail, i++, 1, sample, true, true), "Cannot store original tail reference");
+            }
             const auto seeded = revision();
             render (rate - 1, 0.9f, true);
             check (revision() == seeded && engine.getDroppedCaptures() == 0,

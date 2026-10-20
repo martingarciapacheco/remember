@@ -101,7 +101,8 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
     entry    = e;
     selected = isSelected;
     setTitle (e.name);
-    setDescription (e.storageError.isNotEmpty() ? e.storageError : e.projectProblem);
+    setDescription ((e.storageError.isNotEmpty() ? e.storageError : e.projectProblem)
+        + (e.audioBytes >= 0 ? " Audio including recovery: " + juce::File::descriptionOfSizeInBytes (e.audioBytes) : juce::String{}));
     // These keys act on the selected row, even when another row is hovered.
     // Rebind hints along with identity/selection when ListBox recycles rows.
     favBtn.setTooltip (selected ? RememberUI::shortcutTooltip ("Toggle favorite", "F", "Selected recording") : "Toggle favorite");
@@ -288,13 +289,25 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     if (entry.daw.isNotEmpty())         { sep(); meta += entry.daw; }
     if (entry.bpm > 0.0)                { sep(); meta += juce::String ((int) entry.bpm) + " BPM"; }
     if (entry.key.isNotEmpty())         { sep(); meta += entry.key; }
-    if (entry.recordedAt.isNotEmpty())  { sep(); meta += entry.recordedAt.substring (0, 10); }
+    juce::String audioDetails = entry.recordedAt.substring (0, 10);
+    if (entry.audioBytes >= 0)
+    {
+        if (audioDetails.isNotEmpty()) audioDetails += "  |  ";
+        audioDetails += juce::File::descriptionOfSizeInBytes (entry.audioBytes);
+    }
     if (entry.trashed) { sep(); meta += "Trash - retained for 30 days"; }
     else if (entry.previewLocked) { sep(); meta += "Locked"; }
     if (! entry.pending && ! entry.projectAvailable && ! entry.trashed) { sep(); meta += "Project not located"; }
 
     g.setFont (RememberUI::font (12.0f));
     g.setColour (RememberUI::colour (Pal::Subtext));
+    if (audioDetails.isNotEmpty())
+    {
+        const auto width = juce::jmin (area.getWidth(), juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), audioDetails) + 8);
+        auto trailing = area.removeFromRight (width);
+        g.drawText (audioDetails, trailing, juce::Justification::centredLeft, true);
+        area.removeFromRight (8);
+    }
     g.drawText (meta, area, juce::Justification::centredLeft, true);
 }
 
@@ -525,16 +538,18 @@ void ProjectListComponent::resized()
     workflow.removeFromRight (8);
     viewCombo.setBounds (workflow.removeFromRight (juce::jmin (156, workflow.getWidth())));
 
-    const bool compact = content.getWidth() < 650;
+    const bool compact = content.getWidth() < 760;
     // At narrow sizes the remaining actions move together to the next row.
     auto actions = compact ? content.withY (92).withHeight (32) : workflow.withTrimmedRight (8);
     filtersBtn.setBounds (actions.removeFromLeft (70)); actions.removeFromLeft (8);
     itemCount.setBounds (compact ? actions.removeFromRight (84)
                                 : content.withY (52).withHeight (32).removeFromRight (76));
     if (compact) actions.removeFromRight (8);
-    collectionCombo.setBounds (actions.removeFromLeft (juce::jmin (180, actions.getWidth() - 40)));
+    collectionCombo.setBounds (actions.removeFromLeft (juce::jmin (180, juce::jmax (0, actions.getWidth() - 144))));
     actions.removeFromLeft (8);
     collectionBtn.setBounds (actions.removeFromLeft (32));
+    actions.removeFromLeft (8);
+    clearFiltersBtn.setBounds (actions.removeFromLeft (96));
     auto listArea = content.withTrimmedTop (toolbarHeight());
     if (libraryStatus.isVisible()) libraryStatus.setBounds (listArea.removeFromTop (32).reduced (4, 2));
     listBox.setBounds (listArea);

@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "ProjectScanner.h"
 #include "SettingsDialog.h"
+#include "PreviewFolderSetup.h"
 #include "UsedSoundsDialog.h"
 #include "BuildInfo.h"
 
@@ -29,6 +30,7 @@ MainComponent::MainComponent()
     };
     list.onVisibleEntriesChanged = [this] (const juce::Array<ProjectEntry>& entries) { player.setQueue (entries); };
     player.onEntryLoaded = [this] (const ProjectEntry& entry) { list.selectEntry (entry); };
+    player.assignmentSelection = [this] { return list.selectedEntries(); };
     player.setQueue (list.visibleEntries());
     list.onBeforeStorageChange = [this] (const ProjectEntry& e) { player.releaseEntry (e.metadataFile); };
 
@@ -37,6 +39,8 @@ MainComponent::MainComponent()
     addAndMakeVisible (player);
     addAndMakeVisible (dawLauncher);
     dawLauncher.onLayoutChanged = [this] { resized(); };
+
+    list.onFiltersCleared = [this] { sidebar.selectFolder ({}); };
 
     // Sidebar selects a folder → list filters by it
     sidebar.onFoldersSelected = [this] (juce::StringArray paths)
@@ -167,7 +171,7 @@ void MainComponent::checkFirstRun()
             RememberUI::setAppearanceMode (*dark);
             RememberUI::appZoom().set (*zoom);
             if (! *needsSetup) return;
-            SettingsDialog::launch (true, [safe]
+            PreviewFolderSetup::launch (safe.getComponent(), [safe]
             { if (safe != nullptr) safe->list.refresh(); });
         });
 }
@@ -175,7 +179,9 @@ void MainComponent::checkFirstRun()
 void MainComponent::showSettingsDialog()
 {
     SettingsDialog::launch (false, [safe = juce::Component::SafePointer<MainComponent> (this)]
-    { if (safe != nullptr) safe->list.refresh(); });
+    { if (safe != nullptr) safe->list.refresh(); },
+        [safe = juce::Component::SafePointer<MainComponent> (this)] (const ProjectEntry& entry)
+        { if (safe != nullptr) safe->player.releaseEntry (entry.metadataFile); });
 }
 
 void MainComponent::paint (juce::Graphics& g)

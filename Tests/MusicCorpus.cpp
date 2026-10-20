@@ -1,3 +1,4 @@
+#include "../Shared/PreviewAudio.h"
 #include "MusicCorpus.h"
 #include "MusicFeatures.h"
 #include "../Plugin/Source/PreviewAnalysis.h"
@@ -134,7 +135,7 @@ void evaluateMusicCorpus (const juce::File& manifest, const juce::File& report, 
         }
         entries.push_back (std::move (entry));
     }
-    juce::AudioFormatManager formats; formats.registerBasicFormats();
+    juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     juce::Array<juce::var> observations;
     std::vector<double> durations;
     int errors = 0;
