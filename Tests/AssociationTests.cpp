@@ -128,10 +128,13 @@ void testAssociation (const juce::File& fixtureRoot)
             engine.prepare (8000, 128, assignmentSettings); sourceIs (engine, Association::HostPath);
             capture (engine, 0.6f); saved (engine); const auto mojoId = engine.getAssociationInfo().id;
             switchProject.store (true);
-            await ([&] { return engine.getState() == RecordingEngine::State::Error; },
-                "Historical identity mismatch copied the preceding preview instead of requesting assignment");
-            check (! engine.getAssociationInfo().verified && engine.getLastError().contains ("Assign path"),
-                "Historical identity conflict lacks an actionable assignment error");
+            // The worker publishes the error state before its association snapshot.
+            // Wait for both publications instead of sampling the old verified entry.
+            await ([&]
+            {
+                return engine.getState() == RecordingEngine::State::Error
+                    && ! engine.getAssociationInfo().verified && engine.getLastError().contains ("Assign path");
+            }, "Historical identity conflict did not block association with an actionable assignment error");
             capture (engine, 0.9f);
             check (assignmentLibrary.findChildFiles (juce::File::findDirectories, false).size() == 2,
                 "Historical identity conflict created a duplicate entry");
