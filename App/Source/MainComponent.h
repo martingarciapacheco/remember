@@ -8,11 +8,12 @@
 
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
-                      private juce::KeyListener
+                      private juce::KeyListener,
+                      private juce::FocusChangeListener
 {
 public:
     MainComponent();
-    ~MainComponent() override { list.removeSearchKeyListener (this); }
+    ~MainComponent() override;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -30,6 +31,12 @@ public:
     bool taskbarHasQueue() const { return ! list.visibleEntries().isEmpty(); }
 
 private:
+    void mouseDown (const juce::MouseEvent&) override;
+    void globalFocusChanged (juce::Component*) override;
+    void observeUndoFocus (juce::Component*);
+    void rememberUndoContext (juce::Component*);
+    juce::Component::SafePointer<juce::Component> lastFocusedComponent;
+    ProjectScanner::UndoContext lastUndoContext = ProjectScanner::UndoContext::Previews;
     bool libraryShortcut (const juce::KeyPress& key);
     bool keyPressed (const juce::KeyPress& key, juce::Component*) override { return libraryShortcut (key); }
     RememberUI::Style uiStyle { *this };
@@ -42,6 +49,7 @@ private:
     DawLauncher dawLauncher;
 
     juce::TextButton settingsButton { "Settings" };
+    juce::TextButton statisticsButton { "Statistics" };
 
     static constexpr int kPlayerHeight  = 184;
     static constexpr int kSidebarWidth  = 216;

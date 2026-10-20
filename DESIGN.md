@@ -1,5 +1,30 @@
 # Remember interface design
 
+Statistics is an accessible 34-pixel rising-chart vector button immediately before
+Settings in the app header, separated by eight pixels. Its native resizable window
+contains Samples (top 1000), Instruments (top 50) and Effects (top 50), with name
+search, ranked project counts and explicit coverage/error details. Count the whole
+active library and all loaded sounds once per distinct saved project path. Group
+samples by file path; include native and external instruments/effects. Keep readers,
+sample checks and aggregation on workers; skip opaque plugin state and audio bodies.
+Reuse a recycled list and the independent compact Used Sounds player. Audition
+suspends main output without changing its entry, waveform or position; dragging
+copies the original sample and never triggers playback. Missing samples retain
+their rank and offer Locate. Search filters the capped ranking without reranking.
+Maintain DAW support and validation evidence in `DAW_COMPATIBILITY.md`.
+
+Statistics uses 44-pixel rows with 28-pixel sample actions. Place project counts
+and other metadata after the name on one line; omit sample paths and extensions
+from the row text. Right-click offers Hide/Unhide entry in each tab and Explorer/
+Copy location for samples. Persist hidden identities per category with atomic
+worker updates; refill the visible top from the retained full metadata ranking.
+The eye beside search reveals hidden entries alongside visible entries, retaining
+the strict cap of 1000 samples or 50 plugins in each tab in both modes. Search
+filters only the displayed ranking. Search and eye together match the list width;
+omit the old ranking counter and bottom audition status. Compact player painted
+surfaces align with list edges in Statistics and every Used Sounds tab, while
+the main player keeps its existing inset. Preserve MIDI and preset row previews.
+
 Applies to every new UI feature in the app and plugin from this revision onward.
 
 Used sounds opens from a waveform icon immediately before each recording's
@@ -101,8 +126,8 @@ Original vector symbols render at host DPI; give icon buttons accessible titles,
 descriptions and tooltips. Do not bundle SF fonts or SF Symbols for Windows.
 Use 30–36 pixel desktop targets, visible keyboard focus, explicit disabled states,
 and ellipsis for long project names, with their full names exposed to accessibility;
-preview rows do not show a floating project-name tooltip. Keep tooltips on controls
-and paths. Do not hide essential
+preview rows do not show a floating project-name tooltip. Keep tooltips on controls and other paths; the main player project path
+has no floating tooltip and exposes path/error details to accessibility. Do not hide essential
 actions when the app is resized to 640 × 480.
 
 ## Interaction and materials
@@ -125,9 +150,25 @@ an ellipsis button. Preserve selected groups for organization actions and captur
 recording identity when menus open. Manual key uses an automatic-recognition
 checkbox followed by note and scale selectors; Major and Minor lead the scale menu.
 Keep the recording count aligned with Filters, and start the list below the last
-toolbar row without reserving an extra counter row. Waveforms overlay bounded
-high-resolution L/R peaks on one amplitude axis using semantic channel colours,
-without an RMS layer. Compute peaks on workers.
+toolbar row without reserving an extra counter row. Waveforms default to overlaying
+bounded high-resolution L/R peaks on one amplitude axis using semantic channel
+colours, without an RMS layer. Right-click offers Colorful waveforms and Separate
+L/R channels. Both start disabled, persist in config.json and update every open
+main/Used Sounds/Statistics player immediately. Right-click never seeks. Split
+stereo places L above R with labelled axes; mono retains one axis. Colour follows
+the local spectral energy centroid and the shared logarithmic frequency palette:
+red 20 Hz, pink 152 Hz, green 495 Hz, yellow 1569 Hz, turquoise 5042 Hz and violet
+20 kHz. Compute peaks and windowed spectra on workers with bounded buffers;
+painting/audio callbacks do no FFT, decoding or filesystem work.
+
+The main player's Drag button sits immediately left of Assign path. A worker
+prepares the complete preview as a persistent 24-bit PCM WAV in the configured
+previews folder's Exports directory, without playback volume, normalization or
+metronome. The disabled button explains preparation/errors. Dragging copies and
+never starts playback. Content-addressed filenames reuse unchanged exports and
+retain earlier audio revisions for DAWs that reference the dragged path. Exports
+survive closing the app and are never automatically cleaned. Compact players
+retain their original sample/MIDI row export actions.
 DAW launchers sit below folders at the lower left, above playback;
 discover installed applications and their local shell icons on a worker. Do not
 redistribute vendor logo files. Overflow launchers remain accessible by scrolling.
@@ -160,6 +201,13 @@ Ctrl-click for separate toggles, and All to clear the group. Combine selected
 folder subtrees as a union without duplicate previews; preserve paths through
 refresh, rename and move, and retain native keyboard/accessibility selection.
 
+Ctrl+Z follows the last folder/sidebar or preview-list interaction, including
+mouse and keyboard focus, with separate session histories and no fallback to
+the other area when a history is empty. Text editors retain their native undo.
+Preview deletion undo restores the exact recordings from Trash; a bulk deletion
+is one action. Keep restore I/O on the edit worker, preserve occupied locations,
+and retain failed restores for retry without restoring a later deletion.
+
 Use the player's outer surface as the app alignment reference: 6 logical pixels
 from each side. Settings, Refresh, the recording count and the preview surface
 end at that right edge; controls inside the player retain their internal padding.
@@ -185,7 +233,7 @@ edge and fits BPM descending. Filters, smart collections and the recording
 count share that row when space allows, moving to the following row in compact
 windows, with eight-pixel vertical gaps.
 
-Use `Imagenes/Icono de casete en forma de D.png` as the application and plugin
+Use `Imagenes/Icono de casete en forma de R.png` as the application and plugin
 build icon and embed the same asset for the app's system tray icon.
 `Assets/Remember.ico` is its multi-resolution Windows counterpart
 for the combined app/plugin installer; the uninstall entry uses the app icon.

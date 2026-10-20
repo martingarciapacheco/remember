@@ -863,6 +863,46 @@ void testSidebarUi (const juce::File& root)
     sidebar->selectFolder ("A/B");
 
     const auto originalMetadata = LibraryStore::readJson (entry.getChildFile ("metadata.json"));
+    for (const auto key : { juce::KeyPress::backspaceKey, juce::KeyPress::deleteKey })
+    {
+        sidebar->selectFolder ({});
+        check (sidebar->keyPressed (juce::KeyPress (key)) && juce::Component::getCurrentlyModalComponent() == nullptr,
+               "All did not consume deletion without opening a dialog");
+        // Leave the native selection notification pending, as with a fast
+        // arrow-key selection followed immediately by Delete/Backspace.
+        rootItem (1)->setSelected (true, true);
+        check (sidebar->keyPressed (juce::KeyPress (key)), "Folder deletion shortcut was ignored");
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        auto* dialog = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (dialog && dialog->getName() == "Delete folder?" && sidebar->getSelectedFolder() == "A",
+               "Shortcut used stale folder selection");
+        dialog->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+        check (ProjectScanner::getAllFolderPaths().contains ("A/B"), "Cancelling folder deletion changed folders");
+
+        sidebar->selectFolder ("A/B", juce::ModifierKeys::ctrlModifier);
+        sidebar->selectFolder ("Batch 000", juce::ModifierKeys::ctrlModifier);
+        check (sidebar->keyPressed (juce::KeyPress (key)), "Multiple folder deletion shortcut was ignored");
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        dialog = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (dialog && dialog->getName() == "Delete folders?",
+               "Folder deletion did not combine selected roots and descendants");
+        dialog->exitModalState (1);
+        awaitUi ([] { const auto folders = ProjectScanner::getAllFolderPaths();
+            return ! folders.contains ("A") && ! folders.contains ("A/B") && ! folders.contains ("Batch 000/Child 0"); });
+        check (entry.getChildFile ("preview.ogg").existsAsFile() && ProjectScanner::scan().size() == 1,
+               "Folder shortcut deleted a preview");
+        ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); });
+        awaitUi ([] { const auto folders = ProjectScanner::getAllFolderPaths();
+            return folders.contains ("A/B") && folders.contains ("Batch 000/Child 0"); });
+        const auto restoredMetadata = LibraryStore::readJson (entry.getChildFile ("metadata.json"));
+        check (juce::JSON::toString (restoredMetadata.getProperty ("folders", {}))
+                   == juce::JSON::toString (originalMetadata.getProperty ("folders", {}))
+               && restoredMetadata.getProperty ("projectId", {}) == originalMetadata.getProperty ("projectId", {}),
+               "Undo did not restore folder memberships in one step");
+        sidebar->refresh();
+    }
+    sidebar->selectFolder ("A/B");
     const auto folderDrag = [&](const juce::String& path)
     { return juce::DragAndDropTarget::SourceDetails ("folder:" + path, sidebar.get(), {}); };
     check (tree->getRootItem()->isInterestedInDragSource (folderDrag ("A/B")), "Empty tree area rejects folder extraction");

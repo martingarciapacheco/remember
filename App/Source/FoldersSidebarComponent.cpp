@@ -361,6 +361,18 @@ void FoldersSidebarComponent::handleAsyncUpdate()
     applyTreeSelection(); notifySelection();
 }
 
+bool FoldersSidebarComponent::keyPressed (const juce::KeyPress& key)
+{
+    if (key != juce::KeyPress::deleteKey && key != juce::KeyPress::backspaceKey) return false;
+
+    // Native keyboard/accessibility selection may still have an update queued.
+    handleAsyncUpdate();
+    confirmDeleteFolders (selectedFolders);
+    // All is not deletable, but must still consume the key so it cannot delete
+    // a preview through MainComponent's fallback shortcut.
+    return true;
+}
+
 // ── Tree construction ───────────────────────────────────────────────────────
 
 namespace
@@ -598,22 +610,41 @@ void FoldersSidebarComponent::promptRename (const juce::String& path)
 
 void FoldersSidebarComponent::confirmDelete (const juce::String& path)
 {
-    if (path.isEmpty()) return;
+    confirmDeleteFolders ({ path });
+}
+
+void FoldersSidebarComponent::confirmDeleteFolders (juce::StringArray paths)
+{
+    paths.removeEmptyStrings();
+    paths.removeDuplicates (false);
+    // A selected parent already removes all selected descendants.
+    for (int i = paths.size(); --i >= 0;)
+        for (int j = 0; j < paths.size(); ++j)
+            if (i != j && paths[i].startsWith (paths[j] + "/")) { paths.remove (i); break; }
+    if (paths.isEmpty()) return;
+
+    const bool single = paths.size() == 1;
 
     juce::Component::SafePointer<FoldersSidebarComponent> safe (this);
     juce::AlertWindow::showAsync (
         juce::MessageBoxOptions()
             .withIconType (juce::MessageBoxIconType::WarningIcon)
-            .withTitle ("Delete folder?")
-            .withMessage ("Remove folder \"" + path + "\" (and all its subfolders) from "
+            .withTitle (single ? "Delete folder?" : "Delete folders?")
+            .withMessage ((single ? "Remove folder \"" + paths[0] + "\"" : "Remove these folders:\n" + paths.joinIntoString ("\n"))
+                          + " (and all their subfolders) from "
                           "the sidebar?\n\nEntries inside are NOT deleted — they just "
                           "lose this folder tag.")
             .withButton ("Delete")
             .withButton ("Cancel"),
-        [path, safe] (int result)
+        [paths, safe] (int result)
         {
             if (result != 1 || safe == nullptr) return;
-            safe->runFolderEdit ([path] { return ProjectScanner::deleteFolder (path); });
+            safe->runFolderEdit ([paths]
+            {
+                for (const auto& path : paths)
+                    if (auto result = ProjectScanner::deleteFolder (path); result.failed()) return result;
+                return juce::Result::ok();
+            });
         });
 }
 

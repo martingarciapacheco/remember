@@ -18,6 +18,7 @@ public:
     void resized() override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&) override;
 
     // Rebuilds from one immutable index publication. Preserves the selected
     // folder if it still exists.
@@ -67,6 +68,7 @@ private:
     void runFolderEdit (std::function<juce::Result()>, juce::String oldPath = {}, juce::String newPath = {});
     void applyTreeSelection();
     void notifySelection();
+    void confirmDeleteFolders (juce::StringArray paths);
     void handleAsyncUpdate() override;
     juce::String              selectedFolder;
     juce::StringArray selectedFolders;

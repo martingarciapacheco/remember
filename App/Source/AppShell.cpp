@@ -213,8 +213,8 @@ private:
     static juce::Image createIcon()
     {
         return juce::ImageCache::getFromMemory (
-            RememberIconData::Icono_de_casete_en_forma_de_D_png,
-            RememberIconData::Icono_de_casete_en_forma_de_D_pngSize)
+            RememberIconData::Icono_de_casete_en_forma_de_R_png,
+            RememberIconData::Icono_de_casete_en_forma_de_R_pngSize)
                 .rescaled (64, 64, juce::Graphics::highResamplingQuality);
     }
 

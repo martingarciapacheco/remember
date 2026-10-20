@@ -12,3 +12,9 @@ design system documented in `DESIGN.md`. This is a persistent project requiremen
   shortcuts, and recycled list/tag controls.
 - Validate both app and VST3 builds and relevant UI regressions. Inspect native
   component snapshots at minimum and normal sizes before delivering UI changes.
+
+## DAW compatibility register
+
+Read `DAW_COMPATIBILITY.md` before implementing or changing DAW-specific functionality.
+Update its feature matrix, limitations, validation evidence and pending work whenever
+support changes. A working Statistics reader does not imply support in Used Sounds.

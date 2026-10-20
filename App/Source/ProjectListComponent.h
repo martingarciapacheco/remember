@@ -103,6 +103,7 @@ public:
     void              listBoxItemClicked (int, const juce::MouseEvent&) override;
     void              selectedRowsChanged (int lastRowSelected) override;
     void              returnKeyPressed (int row) override;
+    void              deleteKeyPressed (int) override { deleteSelected(); }
 
 private:
     RememberUI::Style uiStyle { *this };

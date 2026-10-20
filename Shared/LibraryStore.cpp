@@ -722,7 +722,8 @@ CompactionResult compactPreview (const juce::File& root, const juce::File& folde
     return outcome;
 }
 
-juce::Result deleteEntry (const juce::File& root, const juce::File& folder)
+juce::Result deleteEntry (const juce::File& root, const juce::File& folder,
+                          TrashReceipt* receipt, const juce::String& expectedIdentity)
 {
     if (! root.isDirectory() || folder.isSymbolicLink()
         || ! (folder.getParentDirectory() == root
@@ -730,10 +731,16 @@ juce::Result deleteEntry (const juce::File& root, const juce::File& folder)
         return juce::Result::fail ("Entry is outside the preview library");
     Guard guard (folder.getChildFile ("metadata.json"));
     if (! guard.locked) return juce::Result::fail ("Entry is busy; try deleting it again");
+    const auto metadata = readJson (folder.getChildFile ("metadata.json"));
+    const auto identity = metadata.getProperty ("projectId", "").toString();
+    if (expectedIdentity.isNotEmpty() && identity != expectedIdentity)
+        return juce::Result::fail ("Recording changed; refresh before deleting it");
     if (folder.getParentDirectory().getFileName() == ".pending"
         && pendingOwnerState (folder, readJson (folder.getChildFile ("metadata.json"))) == OwnerState::Active)
         return juce::Result::fail ("The DAW still owns this pending capture; close its session before deleting it");
     juce::DynamicObject::Ptr marker (new juce::DynamicObject());
+    const auto deletionId = juce::Uuid().toString();
+    marker->setProperty ("deletionId", deletionId);
     marker->setProperty ("deletedAt", juce::Time::getCurrentTime().toISO8601 (true));
     marker->setProperty ("originalRelativePath", folder.getRelativePathFrom (root));
     auto result = writeJsonAtomically (deletionMarker (folder), juce::var (marker.get()));
@@ -747,10 +754,12 @@ juce::Result deleteEntry (const juce::File& root, const juce::File& folder)
         deletionMarker (folder).deleteFile();
         return juce::Result::fail ("Cannot move entry to trash: " + folder.getFullPathName());
     }
+    if (receipt != nullptr) *receipt = { root, target, identity, deletionId };
     return juce::Result::ok();
 }
 
-juce::Result restoreEntry (const juce::File& root, const juce::File& folder)
+juce::Result restoreEntry (const juce::File& root, const juce::File& folder,
+                           const juce::String& expectedIdentity, const juce::String& expectedDeletionId)
 {
     const auto trash = root.getChildFile (".trash");
     if (folder.getParentDirectory() != trash || folder.isSymbolicLink() || trash.isSymbolicLink())
@@ -766,6 +775,14 @@ juce::Result restoreEntry (const juce::File& root, const juce::File& folder)
     if (target.getParentDirectory().isSymbolicLink()) return juce::Result::fail ("Original recording parent is outside the library");
     Guard guard (target.getChildFile ("metadata.json"));
     if (! guard.locked || target.exists()) return juce::Result::fail ("Original location is busy or occupied");
+    // Check the exact deletion again while holding the same location lock used
+    // by deleteEntry. An old undo must never restore a replacement recording.
+    if (expectedDeletionId.isNotEmpty()
+        && readJson (markerFile).getProperty ("deletionId", "").toString() != expectedDeletionId)
+        return juce::Result::fail ("Trash entry changed; refresh before restoring it");
+    if (expectedIdentity.isNotEmpty()
+        && readJson (folder.getChildFile ("metadata.json")).getProperty ("projectId", "").toString() != expectedIdentity)
+        return juce::Result::fail ("Recording identity changed; trash was preserved");
     if (auto made = ensureDirectory (target.getParentDirectory()); made.failed()) return made;
     if (! folder.moveFileTo (target)) return juce::Result::fail ("Cannot restore recording files");
     if (! markerFile.deleteFile())

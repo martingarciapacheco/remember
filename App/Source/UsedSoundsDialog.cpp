@@ -154,7 +154,7 @@ UsedSoundsDialog::UsedSoundsDialog (ProjectEntry source, Audition auditionCallba
     {
         RememberUI::bindColour (*label, juce::Label::textColourId, label == &title ? Pal::Text : Pal::Subtext);
         if (label != &title) label->setFont (RememberUI::font (12));
-        label->setMinimumHorizontalScale (1.0f); addAndMakeVisible (*label);
+        label->setMinimumHorizontalScale (1.0f); label->setBorderSize (juce::BorderSize<int> (0)); addAndMakeVisible (*label);
     }
     status.setJustificationType (juce::Justification::topLeft);
     for (auto* button : { &samples, &midis, &plugins, &refresh, &stop, &close })

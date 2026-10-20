@@ -46,6 +46,12 @@ public:
     void setMetronomeVolume (double, bool save = true);
     double getMetronomeVolume() const { return metronome.getVolume(); }
     void setCompactMode (bool);
+    void setColorfulWaveforms (bool);
+    void setSeparateWaveformChannels (bool);
+    bool hasColorfulWaveforms() const;
+    bool hasSeparateWaveformChannels() const;
+    juce::Rectangle<int> surfaceBounds() const
+    { return getLocalBounds().reduced (compactMode ? 0 : RememberUI::appOuterMargin, 6); }
 
     float getOutputGain() const { return transport.getGain(); }
     bool autoplaySelection() const { return autoplay; }
@@ -72,6 +78,8 @@ public:
 private:
     friend struct PlaybackCursorTestAccess;
     friend struct UsedSoundsTestAccess;
+    friend struct StatisticsTestAccess;
+    friend struct WaveformTestAccess;
     RememberUI::Style uiStyle { *this };
     PlaybackQueue queue;
     juce::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
@@ -84,6 +92,7 @@ private:
     void applyOutputGain();
     void savePlaybackPreferences();
     void showPlaybackOptions();
+    void showWaveformOptions();
     void showRepeatOptions();
     void showMetronomeVolume();
     void updateRepeatButton();
@@ -136,6 +145,25 @@ private:
     juce::TextButton playBtn   { ">" };
     juce::TextButton openBtn   { "Open in DAW" };
     juce::TextButton assignBtn { "Assign path" };
+    class PreviewDragButton final : public juce::TextButton
+    {
+    public:
+        PreviewDragButton() : juce::TextButton ("Drag") {}
+        std::function<void()> begin;
+        void mouseDown (const juce::MouseEvent& e) override { started = false; juce::TextButton::mouseDown (e); }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            juce::TextButton::mouseDrag (e);
+            if (! started && isEnabled() && e.mods.isLeftButtonDown() && e.getDistanceFromDragStart() >= 6)
+            { started = true; if (begin) begin(); }
+        }
+    private:
+        bool started = false;
+    } dragBtn;
+    juce::File exportedPreview;
+    std::function<bool (const juce::StringArray&, bool, juce::Component*)> startPreviewDrag =
+        [] (const juce::StringArray& files, bool move, juce::Component* source)
+        { return juce::DragAndDropContainer::performExternalDragDropOfFiles (files, move, source); };
     juce::TextButton audioBtn { "Audio" };
 
     juce::Label nameLabel;

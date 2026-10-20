@@ -12,8 +12,12 @@
 #include "ShellTests.h"
 #include "WorkflowTests.h"
 #include "UsedSoundsTests.h"
+#include "WaveformTests.h"
+#include "StatisticsTests.h"
+#include "UndoTests.h"
 #include "../App/Source/UsedSounds.h"
 #include "../App/Source/UsedSoundsDialog.h"
+#include "../App/Source/ProjectStatistics.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -61,6 +65,44 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+        if (argc == 2 && juce::String (argv[1]) == "--waveforms")
+        { testWaveformFeatures (root); root.deleteRecursively(); return 0; }
+        if (argc == 2 && juce::String (argv[1]) == "--undo")
+        {
+            testContextUndo (root);
+            ProjectScanner::beginShutdown(); awaitUi ([] { return ProjectScanner::shutdownReady(); }); return 0;
+        }
+        if (argc == 3 && juce::String (argv[1]) == "--inspect-statistics")
+        {
+            juce::Array<ProjectEntry> entries;
+            const auto input = juce::File (juce::String::fromUTF8 (argv[2]));
+            if (input.hasFileExtension ("json"))
+            {
+                const auto paths = juce::JSON::parse (input);
+                if (const auto* array = paths.getArray()) for (const auto& path : *array)
+                { ProjectEntry entry; entry.projectPath = path.toString(); entries.add (entry); }
+            }
+            else if (input.isDirectory())
+            {
+                for (const auto& folder : input.findChildFiles (juce::File::findDirectories, false))
+                {
+                    const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
+                    ProjectEntry entry; entry.projectPath = metadata.getProperty ("projectPath", "").toString(); entries.add (entry);
+                }
+            }
+            else { ProjectEntry entry; entry.projectPath = input.getFullPathName(); entries.add (entry); }
+            const auto report = ProjectStatistics::collect (entries);
+            std::cout << "Read=" << report.read << " excluded=" << report.excluded << " failed=" << report.failed
+                << " unknownPlugins=" << report.unclassifiedPlugins << " metadataBytes=" << report.metadataBytes() << "\n";
+            for (size_t c = 0; c < report.items.size(); ++c)
+            {
+                std::cout << "Category " << c << " rows=" << report.items[c].size() << "\n";
+                for (size_t i = 0; i < juce::jmin<size_t> (10, report.items[c].size()); ++i)
+                    std::cout << report.items[c][i].projects << " " << report.items[c][i].name << "\n";
+            }
+            for (const auto& detail : report.details) std::cout << detail << "\n";
+            ProjectScanner::beginShutdown(); awaitUi ([] { return ProjectScanner::shutdownReady(); }); return report.failed == 0 ? 0 : 1;
+        }
         if (argc == 3 && (juce::String (argv[1]) == "--inspect-used-sounds" || juce::String (argv[1]) == "--inspect-used-sounds-ui"))
         {
             const bool inspectUi = juce::String (argv[1]) == "--inspect-used-sounds-ui";
@@ -123,6 +165,11 @@ int main (int argc, char** argv)
             ProjectScanner::beginShutdown();
             awaitUi ([] { return ProjectScanner::shutdownReady(); });
             return 0;
+        }
+        if (argc == 2 && juce::String (argv[1]) == "--statistics")
+        {
+            testStatistics (root);
+            ProjectScanner::beginShutdown(); awaitUi ([] { return ProjectScanner::shutdownReady(); }); return 0;
         }
         if (argc == 2 && juce::String (argv[1]) == "--used-sounds")
         {
@@ -231,10 +278,13 @@ int main (int argc, char** argv)
         testSettingsRecovery (root);
         testRecoveryUi (root);
         testUsedSounds (root);
+        testStatistics (root);
         testSidebarUi (root);
+        testContextUndo (root);
         testLibraryScene (root);
         testRowInteractions (root);
         testPlayback (root);
+        testWaveformFeatures (root);
         {
             ProjectRowComponent row;
             ProjectEntry original, replacement;

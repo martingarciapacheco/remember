@@ -18,6 +18,8 @@ inline constexpr int recordingRowActionSize = 32;
 inline constexpr int soundRowHeight = 60;
 inline constexpr int midiSoundRowHeight = 116;
 inline constexpr int generatorSoundRowHeight = 72;
+inline constexpr int statisticsRowHeight = 44;
+inline constexpr int statisticsActionHeight = 28;
 inline constexpr float surfaceRadius = 12.0f;
 inline constexpr int appOuterMargin = 6;
 inline constexpr int appSectionGap = 6;
@@ -106,6 +108,19 @@ inline bool darkAppearance = false;
 inline RememberAppearance appearanceMode = RememberAppearance::System;
 inline void setAppearanceMode (RememberAppearance);
 inline bool isDark() { return darkAppearance; }
+// Frequency palette supplied for colorful waveforms. Log-frequency interpolation
+// preserves the same acoustic landmarks across sample rates and appearances.
+inline juce::Colour waveformFrequencyColour (float frequency)
+{
+    static constexpr float stops[] { 20, 152, 495, 1569, 5042, 20000 };
+    static constexpr uint32_t colours[] { 0xffff0034, 0xffff375f, 0xff7bd061, 0xffd7dc43, 0xff47beb3, 0xff9386dc };
+    if (! std::isfinite (frequency) || frequency <= stops[0]) return juce::Colour (colours[0]);
+    for (size_t i = 1; i < std::size (stops); ++i)
+        if (frequency < stops[i])
+            return juce::Colour (colours[i - 1]).interpolatedWith (juce::Colour (colours[i]),
+                std::log (frequency / stops[i - 1]) / std::log (stops[i] / stops[i - 1]));
+    return juce::Colour (colours[std::size (colours) - 1]);
+}
 inline juce::Colour colour (uint32_t token)
 {
     static constexpr uint32_t light[] = { 0xfff5f5f7, 0xffededf0, 0xffe4e5ea,
@@ -257,6 +272,23 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
         g.drawEllipse (b.reduced (2), 1.5f);
         g.fillEllipse (b.getCentreX() - 0.9f, b.getY() + 4.2f, 1.8f, 1.8f);
         g.drawLine (b.getCentreX(), b.getY() + 8, b.getCentreX(), b.getBottom() - 4, 1.6f);
+    }
+    else if (kind == "eye" || kind == "eye-off")
+    {
+        p.startNewSubPath (x, y + 8); p.cubicTo (x + 4, y, x + 12, y, x + 16, y + 8);
+        p.cubicTo (x + 12, y + 16, x + 4, y + 16, x, y + 8);
+        g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved));
+        g.drawEllipse (x + 5.5f, y + 5.5f, 5, 5, 1.4f);
+        if (kind == "eye-off") g.drawLine (x + 1, y + 1, x + 15, y + 15, 1.6f);
+    }
+    else if (kind == "statistics")
+    {
+        p.startNewSubPath (x + 1, y + 1); p.lineTo (x + 1, y + 15); p.lineTo (x + 15, y + 15);
+        g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved));
+        p.clear(); p.startNewSubPath (x + 4, y + 11); p.lineTo (x + 8, y + 7);
+        p.lineTo (x + 11, y + 9); p.lineTo (x + 16, y + 3);
+        p.startNewSubPath (x + 11, y + 3); p.lineTo (x + 16, y + 3); p.lineTo (x + 16, y + 8);
+        g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
     else if (kind == "settings")
     {

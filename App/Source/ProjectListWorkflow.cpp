@@ -229,7 +229,7 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
     menu.addItem (8, "Set project status...", selected && ! trash); menu.addSeparator();
     menu.addItem (9, trash ? "Restore selected" : "Move to trash (30 days)", selected);
     menu.addSeparator(); menu.addItem (10, "Clear filters");
-    menu.addItem (11, "Undo organization change (Ctrl+Z)", ProjectScanner::canUndoOrganization());
+    menu.addItem (11, "Undo preview change (Ctrl+Z)", ProjectScanner::canUndoOrganization (ProjectScanner::UndoContext::Previews));
     auto safe = juce::Component::SafePointer<ProjectListComponent> (this);
     const auto play = row->onPlay, rename = row->onRenameRequested, open = row->onOpenInDaw;
     const auto recover = row->onRecover;
@@ -244,7 +244,8 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
         if (r == 16 || r == 17) { if (recover) recover (r == 17); return; }
         if (r == 11)
         {
-            ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization(); }, [safe] (juce::Result result) { report (safe, result); }); return;
+            ProjectScanner::editAsync ([] { return ProjectScanner::undoOrganization (ProjectScanner::UndoContext::Previews); },
+                [safe] (juce::Result result) { report (safe, result); }); return;
         }
         if (r == 10)
         {
@@ -292,12 +293,11 @@ void ProjectListComponent::bulkEdit (juce::Array<ProjectEntry> entries, juce::St
         ProjectScanner::editAsync ([entries, operation, value] () mutable
         {
             juce::StringArray failures;
-            const auto root = ProjectScanner::getPreviewsFolder();
             for (auto entry : entries)
             {
                 juce::Result result = juce::Result::ok();
                 if (entry.trashed || (entry.storageError.isNotEmpty() && operation != "trash")) continue;
-                if (operation == "trash") result = LibraryStore::deleteEntry (root, entry.metadataFile.getParentDirectory());
+                if (operation == "trash") result = ProjectScanner::trashEntry (entry);
                 else
                 {
                     juce::StringArray intents;
