@@ -94,7 +94,9 @@ void testContextUndo (const juce::File& root)
         auto* rows = child<juce::ListBox> (*list); auto* tree = child<juce::TreeView> (*sidebar);
         auto* search = child<juce::TextEditor> (*list);
         check (rows && tree && search, "Undo controls are missing");
-        scene.setSize (1024, 768); scene.addToDesktop (0); scene.setVisible (true);
+        scene.setBounds (juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea
+            .withSizeKeepingCentre (1024, 768));
+        scene.addToDesktop (0); scene.setVisible (true);
         waitFor ([&] { return list->getNumRows() == 2; }, "Undo scene did not publish two rows"); idle();
         const auto press = [&](int key, int mods = 0, juce::juce_wchar text = 0)
         { return scene.getPeer()->handleKeyPress (juce::KeyPress (key, mods, text)); };
@@ -152,8 +154,18 @@ void testContextUndo (const juce::File& root)
                 int clicks = 0;
                 void mouseDown (const juce::MouseEvent&) override { ++clicks; }
             } probe;
+            // Native peer hit testing rejects points covered by another desktop
+            // window. Keep this short-lived fixture above other applications,
+            // inside the work area, and let dismissed popup peers disappear.
+            scene.setAlwaysOnTop (true); scene.toFront (true);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+            const auto logicalPoint = scene.getLocalPoint (&target, local).toFloat();
+            waitFor ([&] { return scene.contains (logicalPoint); }, "Native undo scene is occluded");
+            const auto* hit = scene.getComponentAt (logicalPoint);
+            check (hit == &target || target.isParentOf (hit), "Undo click lies outside its target area");
             target.addMouseListener (&probe, true);
-            const auto point = scene.getLocalPoint (&target, local).toFloat();
+            // ComponentPeer accepts unscaled coordinates, unlike Component.
+            const auto point = logicalPoint * scene.getDesktopScaleFactor();
             const auto now = juce::Time::currentTimeMillis();
             auto* peer = scene.getPeer();
             // Prime hit testing before the press, independent of pointer state
