@@ -792,6 +792,27 @@ void testFrontendDesign (const juce::File& root)
         check (sections && sections->getNumTabs() == 3, "Settings lacks its three sections");
         check (sections->getTabNames() == juce::StringArray { "Recording & storage", "Appearance", "Projects & audition" },
             "Settings section order is incorrect");
+        for (int width : { 640, 680 })
+        {
+            settings.setSize (width, 640);
+            for (int selected = 0; selected < 3; ++selected)
+            {
+                sections->setCurrentTabIndex (selected);
+                const auto* first = sections->getTabButton (0);
+                const auto* last = sections->getTabButton (2);
+                check (first->getX() == 0 && last->getRight() == sections->getWidth(),
+                       "Settings tabs do not fill the content width");
+                for (int i = 1; i < 3; ++i)
+                    check (std::abs (sections->getTabButton (i)->getWidth() - first->getWidth()) <= 1,
+                           "Settings tabs have different widths");
+            }
+            sections->setCurrentTabIndex (0);
+            saveImage (settings, width == 640 ? "settings-tabs-minimum.png" : "settings-tabs-normal.png", true);
+        }
+        auto* folderLink = childOf<RememberUI::FolderLink> (settings);
+        check (folderLink && folderLink->isEnabled() && folderLink->onClick
+               && juce::File::isAbsolutePath (folderLink->getButtonText()),
+               "Previews path is not an enabled folder link");
         sections->setCurrentTabIndex (1);
         saveImage (settings, "apple-settings-appearance.png", true);
         sections->setCurrentTabIndex (0);

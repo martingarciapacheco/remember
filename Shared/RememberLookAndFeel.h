@@ -535,12 +535,19 @@ public:
     void drawTabAreaBehindFrontButton (juce::TabbedButtonBar&, juce::Graphics&, int, int) override {}
     void drawTabButton (juce::TabBarButton& button, juce::Graphics& g, bool over, bool down) override
     {
-        auto bounds = button.getLocalBounds().toFloat().reduced (2);
+        auto bounds = button.getLocalBounds().toFloat();
+        if ((bool) button.getTabbedButtonBar().getProperties()["rememberEqualTabs"])
+            bounds = bounds.reduced (0, 2);
+        else
+            bounds = bounds.reduced (2);
         g.setColour (colour (button.getToggleState() ? Pal::Selected : over || down ? Pal::Elevated : Pal::Surface));
         g.fillRoundedRectangle (bounds, controlRadius);
         g.setColour (colour (button.getToggleState() ? Pal::Accent : Pal::Text).withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.45f));
         g.setFont (font (13, button.getToggleState()));
-        g.drawText (button.getButtonText(), bounds.reduced (10, 0), juce::Justification::centred, true);
+        if ((bool) button.getTabbedButtonBar().getProperties()["rememberEqualTabs"])
+            g.drawFittedText (button.getButtonText(), bounds.reduced (10, 0).toNearestInt(), juce::Justification::centred, 2, 1.0f);
+        else
+            g.drawText (button.getButtonText(), bounds.reduced (10, 0), juce::Justification::centred, true);
         if (button.hasKeyboardFocus (false))
         {
             g.setColour (colour (Pal::Accent));
@@ -704,8 +711,58 @@ public:
 // testing and window actions; only its presentation is replaced.
 class MainWindowLookAndFeel final : public LookAndFeel {};
 
+// Keep settings navigation aligned with the content, independently of label length.
+class EqualWidthTabs : public juce::TabbedButtonBar
+{
+public:
+    EqualWidthTabs() : TabbedButtonBar (TabsAtTop)
+    { getProperties().set ("rememberEqualTabs", true); }
+    juce::TabBarButton* createTabButton (const juce::String& name, int) override
+    {
+        class Tab final : public juce::TabBarButton
+        {
+        public:
+            Tab (const juce::String& text, juce::TabbedButtonBar& bar) : TabBarButton (text, bar) {}
+            int getBestTabLength (int) override
+            { return getTabbedButtonBar().getWidth() / juce::jmax (1, getTabbedButtonBar().getNumTabs()); }
+        };
+        return new Tab (name, *this);
+    }
+    void resized() override
+    {
+        TabbedButtonBar::resized();
+        const int count = getNumTabs(), gap = 8;
+        const int available = juce::jmax (0, getWidth() - (count - 1) * gap);
+        for (int i = 0; i < count; ++i)
+        {
+            const int left = available * i / count + i * gap;
+            const int right = available * (i + 1) / count + i * gap;
+            getTabButton (i)->setBounds (left, 0, right - left, getHeight());
+        }
+    }
+};
+
+class FolderLink final : public juce::HyperlinkButton
+{
+public:
+    FolderLink()
+    {
+        setFont (RememberUI::font (12), false, juce::Justification::centredLeft);
+        bindColour (*this, juce::HyperlinkButton::textColourId, Pal::Accent);
+    }
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        HyperlinkButton::paintButton (g, over, down);
+        if (hasKeyboardFocus (false))
+        {
+            g.setColour (colour (Pal::Accent));
+            g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1), controlRadius, 2);
+        }
+    }
+};
+
 // Prepare chrome before showing the window; keep the content's semantic theme.
-inline juce::DialogWindow* launchDialog (juce::DialogWindow::LaunchOptions& options)
+inline juce::DialogWindow* launchDialog (juce::DialogWindow::LaunchOptions& options, bool centreOnScreen = false)
 {
    #if JUCE_WINDOWS
     options.useNativeTitleBar = false;
@@ -742,6 +799,15 @@ inline juce::DialogWindow* launchDialog (juce::DialogWindow::LaunchOptions& opti
     window->setTitleBarHeight (34);
     window->setTitleBarButtonsRequired (juce::DocumentWindow::closeButton, false);
    #endif
+    if (centreOnScreen)
+    {
+        const auto& displays = juce::Desktop::getInstance().getDisplays();
+        const auto* display = options.componentToCentreAround != nullptr
+            ? displays.getDisplayForRect (options.componentToCentreAround->getScreenBounds())
+            : displays.getPrimaryDisplay();
+        if (display != nullptr)
+            window->setCentrePosition (display->userArea.getCentre());
+    }
     window->enterModalState (true, nullptr, true);
     return window;
 }

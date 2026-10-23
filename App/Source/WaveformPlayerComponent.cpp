@@ -604,7 +604,7 @@ void WaveformPlayerComponent::showAudioSettings()
     options.componentToCentreAround = this;
     options.useNativeTitleBar = true;
     options.escapeKeyTriggersCloseButton = true;
-    audioDialog = RememberUI::launchDialog (options);
+    audioDialog = RememberUI::launchDialog (options, true);
     armIdleRelease();
 }
 

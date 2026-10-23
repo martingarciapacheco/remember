@@ -296,7 +296,11 @@ asynchronous warning about small artifacts and incorrectly captured sound tails.
 
 Settings groups controls into Recording & storage, Appearance, and Projects &
 audition. Appearance and zoom retain immediate saving; other pending controls
-retain OK/Cancel. Use shared semantic tabs with focus treatment. All secondary
+retain OK/Cancel. Settings tabs use equal widths, eight-pixel gaps and the same
+side edges as their content; long translations wrap to two lines. The previews
+folder path is a keyboard-accessible link that opens the folder in the native
+file manager. Audio output opens centred in the usable area of the player's
+display, after applying window chrome. Use shared semantic tabs with focus treatment. All secondary
 JUCE dialogs use the same 34-pixel Windows caption and 46-pixel close target as
 the main window, preserving native macOS frames and window actions. Read saved
 main-window geometry on a worker before the first visible frame, including the

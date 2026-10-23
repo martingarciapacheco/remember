@@ -28,10 +28,9 @@ public:
     std::function<void (const ProjectEntry&)> onBeforeCompaction;
 
 private:
-    class SectionTabs final : public juce::TabbedButtonBar
+    class SectionTabs final : public RememberUI::EqualWidthTabs
     {
     public:
-        SectionTabs() : TabbedButtonBar (juce::TabbedButtonBar::TabsAtTop) {}
         std::function<void()> changed;
         void currentTabChanged (int, const juce::String&) override { if (changed) changed(); }
     };
@@ -88,7 +87,7 @@ private:
     RememberUI::Label  signature { {}, RememberUI::tr ("Created by WABII") };
     RememberUI::Label  previewsCaption { {}, RememberUI::tr ("Previews folder") };
     RememberUI::Label  previewsHint    { {}, RememberUI::tr ("Where the plugin saves recordings") };
-    RememberUI::Label  previewsPath;
+    RememberUI::FolderLink previewsPath;
     RememberUI::TextButton previewsBrowse { RememberUI::tr ("Change...") };
 
     // Recording settings block

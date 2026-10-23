@@ -163,7 +163,12 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
     styleLabel (previewsHint,    11.0f, Pal::Subtext);
-    styleLabel (previewsPath,    12.0f, Pal::Accent);
+    previewsPath.setEnabled (false);
+    previewsPath.onClick = [this]
+    {
+        if (settingsLoaded && previewsFolder.getFullPathName().isNotEmpty())
+            previewsFolder.startAsProcess();
+    };
     addAndMakeVisible (previewsCaption);
     addAndMakeVisible (previewsHint);
     addAndMakeVisible (previewsPath);
@@ -316,7 +321,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
         addAndMakeVisible (cancelBtn);
 
     for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
-    previewsPath.setText (RememberUI::tr ("Loading settings..."), juce::dontSendNotification);
+    previewsPath.setButtonText (RememberUI::tr ("Loading settings..."));
     loadSettings (std::move (reader));
 }
 
@@ -418,7 +423,8 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
     searchStatus.setText ({}, juce::dontSendNotification);
     validationGeneration->fetch_add (1); storageGeneration->fetch_add (1); measuredFolder = {};
     for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
-    previewsPath.setText (RememberUI::tr ("Loading settings..."), juce::dontSendNotification);
+    previewsPath.setEnabled (false);
+    previewsPath.setButtonText (RememberUI::tr ("Loading settings..."));
     auto settings = std::make_shared<ProjectScanner::SettingsSnapshot>();
     ProjectScanner::queryAsync ([settings, reader = std::move (reader)]
     { *settings = reader ? reader() : ProjectScanner::readSettings(); return settings->result; },
@@ -437,7 +443,7 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             safe->okBtn.setButtonText (safe->rebuildFingerprint.isNotEmpty() ? RememberUI::tr ("Rebuild settings") : RememberUI::tr ("OK"));
             safe->resized();
             if (result.failed() && ! settings->canRebuild)
-            { safe->previewsPath.setText (RememberUI::tr ("Settings could not be read"), juce::dontSendNotification); return; }
+            { safe->previewsPath.setButtonText (RememberUI::tr ("Settings could not be read")); return; }
             safe->previewsFolder = settings->previews;
             safe->projectsFolders = settings->roots;
             safe->recordSeconds = settings->seconds;
@@ -476,9 +482,11 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
 
 void SettingsDialog::refreshLabels()
 {
-    previewsPath.setText (previewsFolder.getFullPathName().isEmpty()
-                             ? RememberUI::tr ("(not set)") : previewsFolder.getFullPathName(),
-                          juce::dontSendNotification);
+    previewsPath.setButtonText (previewsFolder.getFullPathName().isEmpty()
+                             ? RememberUI::tr ("(not set)") : previewsFolder.getFullPathName());
+    previewsPath.setEnabled (settingsLoaded && previewsFolder.getFullPathName().isNotEmpty());
+    previewsPath.setTitle (RememberUI::tr ("Previews folder"));
+    previewsPath.setTooltip (previewsFolder.getFullPathName());
 
     okBtn.setEnabled (false);
     if (! settingsLoaded) return;
@@ -773,6 +781,7 @@ void SettingsDialog::resized()
     area = area.reduced (16, 0);
 
     sections.setBounds (area.removeFromTop (36));
+    sections.resized();
     area.removeFromTop (20);
     const int section = sections.getCurrentTabIndex();
     auto show = [section] (int index, std::initializer_list<juce::Component*> controls)
