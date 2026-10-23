@@ -17,17 +17,17 @@ MainComponent::MainComponent()
     list.addMouseListener (this, true);
     juce::Desktop::getInstance().addFocusChangeListener (this);
 
-    settingsButton.setTooltip ("Open settings (previews & projects folders)");
-    RememberUI::bindColour (settingsButton, juce::TextButton::buttonColourId, Pal::Elevated);
-    RememberUI::bindColour (settingsButton, juce::TextButton::textColourOffId, Pal::Subtext);
+    settingsButton.setTooltip (RememberUI::tr ("Open settings (previews & projects folders)"));
+    RememberUI::bindColour (settingsButton, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (settingsButton, RememberUI::TextButton::textColourOffId, Pal::Subtext);
     settingsButton.onClick = [this] { showSettingsDialog(); };
-    RememberUI::iconButton (settingsButton, "settings", "Settings");
-    settingsButton.setTooltip ("Settings");
+    RememberUI::iconButton (settingsButton, "settings", RememberUI::tr ("Settings"));
+    settingsButton.setTooltip (RememberUI::tr ("Settings"));
     addAndMakeVisible (settingsButton);
-    RememberUI::iconButton (statisticsButton, "statistics", "Statistics");
-    statisticsButton.setTooltip ("Statistics");
-    RememberUI::bindColour (statisticsButton, juce::TextButton::buttonColourId, Pal::Elevated);
-    RememberUI::bindColour (statisticsButton, juce::TextButton::textColourOffId, Pal::Subtext);
+    RememberUI::iconButton (statisticsButton, "statistics", RememberUI::tr ("Statistics"));
+    statisticsButton.setTooltip (RememberUI::tr ("Statistics"));
+    RememberUI::bindColour (statisticsButton, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (statisticsButton, RememberUI::TextButton::textColourOffId, Pal::Subtext);
     statisticsButton.onClick = [this] { StatisticsDialog::launch (&player); };
     addAndMakeVisible (statisticsButton);
 
@@ -74,7 +74,7 @@ MainComponent::MainComponent()
                     [safe] (juce::Result result)
                     {
                         if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-                            juce::AlertWindow::WarningIcon, "Cannot assign folder", result.getErrorMessage());
+                            juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot assign folder"), RememberUI::diagnostic (result.getErrorMessage()));
                     });
                 break;
             }
@@ -147,7 +147,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     // Text editors own typing and cursor movement; only explicit library
     // commands above may change the app while the user is entering text.
     if (auto* focused = juce::Component::getCurrentlyFocusedComponent();
-        dynamic_cast<juce::TextEditor*> (focused) != nullptr && isParentOf (focused)) return false;
+        dynamic_cast<RememberUI::TextEditor*> (focused) != nullptr && isParentOf (focused)) return false;
     if (key == juce::KeyPress ('M')) { player.toggleMute(); return true; }
     if (key == juce::KeyPress ('S')) { player.toggleShuffle(); return true; }
     if (key == juce::KeyPress ('L')) { player.cycleRepeat(); return true; }
@@ -160,7 +160,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         const auto context = lastUndoContext;
         ProjectScanner::editAsync ([context] { return ProjectScanner::undoOrganization (context); },
             [safe = juce::Component::SafePointer<MainComponent> (this)] (juce::Result result)
-            { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Cannot undo", result.getErrorMessage()); });
+            { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot undo"), RememberUI::diagnostic (result.getErrorMessage())); });
         return true;
     }
     // Space: play/pause currently loaded preview
@@ -248,10 +248,10 @@ void MainComponent::paint (juce::Graphics& g)
     g.drawText ("Remember", margin + RememberUI::folderIconLeading, margin, kSidebarWidth - 32, 64, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (22, true));
     g.setColour (RememberUI::colour (Pal::Text));
-    g.drawText ("Library", margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 14, 180, 28, juce::Justification::centredLeft);
+    g.drawText (RememberUI::tr ("Library"), margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 14, 180, 28, juce::Justification::centredLeft);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (Pal::Subtext));
-    g.drawText ("Browse projects and listen to previews", margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 42,
+    g.drawText (RememberUI::tr ("Browse projects and listen to previews"), margin + kSidebarWidth + RememberUI::appSectionGap + 8, margin + 42,
                 getWidth() - margin - kSidebarWidth - 162, 22, juce::Justification::centredLeft);
 }
 

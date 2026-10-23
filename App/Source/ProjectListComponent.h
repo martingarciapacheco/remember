@@ -44,11 +44,11 @@ private:
     bool         renaming { false };
     std::function<void(juce::String)> renameCommit;
 
-    juce::TextButton favBtn   { "" };
-    juce::TextButton actionsBtn { "..." };
-    juce::TextButton usedSoundsBtn;
-    juce::TextButton statusBtn;
-    juce::TextEditor renameEditor;
+    RememberUI::TextButton favBtn   { "" };
+    RememberUI::TextButton actionsBtn { "..." };
+    RememberUI::TextButton usedSoundsBtn;
+    RememberUI::TextButton statusBtn;
+    RememberUI::TextEditor renameEditor;
 };
 
 // ── Searchable / filterable list ──────────────────────────────────────────────
@@ -131,20 +131,20 @@ private:
     void restoreRecording (ProjectEntry);
     void bulkEdit (juce::Array<ProjectEntry>, juce::String operation);
     LibraryFilter filter;
-    juce::ComboBox collectionCombo, sortCombo, viewCombo;
-    juce::TextButton filtersBtn { "Filters" }, collectionBtn { "+" }, clearFiltersBtn { "Clear filters" };
+    RememberUI::ComboBox collectionCombo, sortCombo, viewCombo;
+    RememberUI::TextButton filtersBtn { RememberUI::tr ("Filters") }, collectionBtn { "+" }, clearFiltersBtn { RememberUI::tr ("Clear filters") };
     juce::var collections;
     int view = 1;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void publishLibrary();
     void scheduleSearchDebounce();
 
-    juce::TextEditor  searchBox;
-    juce::TextButton  favFilterBtn { "Favorites" };
-    juce::TextButton  refreshBtn   { "Refresh" };
+    RememberUI::TextEditor  searchBox;
+    RememberUI::TextButton  favFilterBtn { RememberUI::tr ("Favorites") };
+    RememberUI::TextButton  refreshBtn   { RememberUI::tr ("Refresh") };
     RememberUI::RecordingListBox listBox;
-    juce::Label       libraryStatus;
-    juce::Label       itemCount;
+    RememberUI::Label       libraryStatus;
+    RememberUI::Label       itemCount;
     juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
     juce::Component::SafePointer<juce::DialogWindow> recoveryWindow;
 
@@ -156,5 +156,6 @@ private:
     juce::StringArray folderFilters;
 
     int toolbarHeight() const { return getWidth() - RememberUI::appSectionGap - RememberUI::appOuterMargin < 760 ? 132 : 92; }
+    RememberUI::LanguageCallback languageUpdates { [this] { publishLibrary(); repaint(); } };
     static constexpr int kRowH     = RememberUI::recordingRowHeight;
 };

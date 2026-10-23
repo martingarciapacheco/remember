@@ -15,6 +15,7 @@
 #include "../App/Source/UsedSoundsDialog.h"
 #include "../Shared/LibraryStore.h"
 #include "../Shared/AppearanceSettings.h"
+#include "../Shared/LanguageSettings.h"
 #include <iostream>
 #include <stdexcept>
 #include <set>
@@ -1082,6 +1083,39 @@ void testFrontendDesign (const juce::File& root)
         awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
     }
     RememberUI::setAppearanceMode (RememberAppearance::Light);
+    {
+        SettingsDialog translated (false);
+        awaitUi ([&] { return translated.hasLoadedSettings(); });
+        auto* tabs = childOf<juce::TabbedButtonBar> (translated);
+        check (tabs != nullptr, "Language settings have no Appearance section");
+        tabs->setCurrentTabIndex (1);
+        juce::ComboBox* languageSelector = nullptr;
+        for (auto* child : translated.getChildren())
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Language") languageSelector = combo;
+        check (languageSelector && languageSelector->isVisible() && languageSelector->getWidth() >= 150 && languageSelector->getHeight() >= 28 && translated.getLocalBounds().contains (languageSelector->getBounds()), "Language selector is absent from Appearance");
+        languageSelector->setSelectedId (2);
+        awaitUi ([&] { return RememberUI::language == RememberUI::Language::SpanishSpain && languageSelector->isEnabled(); });
+        check (LibraryStore::readJson (LibraryStore::configFile())["language"].toString() == "es-ES", "Spanish selection was not persisted");
+        check (tabs->getTabNames()[1] == RememberUI::localize ("Appearance"), "Open settings tabs did not follow language");
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        for (auto size : { juce::Point<int> { 640, 480 }, juce::Point<int> { 1024, 768 } })
+        {
+            scene->setSize (size.x, size.y);
+            saveImage (*scene, size.x == 640 ? "spanish-app-minimum.png" : "spanish-app.png", true);
+        }
+        saveImage (translated, "spanish-settings-appearance.png", true);
+        tabs->setCurrentTabIndex (0); saveImage (translated, "spanish-settings-recording.png", true);
+        tabs->setCurrentTabIndex (2); saveImage (translated, "spanish-settings-projects.png", true);
+        WorkflowForm form (RememberUI::tr ("Project details"));
+        form.choice ("status", RememberUI::tr ("Status"), { "Idea", "In progress", "Finished", "Archived" }, "Finished");
+        check (form.choiceValue ("status") == "Finished", "Localized status would be persisted instead of the original identifier");
+        bool saved = false;
+        ProjectScanner::editAsync ([] { return LanguageSettings::save (RememberUI::Language::English); }, [&] (juce::Result result)
+        { check (result.wasOk(), "Cannot simulate an external language change"); saved = true; });
+        awaitUi ([&] { return saved && RememberUI::language == RememberUI::Language::English; }, 5000,
+            "An external shared-config language edit did not reach the open app");
+        check (languageSelector->getSelectedId() == 1 && tabs->getTabNames()[1] == "Appearance", "Open language selector did not synchronize");
+    }
     player->releaseEntry (ProjectScanner::scan()[0].metadataFile);
     check (! openButton->isEnabled() && openButton->getTooltip().isEmpty(), "Clearing selection retained the Open in DAW tooltip");
     check (! assignButton->isEnabled(), "Assign path stayed available after releasing the entry");

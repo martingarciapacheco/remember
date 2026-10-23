@@ -33,8 +33,8 @@ public:
 
     juce::String getTooltip() override
     {
-        return (fullPath.isEmpty() ? "All" : fullPath) + " (" + juce::String (entryCount)
-            + (entryCount == 1 ? " entry)" : " entries)");
+        return (fullPath.isEmpty() ? RememberUI::tr ("All") : fullPath) + " (" + juce::String (entryCount)
+            + (entryCount == 1 ? RememberUI::tr (" entry)") : RememberUI::tr (" entries)"));
     }
 
     void paintItem (juce::Graphics& g, int w, int h) override
@@ -56,7 +56,7 @@ public:
         g.setColour (RememberUI::colour (sel ? Pal::Accent : Pal::Text));
         g.setFont (RememberUI::font (13.0f, fullPath.isEmpty()));
         RememberUI::icon (g, "folder", juce::Rectangle<float> (6, 0, 20, (float) h));
-        g.drawText (displayName, 32, 0, w - 86, h, juce::Justification::centredLeft, true);
+        g.drawText (fullPath.isEmpty() ? juce::String (RememberUI::tr ("All")) : displayName, 32, 0, w - 86, h, juce::Justification::centredLeft, true);
 
         if (entryCount > 0)
         {
@@ -76,16 +76,16 @@ public:
             owner.applyTreeSelection();
             juce::PopupMenu m;
             const bool isRoot = fullPath.isEmpty();
-            m.addItem (1, "New folder...");
+            m.addItem (1, RememberUI::tr ("New folder..."));
             if (! isRoot)
             {
-                m.addItem (4, "New subfolder...");
-                m.addItem (2, "Rename...  (R)");
+                m.addItem (4, RememberUI::tr ("New subfolder..."));
+                m.addItem (2, RememberUI::tr ("Rename...  (R)"));
                 m.addSeparator();
-                m.addItem (3, "Delete folder...");
+                m.addItem (3, RememberUI::tr ("Delete folder..."));
             }
             m.addSeparator();
-            m.addItem (10, "Sort by...");
+            m.addItem (10, RememberUI::tr ("Sort by..."));
 
             auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (&owner);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&owner)
@@ -187,7 +187,7 @@ public:
     bool mightContainSubItems() override { return false; }
     int getItemHeight() const override { return 34; }
     juce::String getUniqueName() const override { return "__SMART__" + id; }
-    juce::String getTooltip() override { return name + " — automatic folder (" + juce::String (matches) + " previews)"; }
+    juce::String getTooltip() override { return name + RememberUI::tr (" — automatic folder (") + juce::String (matches) + RememberUI::tr (" previews)"); }
     void paintItem (juce::Graphics& g, int w, int h) override
     {
         if (isSelected())
@@ -208,7 +208,7 @@ public:
         if (e.mods.isPopupMenu())
         {
             owner.applyTreeSelection();
-            juce::PopupMenu menu; menu.addItem (1, "Edit conditions...");
+            juce::PopupMenu menu; menu.addItem (1, RememberUI::tr ("Edit conditions..."));
             auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (&owner);
             menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&owner)
                 .withTargetScreenArea ({ e.getScreenPosition(), { 1, 1 } }), [safe, identity = id] (int result)
@@ -252,19 +252,19 @@ FoldersSidebarComponent::FoldersSidebarComponent()
 {
     header.setFont (RememberUI::font (13.0f, true));
     header.setBorderSize (juce::BorderSize<int> (0));
-    RememberUI::bindColour (header, juce::Label::textColourId, Pal::Text);
+    RememberUI::bindColour (header, RememberUI::Label::textColourId, Pal::Text);
     addAndMakeVisible (header);
 
-    auto styleBtn = [] (juce::TextButton& b)
+    auto styleBtn = [] (RememberUI::TextButton& b)
     {
-        RememberUI::bindColour (b, juce::TextButton::buttonColourId, Pal::Elevated);
-        RememberUI::bindColour (b, juce::TextButton::textColourOffId, Pal::Subtext);
+        RememberUI::bindColour (b, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+        RememberUI::bindColour (b, RememberUI::TextButton::textColourOffId, Pal::Subtext);
     };
     styleBtn (newRootBtn);
     styleBtn (sortBtn);
-    RememberUI::iconButton (newRootBtn, "plus", "New folder");
-    newRootBtn.setTooltip ("New folder alongside the selected folder");
-    sortBtn   .setTooltip ("Sort folders");
+    RememberUI::iconButton (newRootBtn, "plus", RememberUI::tr ("New folder"));
+    newRootBtn.setTooltip (RememberUI::tr ("New folder alongside the selected folder"));
+    sortBtn   .setTooltip (RememberUI::tr ("Sort folders"));
     newRootBtn.onClick = [this]
     {
         const auto slash = selectedFolder.lastIndexOfChar ('/');
@@ -273,8 +273,8 @@ FoldersSidebarComponent::FoldersSidebarComponent()
     sortBtn   .onClick = [this] { chooseSortMode(); };
     addAndMakeVisible (newRootBtn);
     addAndMakeVisible (sortBtn);
-    RememberUI::iconButton (smartFolderBtn, "smart-folder", "Create smart folder");
-    smartFolderBtn.setTooltip ("Create an automatic folder using filter conditions");
+    RememberUI::iconButton (smartFolderBtn, "smart-folder", RememberUI::tr ("Create smart folder"));
+    smartFolderBtn.setTooltip (RememberUI::tr ("Create an automatic folder using filter conditions"));
     smartFolderBtn.onClick = [this] { if (onCreateSmartFolder) onCreateSmartFolder(); };
     addAndMakeVisible (smartFolderBtn);
 
@@ -284,7 +284,7 @@ FoldersSidebarComponent::FoldersSidebarComponent()
     tree.setIndentSize (16);
     tree.setMultiSelectEnabled (true);
     tree.addMouseListener (this, true);
-    tree.setTooltip ("Alt-click to select a range; Ctrl-click to add or remove folders");
+    tree.setTooltip (RememberUI::tr ("Alt-click to select a range; Ctrl-click to add or remove folders"));
     RememberUI::bindColour (tree, juce::TreeView::backgroundColourId, Pal::Surface);
     addAndMakeVisible (tree);
 
@@ -554,7 +554,7 @@ void FoldersSidebarComponent::rebuildTree()
     rootItem->clearSubItems();
 
     // 1) "All" pseudo-folder
-    auto* allItem = new FolderItem (*this, "All", {}, (int) allEntries.size());
+    auto* allItem = new FolderItem (*this, RememberUI::tr ("All"), {}, (int) allEntries.size());
     rootItem->addSubItem (allItem);
     bool smartStillExists = false;
     if (auto* values = publication->smartCollections.getArray())
@@ -625,12 +625,12 @@ void FoldersSidebarComponent::rebuildTree()
 void FoldersSidebarComponent::promptNewSubfolder (const juce::String& parentPath)
 {
     auto* aw = new juce::AlertWindow (
-        parentPath.isEmpty() ? "New folder" : ("New subfolder under \"" + parentPath + "\""),
-        "Folder name:",
+        parentPath.isEmpty() ? RememberUI::tr ("New folder") : (RememberUI::tr ("New subfolder under \"") + parentPath + "\""),
+        RememberUI::tr ("Folder name:"),
         juce::AlertWindow::NoIcon);
     aw->addTextEditor ("name", {}, {});
-    aw->addButton ("Create", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->addButton (RememberUI::tr ("Create"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (RememberUI::tr ("Cancel"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
     juce::Component::SafePointer<FoldersSidebarComponent> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create (
@@ -660,12 +660,12 @@ void FoldersSidebarComponent::promptRename (const juce::String& path)
     auto parent = path.upToLastOccurrenceOf ("/", false, false);
     if (parent == path) parent = {};   // no slash → top-level
 
-    auto* aw = new juce::AlertWindow ("Rename folder",
-                                      "New name for \"" + leaf + "\":",
+    auto* aw = new juce::AlertWindow (RememberUI::tr ("Rename folder"),
+                                      RememberUI::tr ("New name for \"") + leaf + "\":",
                                       juce::AlertWindow::NoIcon);
     aw->addTextEditor ("name", leaf, {});
-    aw->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    aw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    aw->addButton (RememberUI::tr ("Rename"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+    aw->addButton (RememberUI::tr ("Cancel"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
     juce::Component::SafePointer<FoldersSidebarComponent> safe (this);
     aw->enterModalState (true, juce::ModalCallbackFunction::create (
@@ -709,13 +709,12 @@ void FoldersSidebarComponent::confirmDeleteFolders (juce::StringArray paths)
     juce::AlertWindow::showAsync (
         juce::MessageBoxOptions()
             .withIconType (juce::MessageBoxIconType::WarningIcon)
-            .withTitle (single ? "Delete folder?" : "Delete folders?")
-            .withMessage ((single ? "Remove folder \"" + paths[0] + "\"" : "Remove these folders:\n" + paths.joinIntoString ("\n"))
-                          + " (and all their subfolders) from "
-                          "the sidebar?\n\nEntries inside are NOT deleted — they just "
-                          "lose this folder tag.")
-            .withButton ("Delete")
-            .withButton ("Cancel"),
+            .withTitle (single ? RememberUI::tr ("Delete folder?") : RememberUI::tr ("Delete folders?"))
+            .withMessage (single
+                ? RememberUI::format ("Do you want to remove the folder \"{name}\" and all its subfolders from the sidebar?\n\nRecordings inside are NOT deleted. They only lose this folder tag.", { { "{name}", paths[0] } })
+                : RememberUI::format ("Do you want to remove these folders and all their subfolders from the sidebar?\n\n{names}\n\nRecordings inside are NOT deleted. They only lose these folder tags.", { { "{names}", paths.joinIntoString ("\n") } }))
+            .withButton (RememberUI::tr ("Delete"))
+            .withButton (RememberUI::tr ("Cancel")),
         [paths, safe] (int result)
         {
             if (result != 1 || safe == nullptr) return;
@@ -744,11 +743,11 @@ void FoldersSidebarComponent::chooseSortMode()
     // can't garble it on its way to JUCE's wide-string representation.
     const auto arrow = juce::String::charToString ((juce::juce_wchar) 0x2192);   // →
 
-    m.addItem (1, "Name (A " + arrow + " Z)",  true, cur == S::NameAsc);
-    m.addItem (2, "Name (Z " + arrow + " A)",  true, cur == S::NameDesc);
-    m.addItem (3, "Newest entry first",        true, cur == S::DateDesc);
-    m.addItem (4, "Most entries first",        true, cur == S::CountDesc);
-    m.addItem (5, "Manual order",              true, cur == S::Manual);
+    m.addItem (1, RememberUI::tr ("Name (A ") + arrow + " Z)",  true, cur == S::NameAsc);
+    m.addItem (2, RememberUI::tr ("Name (Z ") + arrow + " A)",  true, cur == S::NameDesc);
+    m.addItem (3, RememberUI::tr ("Newest entry first"),        true, cur == S::DateDesc);
+    m.addItem (4, RememberUI::tr ("Most entries first"),        true, cur == S::CountDesc);
+    m.addItem (5, RememberUI::tr ("Manual order"),              true, cur == S::Manual);
 
     juce::Component::SafePointer<FoldersSidebarComponent> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (sortBtn),
@@ -784,7 +783,7 @@ void FoldersSidebarComponent::runFolderEdit (std::function<juce::Result()> work,
             safe->pendingMoves.erase (std::remove (safe->pendingMoves.begin(), safe->pendingMoves.end(),
                 std::make_pair (oldPath, newPath)), safe->pendingMoves.end());
             juce::AlertWindow::showMessageBoxAsync (
-                juce::AlertWindow::WarningIcon, "Cannot update folder", result.getErrorMessage());
+                juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot update folder"), RememberUI::diagnostic (result.getErrorMessage()));
         }
         safe->refresh();
         if (safe->onFoldersChanged) safe->onFoldersChanged();

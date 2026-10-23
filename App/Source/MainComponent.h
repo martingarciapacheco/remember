@@ -48,8 +48,8 @@ private:
     WaveformPlayerComponent player;
     DawLauncher dawLauncher;
 
-    juce::TextButton settingsButton { "Settings" };
-    juce::TextButton statisticsButton { "Statistics" };
+    RememberUI::TextButton settingsButton { RememberUI::tr ("Settings") };
+    RememberUI::TextButton statisticsButton { RememberUI::tr ("Statistics") };
 
     static constexpr int kPlayerHeight  = 184;
     static constexpr int kSidebarWidth  = 216;

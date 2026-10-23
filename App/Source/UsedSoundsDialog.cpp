@@ -10,15 +10,15 @@ struct UsedSoundsDialog::Workspace
 class UsedSoundsDialog::Row final : public juce::Component
 {
 public:
-    class DragButton final : public juce::TextButton
+    class DragButton final : public RememberUI::TextButton
     {
     public:
-        DragButton() : juce::TextButton ("Drag") { setTitle ("Drag file to a folder"); setTooltip ("Drag a copy to Explorer or another application"); }
+        DragButton() : RememberUI::TextButton (RememberUI::tr ("Drag")) { setTitle (RememberUI::tr ("Drag file to a folder")); setTooltip (RememberUI::tr ("Drag a copy to Explorer or another application")); }
         std::function<void()> begin;
-        void mouseDown (const juce::MouseEvent& e) override { started = false; juce::TextButton::mouseDown (e); }
+        void mouseDown (const juce::MouseEvent& e) override { started = false; RememberUI::TextButton::mouseDown (e); }
         void mouseDrag (const juce::MouseEvent& e) override
         {
-            juce::TextButton::mouseDrag (e);
+            RememberUI::TextButton::mouseDrag (e);
             if (! started && e.mods.isLeftButtonDown() && e.getDistanceFromDragStart() >= 6 && isEnabled())
             { started = true; if (begin) begin(); }
         }
@@ -27,14 +27,14 @@ public:
     } drag;
     explicit Row (UsedSoundsDialog& owner) : dialog (owner)
     {
-        RememberUI::iconButton (play, "play", "Audition sound");
-        for (auto* button : std::initializer_list<juce::TextButton*> { &play, &save, &locateButton, &drag })
+        RememberUI::iconButton (play, "play", RememberUI::tr ("Audition sound"));
+        for (auto* button : std::initializer_list<RememberUI::TextButton*> { &play, &save, &locateButton, &drag })
         {
-            RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
-            RememberUI::bindColour (*button, juce::TextButton::textColourOffId, Pal::Text);
+            RememberUI::bindColour (*button, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+            RememberUI::bindColour (*button, RememberUI::TextButton::textColourOffId, Pal::Text);
             addAndMakeVisible (*button);
         }
-        save.setTitle ("Save a copy"); locateButton.setTitle ("Locate original sample");
+        save.setTitle (RememberUI::tr ("Save a copy")); locateButton.setTitle (RememberUI::tr ("Locate original sample"));
     }
     void bind (size_t value, bool selected)
     {
@@ -46,7 +46,7 @@ public:
         midiRow = sound.kind == UsedSounds::Kind::Midi;
         generatorRow = sound.kind == UsedSounds::Kind::Generator;
         if (generatorRow) setDescription (sound.channelName + ", " + sound.instrument + ", " + presetDetail()
-            + ", " + (sound.inPlaylist ? "In playlist" : "Loaded in project") + ". Last saved project; parameters may have changed after loading the preset.");
+            + ", " + (sound.inPlaylist ? RememberUI::tr ("In playlist") : RememberUI::tr ("Loaded in project")) + RememberUI::tr (". Last saved project; parameters may have changed after loading the preset."));
         missingSample = missing;
         play.setVisible (sound.kind != UsedSounds::Kind::Generator);
         play.setEnabled (! missing && (bool) dialog.onAudition);
@@ -54,9 +54,9 @@ public:
         save.setVisible (true);
         drag.setVisible (true);
         drag.setEnabled (file != juce::File{}); save.setEnabled (file != juce::File{});
-        const auto exportHint = file != juce::File{} ? juce::String ("Drag a copy to Explorer or another application")
-            : sound.exportError.isNotEmpty() ? sound.exportError : "Original sample is unavailable";
-        drag.setTooltip (exportHint); save.setTooltip (file != juce::File{} ? "Save a copy" : exportHint);
+        const auto exportHint = file != juce::File{} ? juce::String (RememberUI::tr ("Drag a copy to Explorer or another application"))
+            : sound.exportError.isNotEmpty() ? sound.exportError : RememberUI::tr ("Original sample is unavailable");
+        drag.setTooltip (exportHint); save.setTooltip (file != juce::File{} ? RememberUI::tr ("Save a copy") : exportHint);
         play.onClick = [this] { dialog.audition (index); };
         save.onClick = [this] { dialog.exportFile (index, false, this); };
         drag.begin = [this] { dialog.exportFile (index, true, &drag); };
@@ -88,9 +88,9 @@ public:
         g.setFont (RememberUI::font (14, true)); g.setColour (RememberUI::colour (Pal::Text));
         g.drawText (sound.name, generatorRow ? 12 : 52, generatorRow ? 6 : 10, juce::jmax (0, textRight - (generatorRow ? 12 : 52)), 21, juce::Justification::centredLeft, true);
         g.setFont (RememberUI::font (12)); g.setColour (RememberUI::colour (Pal::Subtext));
-        const auto detail = sound.kind == UsedSounds::Kind::Sample ? sound.channelName + " / " + (sound.sample == juce::File{} ? "Sample missing" : sound.sample.getFileExtension().substring (1).toUpperCase())
-            : sound.kind == UsedSounds::Kind::Generator ? sound.channelName + " / " + (sound.inPlaylist ? "In playlist" : "Loaded in project")
-            : (sound.sourcePath.isNotEmpty() ? "Sample audition" : "Default instrument") + juce::String (" / ") + juce::String ((int) sound.notes.size()) + " notes";
+        const auto detail = sound.kind == UsedSounds::Kind::Sample ? sound.channelName + " / " + (sound.sample == juce::File{} ? RememberUI::tr ("Sample missing") : sound.sample.getFileExtension().substring (1).toUpperCase())
+            : sound.kind == UsedSounds::Kind::Generator ? sound.channelName + " / " + (sound.inPlaylist ? RememberUI::tr ("In playlist") : RememberUI::tr ("Loaded in project"))
+            : (sound.sourcePath.isNotEmpty() ? RememberUI::tr ("Sample audition") : RememberUI::tr ("Default instrument")) + juce::String (" / ") + juce::String ((int) sound.notes.size()) + RememberUI::tr (" notes");
         if (generatorRow)
         {
             g.setColour (RememberUI::colour (Pal::Text));
@@ -133,49 +133,49 @@ private:
     juce::String presetDetail() const
     {
         const auto& preset = dialog.data->sounds[index].presetName;
-        return preset.isNotEmpty() ? "Preset: " + preset : juce::String ("Preset not available");
+        return preset.isNotEmpty() ? RememberUI::tr ("Preset: ") + preset : juce::String (RememberUI::tr ("Preset not available"));
     }
     UsedSoundsDialog& dialog;
     size_t index = 0; bool isSelected = false, dragged = false;
     bool midiRow = false, generatorRow = false, missingSample = false;
     int actionWidth() const { return 168 + (missingSample ? 80 : 0); }
-    juce::TextButton play, save { "Save copy..." }, locateButton { "Locate..." };
+    RememberUI::TextButton play, save { RememberUI::tr ("Save copy...") }, locateButton { RememberUI::tr ("Locate...") };
 };
 
 UsedSoundsDialog::UsedSoundsDialog (ProjectEntry source, Audition auditionCallback, std::function<void()> stopCallback, std::function<void()> closeCallback, WaveformPlayerComponent* player, bool persistPlaybackSettings)
     : entry (std::move (source)), onAudition (std::move (auditionCallback)), onStop (std::move (stopCallback)), onClose (std::move (closeCallback)), workspace (std::make_shared<Workspace>())
 {
     setSize (840, 620);
-    title.setText ("Used sounds", juce::dontSendNotification); title.setFont (RememberUI::font (22, true));
-    projectLabel.setText (entry.name + " / Saved FL Studio project", juce::dontSendNotification);
+    title.setText (RememberUI::tr ("Used sounds"), juce::dontSendNotification); title.setFont (RememberUI::font (22, true));
+    projectLabel.setText (entry.name + RememberUI::tr (" / Saved FL Studio project"), juce::dontSendNotification);
     projectLabel.setTooltip (entry.projectPath);
-    hint.setText ("MIDI exports contain notes. Audio exports copy the original sample.", juce::dontSendNotification);
+    hint.setText (RememberUI::tr ("MIDI exports contain notes. Audio exports copy the original sample."), juce::dontSendNotification);
     for (auto* label : { &title, &projectLabel, &status, &hint })
     {
-        RememberUI::bindColour (*label, juce::Label::textColourId, label == &title ? Pal::Text : Pal::Subtext);
+        RememberUI::bindColour (*label, RememberUI::Label::textColourId, label == &title ? Pal::Text : Pal::Subtext);
         if (label != &title) label->setFont (RememberUI::font (12));
         label->setMinimumHorizontalScale (1.0f); label->setBorderSize (juce::BorderSize<int> (0)); addAndMakeVisible (*label);
     }
     status.setJustificationType (juce::Justification::topLeft);
     for (auto* button : { &samples, &midis, &plugins, &refresh, &stop, &close })
     {
-        RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
-        RememberUI::bindColour (*button, juce::TextButton::buttonOnColourId, Pal::Action);
-        RememberUI::bindColour (*button, juce::TextButton::textColourOffId, Pal::Text);
-        RememberUI::bindColour (*button, juce::TextButton::textColourOnId, Pal::OnAction);
+        RememberUI::bindColour (*button, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+        RememberUI::bindColour (*button, RememberUI::TextButton::buttonOnColourId, Pal::Action);
+        RememberUI::bindColour (*button, RememberUI::TextButton::textColourOffId, Pal::Text);
+        RememberUI::bindColour (*button, RememberUI::TextButton::textColourOnId, Pal::OnAction);
         button->setTitle (button->getButtonText()); addAndMakeVisible (*button);
     }
     samples.onClick = [this] { setCategory (UsedSounds::Kind::Sample); };
     midis.onClick = [this] { setCategory (UsedSounds::Kind::Midi); };
     plugins.onClick = [this] { setCategory (UsedSounds::Kind::Generator); };
     refresh.onClick = [this] { load(); };
-    stop.onClick = [this] { stopAudition(); setStatus ("Stopped"); };
+    stop.onClick = [this] { stopAudition(); setStatus (RememberUI::tr ("Stopped")); };
     stop.setEnabled ((bool) onStop);
     close.onClick = [this] { if (auto* window = findParentComponentOfClass<juce::DialogWindow>()) window->exitModalState (0); };
-    scope.addItem ("In playlist", 1); scope.addItem ("All loaded sounds", 2);
-    scope.setTitle ("Sound usage"); scope.setSelectedId (1, juce::dontSendNotification);
+    scope.addItem (RememberUI::tr ("In playlist"), 1); scope.addItem (RememberUI::tr ("All loaded sounds"), 2);
+    scope.setTitle (RememberUI::tr ("Sound usage")); scope.setSelectedId (1, juce::dontSendNotification);
     scope.onChange = [this] { filter(); }; addAndMakeVisible (scope);
-    list.setModel (this); list.setRowHeight (RememberUI::soundRowHeight); list.setTitle ("Project sounds");
+    list.setModel (this); list.setRowHeight (RememberUI::soundRowHeight); list.setTitle (RememberUI::tr ("Project sounds"));
     RememberUI::bindColour (list, juce::ListBox::backgroundColourId, Pal::Content); addAndMakeVisible (list);
     if (player != nullptr)
     {
@@ -211,7 +211,7 @@ void UsedSoundsDialog::setStatus (const juce::String& message)
 void UsedSoundsDialog::load()
 {
     loaded = false; refresh.setEnabled (false); scope.setEnabled (false);
-    visible.clear(); list.updateContent(); list.setVisible (false); setStatus ("Reading saved project...");
+    visible.clear(); list.updateContent(); list.setVisible (false); setStatus (RememberUI::tr ("Reading saved project..."));
     const auto request = generation->fetch_add (1) + 1; const auto token = generation;
     stopAudition();
     auto next = std::make_shared<UsedSounds::Inventory>();
@@ -228,7 +228,7 @@ void UsedSoundsDialog::load()
         const auto key = source.keyOverride.isNotEmpty() ? source.keyOverride : source.key;
         for (auto& sound : next->sounds)
         {
-            if (cancel()) return juce::Result::fail ("Cancelled");
+            if (cancel()) return juce::Result::fail (RememberUI::tr ("Cancelled"));
             juce::File file;
             if (sound.kind == UsedSounds::Kind::Sample) file = sound.sample;
             else if (sound.kind == UsedSounds::Kind::Midi || sound.kind == UsedSounds::Kind::Generator)
@@ -239,9 +239,9 @@ void UsedSoundsDialog::load()
                 sound.presetData.reset(); // The staging file owns the exported state now.
                 if (result.failed())
                 {
-                    file = {}; sound.exportError = result.getErrorMessage();
+                    file = {}; sound.exportError = RememberUI::diagnostic (result.getErrorMessage());
                     next->warnings.addIfNotAlreadyThere ((sound.kind == UsedSounds::Kind::Generator
-                        ? "Some preset exports are unavailable: " : "Some MIDI exports are unavailable: ") + sound.exportError);
+                        ? RememberUI::tr ("Some preset exports are unavailable: ") : RememberUI::tr ("Some MIDI exports are unavailable: ")) + sound.exportError);
                 }
             }
             files->push_back (file);
@@ -268,8 +268,8 @@ void UsedSoundsDialog::setCategory (UsedSounds::Kind kind)
     midis.setToggleState (kind == UsedSounds::Kind::Midi, juce::dontSendNotification);
     plugins.setToggleState (kind == UsedSounds::Kind::Generator, juce::dontSendNotification);
     hint.setText (kind == UsedSounds::Kind::Generator
-        ? "Drag copies the saved plugin state as an FL Studio preset (.fst)."
-        : "MIDI exports contain notes. Audio exports copy the original sample.", juce::dontSendNotification);
+        ? RememberUI::tr ("Drag copies the saved plugin state as an FL Studio preset (.fst).")
+        : RememberUI::tr ("MIDI exports contain notes. Audio exports copy the original sample."), juce::dontSendNotification);
     filter();
 }
 void UsedSoundsDialog::filter()
@@ -285,12 +285,12 @@ void UsedSoundsDialog::filter()
         if (sound.kind == category) visible.push_back (i);
     }
     const bool available = loaded && data->result.wasOk();
-    samples.setButtonText ("Samples (" + (available ? juce::String (sampleCount) : "--") + ")");
-    midis.setButtonText ("MIDI (" + (available ? juce::String (midiCount) : "--") + ")");
-    plugins.setButtonText ("Generators (" + (available ? juce::String (generatorCount) : "--") + ")");
+    samples.setButtonText (RememberUI::tr ("Samples (") + (available ? juce::String (sampleCount) : "--") + ")");
+    midis.setButtonText (RememberUI::tr ("MIDI (") + (available ? juce::String (midiCount) : "--") + ")");
+    plugins.setButtonText (RememberUI::tr ("Generators (") + (available ? juce::String (generatorCount) : "--") + ")");
     list.deselectAllRows(); list.updateContent(); list.repaint();
     list.setVisible (available && ! visible.empty());
-    if (loaded) setStatus (data->result.failed() ? data->result.getErrorMessage() : data->warnings.joinIntoString ("\n"));
+    if (loaded) setStatus (data->result.failed() ? RememberUI::diagnostic (data->result.getErrorMessage()) : data->warnings.joinIntoString ("\n"));
     repaint();
 }
 juce::Component* UsedSoundsDialog::refreshComponentForRow (int row, bool selected, juce::Component* existing)
@@ -313,18 +313,18 @@ void UsedSoundsDialog::audition (size_t index)
     UsedSounds::Sound sound; sound.kind = selected.kind; sound.name = selected.name;
     sound.sample = selected.sample; sound.sourcePath = selected.sourcePath; sound.rootNote = selected.rootNote;
     stopAudition(); const auto token = playGeneration; const auto request = token->load();
-    setStatus ("Preparing " + sound.name + "...");
+    setStatus (RememberUI::tr ("Preparing ") + sound.name + "...");
     auto factory = std::make_shared<std::function<std::unique_ptr<juce::AudioFormatReader>()>>();
     const auto bpm = entry.bpmOverride > 0 ? entry.bpmOverride : data->bpm > 0 ? data->bpm : entry.bpm;
     ProjectScanner::queryAsync ([sound, notes, factory, token, request, bpm]
     {
         const auto cancelled = [token, request] { return token->load() != request; };
-        if (cancelled()) return juce::Result::fail ("Cancelled");
-        if (sound.kind == UsedSounds::Kind::Sample) return sound.sample.existsAsFile() ? juce::Result::ok() : juce::Result::fail ("Sample is missing. Locate its original file.");
+        if (cancelled()) return juce::Result::fail (RememberUI::tr ("Cancelled"));
+        if (sound.kind == UsedSounds::Kind::Sample) return sound.sample.existsAsFile() ? juce::Result::ok() : juce::Result::fail (RememberUI::tr ("Sample is missing. Locate its original file."));
         if (notes->empty() || ! std::isfinite (bpm) || bpm < 10 || bpm > 1000)
-            return juce::Result::fail ("No playable notes or project tempo.");
+            return juce::Result::fail (RememberUI::tr ("No playable notes or project tempo."));
         if (sound.sourcePath.isNotEmpty() && ! sound.sample.existsAsFile())
-            return juce::Result::fail ("Locate the original sample to audition this MIDI.");
+            return juce::Result::fail (RememberUI::tr ("Locate the original sample to audition this MIDI."));
         const auto settings = ProjectScanner::readSettings(); if (settings.result.failed()) return settings.result;
         *factory = [sound, notes, bpm, voice = UsedSounds::voiceFromId (settings.midiPreviewVoice)]
         { return UsedSounds::createPreviewReader (sound, notes, bpm, voice); };
@@ -332,13 +332,13 @@ void UsedSoundsDialog::audition (size_t index)
     }, [safe = juce::Component::SafePointer<UsedSoundsDialog> (this), token, request, factory, sound, notes, bpm] (juce::Result result)
     {
         if (! safe || token->load() != request) return;
-        if (result.failed()) { safe->setStatus (result.getErrorMessage()); return; }
+        if (result.failed()) { safe->setStatus (RememberUI::diagnostic (result.getErrorMessage())); return; }
         auto preview = safe->entry; preview.previewOgg = sound.kind == UsedSounds::Kind::Midi ? juce::File{} : sound.sample; preview.name = sound.name;
         if (sound.kind == UsedSounds::Kind::Midi)
         { preview.auditionReader = *factory; preview.auditionNotes = notes; }
         preview.bpm = bpm; preview.bpmOverride = bpm;
         preview.storageError.clear(); preview.previewLocked = false;
-        safe->setStatus ("Playing " + sound.name + (sound.kind == UsedSounds::Kind::Midi ? " / Basic audition, up to 30 seconds" : ""));
+        safe->setStatus (RememberUI::tr ("Playing ") + sound.name + (sound.kind == UsedSounds::Kind::Midi ? RememberUI::tr (" / Basic audition, up to 30 seconds") : ""));
         if (safe->onAudition) safe->onAudition (preview);
     });
 }
@@ -351,7 +351,7 @@ void UsedSoundsDialog::locate (size_t index)
 {
     if (index >= data->sounds.size()) return;
     const auto path = data->sounds[index].sourcePath;
-    chooser = std::make_unique<juce::FileChooser> ("Locate original sample", juce::File{}, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+    chooser = std::make_unique<juce::FileChooser> (RememberUI::tr ("Locate original sample"), juce::File{}, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [safe = juce::Component::SafePointer<UsedSoundsDialog> (this), path, token = generation, request = generation->load()] (const juce::FileChooser& selected)
         {
@@ -363,7 +363,7 @@ void UsedSoundsDialog::locate (size_t index)
                     safe->data->sounds[i].sample = file;
                     if (safe->data->sounds[i].kind == UsedSounds::Kind::Sample) safe->exports[i] = file;
                 }
-            safe->list.updateContent(); safe->list.repaint(); safe->setStatus ("Sample located for this session. The FL Studio project was not changed.");
+            safe->list.updateContent(); safe->list.repaint(); safe->setStatus (RememberUI::tr ("Sample located for this session. The FL Studio project was not changed."));
         });
 }
 void UsedSoundsDialog::exportFile (size_t index, bool drag, juce::Component* source)
@@ -373,19 +373,19 @@ void UsedSoundsDialog::exportFile (size_t index, bool drag, juce::Component* sou
     if (drag)
     {
         if (! startFileDrag ({ file.getFullPathName() }, false, source, [lease] {}))
-            setStatus ("Cannot start drag. Use Save copy instead.");
+            setStatus (RememberUI::tr ("Cannot start drag. Use Save copy instead."));
         return;
     }
-    chooser = std::make_unique<juce::FileChooser> ("Save a copy", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (file.getFileName()), "*" + file.getFileExtension());
+    chooser = std::make_unique<juce::FileChooser> (RememberUI::tr ("Save a copy"), juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (file.getFileName()), "*" + file.getFileExtension());
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safe = juce::Component::SafePointer<UsedSoundsDialog> (this), file, lease] (const juce::FileChooser& selected)
         {
             const auto target = selected.getResult(); if (target == juce::File{} || ! safe) return;
             ProjectScanner::queryAsync ([file, target, lease]
             {
-                if (file == target) return juce::Result::fail ("Choose a different destination for the copy.");
-                return file.copyFileTo (target) ? juce::Result::ok() : juce::Result::fail ("Cannot save the copy. Check the destination.");
-            }, [safe, target] (juce::Result result) { if (safe) safe->setStatus (result.wasOk() ? "Saved " + target.getFullPathName() : result.getErrorMessage()); });
+                if (file == target) return juce::Result::fail (RememberUI::tr ("Choose a different destination for the copy."));
+                return file.copyFileTo (target) ? juce::Result::ok() : juce::Result::fail (RememberUI::tr ("Cannot save the copy. Check the destination."));
+            }, [safe, target] (juce::Result result) { if (safe) safe->setStatus (result.wasOk() ? RememberUI::tr ("Saved ") + target.getFullPathName() : RememberUI::diagnostic (result.getErrorMessage())); });
         });
 }
 void UsedSoundsDialog::paint (juce::Graphics& g)
@@ -395,14 +395,14 @@ void UsedSoundsDialog::paint (juce::Graphics& g)
     {
         auto area = list.getBounds().reduced (24);
         g.setFont (RememberUI::font (16, true)); g.setColour (RememberUI::colour (Pal::Error));
-        g.drawText ("Could not read used sounds", area.removeFromTop (30), juce::Justification::centred);
+        g.drawText (RememberUI::tr ("Could not read used sounds"), area.removeFromTop (30), juce::Justification::centred);
         g.setFont (RememberUI::font (13)); g.setColour (RememberUI::colour (Pal::Subtext));
-        g.drawFittedText (data->result.getErrorMessage(), area, juce::Justification::centredTop, 5, 1.0f);
+        g.drawFittedText (RememberUI::diagnostic (data->result.getErrorMessage()), area, juce::Justification::centredTop, 5, 1.0f);
     }
     if (loaded && data->result.wasOk() && visible.empty())
     {
         g.setFont (RememberUI::font (14)); g.setColour (RememberUI::colour (Pal::Subtext));
-        g.drawText ("No sounds in this view. Try All loaded sounds.", list.getBounds().reduced (12), juce::Justification::centred);
+        g.drawText (RememberUI::tr ("No sounds in this view. Try All loaded sounds."), list.getBounds().reduced (12), juce::Justification::centred);
     }
 }
 void UsedSoundsDialog::resized()
@@ -435,7 +435,7 @@ void UsedSoundsDialog::launch (ProjectEntry entry, Audition audition, std::funct
     juce::DialogWindow::LaunchOptions options;
     auto* zoom = new RememberUI::ZoomView (std::make_unique<UsedSoundsDialog> (std::move (entry), std::move (audition), std::move (stop), std::move (close), player));
     zoom->setSize (840, 620); options.content.setOwned (zoom);
-    options.dialogTitle = "Used sounds"; options.useNativeTitleBar = true; options.escapeKeyTriggersCloseButton = true;
+    options.dialogTitle = RememberUI::tr ("Used sounds"); options.useNativeTitleBar = true; options.escapeKeyTriggersCloseButton = true;
     options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep); options.resizable = true;
     if (auto* window = RememberUI::launchDialog (options)) window->setResizeLimits (640, 480, 1600, 1200);
 }

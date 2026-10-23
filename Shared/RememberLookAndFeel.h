@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "RememberTypography.h"
 #include "AppearanceMode.h"
+#include "LanguageSync.h"
 
 // Shared semantic tokens for the native app, plugin and their dialogs.
 namespace Pal
@@ -44,12 +45,12 @@ inline int validZoom (int percent)
     for (auto value : zoomPercentages) if (value == percent) return value;
     return 100;
 }
-inline void populateZoom (juce::ComboBox& combo)
+inline void populateZoom (ComboBox& combo)
 {
-    combo.setTitle ("Interface zoom");
-    combo.setTooltip ("Scale text and controls. 100% restores the default size.");
+    combo.setTitle (tr ("Interface zoom"));
+    combo.setTooltip (tr ("Scale text and controls. 100% restores the default size."));
     for (auto value : zoomPercentages)
-        combo.addItem (juce::String (value) + (value == 100 ? "% (default)" : "%"), value);
+        combo.addItem (juce::String (value) + (value == 100 ? tr ("% (default)") : "%"), value);
 }
 struct AppZoom final : juce::ChangeBroadcaster
 {
@@ -173,6 +174,14 @@ inline void placeholder (juce::TextEditor& editor, const juce::String& text, uin
     editor.getProperties().set ("rememberPlaceholder", (int) token);
     editor.setTextToShowWhenEmpty (text, colour (token));
 }
+inline void placeholder (juce::TextEditor& editor, const LocalizedText& text, uint32_t token)
+{
+    editor.getProperties().set ("rememberPlaceholder", (int) token);
+    if (auto* localized = dynamic_cast<TextEditor*> (&editor)) localized->setTextToShowWhenEmpty (text, colour (token));
+    else editor.setTextToShowWhenEmpty (text.display, colour (token));
+}
+inline void placeholder (juce::TextEditor& editor, const char* text, uint32_t token)
+{ placeholder (editor, juce::String (text), token); }
 inline void refreshColours (juce::Component& component)
 {
     const auto properties = component.getProperties();
@@ -356,12 +365,22 @@ inline void iconButton (juce::TextButton& button, const juce::String& kind, cons
     button.setTooltip (title);
 }
 
+inline void iconButton (juce::TextButton& button, const juce::String& kind, const LocalizedText& title)
+{
+    button.getProperties().set ("rememberIcon", kind);
+    if (auto* localized = dynamic_cast<LocalizedControl<juce::TextButton>*> (&button))
+    { localized->setTitle (title); localized->setDescription (title); localized->setTooltip (title); }
+    else { button.setTitle (title.display); button.setDescription (title.display); button.setTooltip (title.display); }
+}
+inline void iconButton (juce::TextButton& button, const juce::String& kind, const char* title)
+{ iconButton (button, kind, juce::String (title)); }
+
 // Normal activation retains JUCE's press/release and keyboard behaviour.
 // A context click is handled separately and never activates the main action.
-class ContextMenuButton : public juce::TextButton
+class ContextMenuButton : public TextButton
 {
 public:
-    using juce::TextButton::TextButton;
+    using RememberUI::TextButton::LocalizedButton;
     std::function<void()> onContextMenu;
     void mouseDown (const juce::MouseEvent& event) override
     {
@@ -393,8 +412,8 @@ public:
                       : typeIn == juce::DocumentWindow::minimiseButton ? "Minimise" : "Maximise or restore"),
               type (typeIn)
         {
-            setTitle (getName());
-            setTooltip (getName());
+            setTitle (tr (getName()));
+            setTooltip (tr (getName()));
             setWantsKeyboardFocus (true);
         }
         void paintButton (juce::Graphics& g, bool over, bool down) override
@@ -431,6 +450,7 @@ public:
         }
     private:
         int type;
+        LanguageCallback languageUpdates { [this] { setTitle (tr (getName())); setTooltip (tr (getName())); } };
     };
 public:
     void drawDocumentWindowTitleBar (juce::DocumentWindow&, juce::Graphics& g,
@@ -741,13 +761,15 @@ private:
 
 // Each root owns a reference, including detached test components and dialogs.
 // Never change JUCE's global LookAndFeel: a plugin shares its process with a host.
-struct Style final
+struct Style final : private LanguageListener
 {
     explicit Style (juce::Component& c) : owner (c)
     { roots().add (&owner); owner.setLookAndFeel (&look.get()); }
     ~Style() { roots().removeFirstMatchingValue (&owner); owner.setLookAndFeel (nullptr); }
     static juce::Array<juce::Component*>& roots()
     { static juce::Array<juce::Component*> values; return values; }
+    void languageChanged() override { owner.sendLookAndFeelChange(); owner.repaint(); }
+    juce::SharedResourcePointer<LanguageSync> languageSync;
     juce::SharedResourcePointer<SystemAppearance> systemAppearance;
     juce::SharedResourcePointer<LookAndFeel> look;
     juce::Component& owner;

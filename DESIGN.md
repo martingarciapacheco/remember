@@ -1,5 +1,14 @@
 # Remember interface design
 
+Settings > Appearance includes a shared language selector: English and
+Español (España). Persist `language` (`en` / `es-ES`) independently with a worker-only
+atomic config patch, and update open app/plugin interfaces on the message thread.
+Keep the language names recognisable in either interface language. Cancel retains
+the saved language, like appearance. Translate explicit interface text, tooltips,
+accessibility and diagnostic presentation through `Shared/RememberLanguage.h`;
+preserve project names, paths, tags, notes and stable stored choice identifiers.
+Use the native localized controls alongside the shared semantic LookAndFeel.
+
 Statistics is an accessible 34-pixel rising-chart vector button immediately before
 Settings in the app header, separated by eight pixels. Its native resizable window
 contains Samples (top 1000), Instruments (top 50) and Effects (top 50), with name

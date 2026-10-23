@@ -80,10 +80,10 @@ private:
     std::vector<std::pair<juce::String, juce::String>> pendingMoves;
     std::unique_ptr<TreeRootItem> rootItem;
 
-    juce::Label      header { {}, "Folders" };
-    juce::TextButton newRootBtn { "+" };
-    juce::TextButton smartFolderBtn { "Create smart folder" };
-    juce::TextButton sortBtn    { "Sort" };
+    RememberUI::Label      header { {}, RememberUI::tr ("Folders") };
+    RememberUI::TextButton newRootBtn { "+" };
+    RememberUI::TextButton smartFolderBtn { RememberUI::tr ("Create smart folder") };
+    RememberUI::TextButton sortBtn    { RememberUI::tr ("Sort") };
     juce::TreeView   tree;
 
     static constexpr int kHeaderH = 48;

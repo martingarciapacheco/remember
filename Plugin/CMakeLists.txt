@@ -47,7 +47,7 @@ target_sources(RememberPlugin PRIVATE
     ../Shared/ProjectIdentity.cpp
     ../Shared/PreviewAudio.cpp ../Shared/PreviewCompaction.cpp
     ../Shared/LibraryStore.cpp
-    ../Shared/BackgroundRetirement.cpp
+    ../Shared/BackgroundRetirement.cpp ../Shared/RememberLanguage.cpp
 )
 
 target_compile_definitions(RememberPlugin PUBLIC

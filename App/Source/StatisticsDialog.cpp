@@ -3,15 +3,15 @@
 class StatisticsDialog::Row final : public juce::Component
 {
 public:
-    class DragButton final : public juce::TextButton
+    class DragButton final : public RememberUI::TextButton
     {
     public:
-        DragButton() : juce::TextButton ("Drag") {}
+        DragButton() : RememberUI::TextButton (RememberUI::tr ("Drag")) {}
         std::function<void()> begin;
-        void mouseDown (const juce::MouseEvent& e) override { dragged = false; juce::TextButton::mouseDown (e); }
+        void mouseDown (const juce::MouseEvent& e) override { dragged = false; RememberUI::TextButton::mouseDown (e); }
         void mouseDrag (const juce::MouseEvent& e) override
         {
-            juce::TextButton::mouseDrag (e);
+            RememberUI::TextButton::mouseDrag (e);
             if (! dragged && isEnabled() && e.mods.isLeftButtonDown() && e.getDistanceFromDragStart() >= 6)
             { dragged = true; if (begin) begin(); }
         }
@@ -20,15 +20,15 @@ public:
     } drag;
     explicit Row (StatisticsDialog& owner) : dialog (owner)
     {
-        RememberUI::iconButton (play, "play", "Audition sample");
-        for (auto* button : std::initializer_list<juce::TextButton*> { &play, &drag, &save, &locateButton })
+        RememberUI::iconButton (play, "play", RememberUI::tr ("Audition sample"));
+        for (auto* button : std::initializer_list<RememberUI::TextButton*> { &play, &drag, &save, &locateButton })
         {
-            RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
-            RememberUI::bindColour (*button, juce::TextButton::textColourOffId, Pal::Text);
+            RememberUI::bindColour (*button, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+            RememberUI::bindColour (*button, RememberUI::TextButton::textColourOffId, Pal::Text);
             addAndMakeVisible (*button);
         }
-        drag.setTitle ("Drag a copy of the original sample"); drag.setTooltip ("Drag a copy to your DAW or a folder");
-        save.setTitle ("Save a copy of the sample"); locateButton.setTitle ("Locate missing sample");
+        drag.setTitle (RememberUI::tr ("Drag a copy of the original sample")); drag.setTooltip (RememberUI::tr ("Drag a copy to your DAW or a folder"));
+        save.setTitle (RememberUI::tr ("Save a copy of the sample")); locateButton.setTitle (RememberUI::tr ("Locate missing sample"));
         play.onClick = [this] { dialog.audition (index); };
         save.onClick = [this] { dialog.exportFile (index, false, this); };
         drag.begin = [this] { dialog.exportFile (index, true, &drag); };
@@ -39,8 +39,8 @@ public:
         index = value; displayRank = rank; isSelected = selected;
         const auto& item = dialog.items()[index];
         sampleRow = dialog.category == ProjectStatistics::Category::Samples;
-        setTitle (dialog.entryName (index)); setDescription (juce::String (item.projects) + " projects. " + item.path
-            + (dialog.isHidden (index) ? ". Hidden entry" : ""));
+        setTitle (dialog.entryName (index)); setDescription (juce::String (item.projects) + RememberUI::tr (" projects. ") + item.path
+            + (dialog.isHidden (index) ? RememberUI::tr (". Hidden entry") : ""));
         play.setVisible (sampleRow); play.setEnabled (item.available);
         drag.setVisible (sampleRow && item.available); drag.setEnabled (item.available);
         save.setVisible (sampleRow && item.available); save.setEnabled (item.available);
@@ -71,10 +71,10 @@ public:
         g.setFont (RememberUI::font (12)); g.setColour (RememberUI::colour (Pal::Subtext));
         g.drawText (juce::String (displayRank), 6, 0, 34, getHeight(), juce::Justification::centred);
         const int left = sampleRow ? 78 : 48, right = getWidth() - (sampleRow ? 152 : 96);
-        auto detail = juce::String (item.projects) + (item.projects == 1 ? " project" : " projects");
-        if (sampleRow) { if (! item.available) detail += " / Sample missing"; }
+        auto detail = juce::String (item.projects) + (item.projects == 1 ? RememberUI::tr (" project") : RememberUI::tr (" projects"));
+        if (sampleRow) { if (! item.available) detail += RememberUI::tr (" / Sample missing"); }
         else detail += " / " + item.identity.upToFirstOccurrenceOf (":", false, false);
-        if (dialog.isHidden (index)) detail += " / Hidden";
+        if (dialog.isHidden (index)) detail += RememberUI::tr (" / Hidden");
         const auto nameFont = RememberUI::font (13, true), detailFont = RememberUI::font (12);
         const auto width = juce::jmax (0, right - left);
         const auto detailWidth = juce::jmin (width * 2 / 3, juce::GlyphArrangement::getStringWidthInt (detailFont, detail) + 2);
@@ -103,25 +103,25 @@ private:
     void setTooltipText (const juce::String& path) { play.setTooltip (path); }
     StatisticsDialog& dialog;
     size_t index = 0; int displayRank = 1; bool sampleRow = true, isSelected = false, dragged = false;
-    juce::TextButton play, save { "Save copy" }, locateButton { "Locate..." };
+    RememberUI::TextButton play, save { RememberUI::tr ("Save copy") }, locateButton { RememberUI::tr ("Locate...") };
 };
 
 StatisticsDialog::StatisticsDialog (WaveformPlayerComponent* main, bool persist) : mainPlayer (main), player (nullptr, persist)
 {
     setSize (840, 640); setWantsKeyboardFocus (true);
-    title.setText ("Statistics", juce::dontSendNotification); title.setFont (RememberUI::font (22, true));
+    title.setText (RememberUI::tr ("Statistics"), juce::dontSendNotification); title.setFont (RememberUI::font (22, true));
     for (auto* label : { &title, &summary })
     {
-        RememberUI::bindColour (*label, juce::Label::textColourId, label == &title ? Pal::Text : Pal::Subtext);
+        RememberUI::bindColour (*label, RememberUI::Label::textColourId, label == &title ? Pal::Text : Pal::Subtext);
         if (label != &title) label->setFont (RememberUI::font (12));
         label->setMinimumHorizontalScale (1.0f); label->setBorderSize (juce::BorderSize<int> (0)); addAndMakeVisible (*label);
     }
     for (auto* button : { &samples, &instruments, &effects, &refresh, &info, &close, &eye })
     {
-        RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
-        RememberUI::bindColour (*button, juce::TextButton::buttonOnColourId, Pal::Action);
-        RememberUI::bindColour (*button, juce::TextButton::textColourOffId, Pal::Text);
-        RememberUI::bindColour (*button, juce::TextButton::textColourOnId, Pal::OnAction);
+        RememberUI::bindColour (*button, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+        RememberUI::bindColour (*button, RememberUI::TextButton::buttonOnColourId, Pal::Action);
+        RememberUI::bindColour (*button, RememberUI::TextButton::textColourOffId, Pal::Text);
+        RememberUI::bindColour (*button, RememberUI::TextButton::textColourOnId, Pal::OnAction);
         button->setTitle (button->getButtonText()); addAndMakeVisible (*button);
     }
     samples.onClick = [this] { setCategory (ProjectStatistics::Category::Samples); };
@@ -129,15 +129,15 @@ StatisticsDialog::StatisticsDialog (WaveformPlayerComponent* main, bool persist)
     effects.onClick = [this] { setCategory (ProjectStatistics::Category::Effects); };
     refresh.onClick = [this] { load(); }; info.onClick = [this] { details(); };
     close.onClick = [this] { if (auto* window = findParentComponentOfClass<juce::DialogWindow>()) window->exitModalState (0); };
-    RememberUI::placeholder (search, "Search by name...", Pal::Subtext);
+    RememberUI::placeholder (search, RememberUI::tr ("Search by name..."), Pal::Subtext);
     search.setFont (RememberUI::font (13)); search.setIndents (10, 0); search.setJustification (juce::Justification::centredLeft);
-    search.setTitle ("Search statistics by name");
-    RememberUI::bindColour (search, juce::TextEditor::backgroundColourId, Pal::Elevated);
-    RememberUI::bindColour (search, juce::TextEditor::textColourId, Pal::Text);
-    RememberUI::bindColour (search, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
+    search.setTitle (RememberUI::tr ("Search statistics by name"));
+    RememberUI::bindColour (search, RememberUI::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (search, RememberUI::TextEditor::textColourId, Pal::Text);
+    RememberUI::bindColour (search, RememberUI::TextEditor::focusedOutlineColourId, Pal::Accent);
     search.onTextChange = [this] { filter(); }; addAndMakeVisible (search);
     eye.onClick = [this] { showHidden = ! showHidden; updateEye(); filter(); }; updateEye();
-    list.setModel (this); list.setRowHeight (RememberUI::statisticsRowHeight); list.setTitle ("Statistics ranked by number of projects");
+    list.setModel (this); list.setRowHeight (RememberUI::statisticsRowHeight); list.setTitle (RememberUI::tr ("Statistics ranked by number of projects"));
     RememberUI::bindColour (list, juce::ListBox::backgroundColourId, Pal::Content); addAndMakeVisible (list);
     player.setCompactMode (true); player.setQueue ({}); addAndMakeVisible (player);
     setCategory (category); load();
@@ -150,7 +150,7 @@ void StatisticsDialog::load()
 {
     loaded = false; refresh.setEnabled (false); info.setEnabled (false); player.clearPreview();
     eye.setEnabled (false);
-    visible.clear(); list.updateContent(); list.setVisible (false); summary.setText ("Reading saved projects...", juce::dontSendNotification);
+    visible.clear(); list.updateContent(); list.setVisible (false); summary.setText (RememberUI::tr ("Reading saved projects..."), juce::dontSendNotification);
     const auto request = generation->fetch_add (1) + 1; const auto token = generation;
     const auto next = std::make_shared<ProjectStatistics::Report>();
     const auto hidden = std::make_shared<ProjectStatistics::HiddenEntries>();
@@ -159,14 +159,14 @@ void StatisticsDialog::load()
         const auto preferences = ProjectStatistics::readHiddenEntries (*hidden);
         if (preferences.failed()) return preferences;
         const auto snapshot = ProjectScanner::librarySnapshot();
-        if (! snapshot || snapshot->loading) return juce::Result::fail ("The library is still loading. Try Refresh shortly.");
-        if (snapshot->error.isNotEmpty() || snapshot->stale) return juce::Result::fail ("Library index unavailable. Refresh the library before Statistics.");
+        if (! snapshot || snapshot->loading) return juce::Result::fail (RememberUI::tr ("The library is still loading. Try Refresh shortly."));
+        if (snapshot->error.isNotEmpty() || snapshot->stale) return juce::Result::fail (RememberUI::tr ("Library index unavailable. Refresh the library before Statistics."));
         *next = ProjectStatistics::collect (snapshot->entries, [token, request] { return token->load() != request; });
         return next->error.isEmpty() ? juce::Result::ok() : juce::Result::fail (next->error);
     }, [safe = juce::Component::SafePointer<StatisticsDialog> (this), next, hidden, token, request] (juce::Result result)
     {
         if (! safe || token->load() != request) return;
-        if (result.failed()) next->error = result.getErrorMessage();
+        if (result.failed()) next->error = RememberUI::diagnostic (result.getErrorMessage());
         // A captured menu can finish while Refresh is reading. Retain newer local edits.
         for (size_t c = 0; c < hidden->size(); ++c) for (const auto& edit : safe->pendingHiddenEdits[c])
         {
@@ -180,12 +180,16 @@ void StatisticsDialog::load()
 void StatisticsDialog::publish (std::shared_ptr<ProjectStatistics::Report> next)
 {
     data = std::move (next); loaded = true; refresh.setEnabled (true); info.setEnabled (true); eye.setEnabled (data->error.isEmpty());
-    auto description = juce::String (data->read) + " projects read / " + juce::String (data->excluded) + " unsupported / "
-        + juce::String (data->failed) + " unreadable / " + juce::String (data->unlinked) + " unlinked";
-    if (data->unclassifiedPlugins > 0) description += " / " + juce::String (data->unclassifiedPlugins) + " unclassified (Details)";
-    summary.setText (description, juce::dontSendNotification); summary.setTooltip (description);
+    updateSummary();
     lastStatus.clear();
     filter();
+}
+void StatisticsDialog::updateSummary()
+{
+    auto description = juce::String (data->read) + RememberUI::tr (" projects read / ") + juce::String (data->excluded) + RememberUI::tr (" unsupported / ")
+        + juce::String (data->failed) + RememberUI::tr (" unreadable / ") + juce::String (data->unlinked) + RememberUI::tr (" unlinked");
+    if (data->unclassifiedPlugins > 0) description += " / " + juce::String (data->unclassifiedPlugins) + RememberUI::tr (" unclassified (Details)");
+    summary.setText (description, juce::dontSendNotification); summary.setTooltip (description);
 }
 void StatisticsDialog::setCategory (ProjectStatistics::Category next)
 {
@@ -208,10 +212,10 @@ juce::String StatisticsDialog::entryName (size_t index) const
 }
 void StatisticsDialog::updateEye()
 {
-    const auto label = showHidden ? "Hide hidden entries" : "Show hidden entries";
+    const auto label = showHidden ? RememberUI::tr ("Hide hidden entries") : RememberUI::tr ("Show hidden entries");
     RememberUI::iconButton (eye, showHidden ? "eye" : "eye-off", label);
     eye.setTooltip (label); eye.setToggleState (showHidden, juce::dontSendNotification);
-    eye.setDescription (showHidden ? "Visible and hidden entries are shown together" : "Hidden entries are excluded and the ranking is refilled");
+    eye.setDescription (showHidden ? RememberUI::tr ("Visible and hidden entries are shown together") : RememberUI::tr ("Hidden entries are excluded and the ranking is refilled"));
 }
 void StatisticsDialog::setHidden (ProjectStatistics::Category targetCategory, const juce::String& identity, bool hide)
 {
@@ -235,7 +239,7 @@ void StatisticsDialog::setHidden (ProjectStatistics::Category targetCategory, co
             if (result.failed())
             {
                 if (before) safe->hiddenEntries[c].insert (identity); else safe->hiddenEntries[c].erase (identity);
-                safe->filter(); safe->setStatus ("Cannot save hidden entries: " + result.getErrorMessage());
+                safe->filter(); safe->setStatus (RememberUI::tr ("Cannot save hidden entries: ") + RememberUI::diagnostic (result.getErrorMessage()));
             }
         });
 }
@@ -244,11 +248,11 @@ void StatisticsDialog::showEntryMenu (size_t index, juce::Point<int> position)
     if (index >= items().size()) return;
     const auto item = items()[index]; const auto targetCategory = category;
     const bool hidden = isHidden (index);
-    juce::PopupMenu menu; menu.addItem (hidden ? 4 : 1, hidden ? "Unhide entry" : "Hide entry");
+    juce::PopupMenu menu; menu.addItem (hidden ? 4 : 1, hidden ? RememberUI::tr ("Unhide entry") : RememberUI::tr ("Hide entry"));
     if (targetCategory == ProjectStatistics::Category::Samples)
     {
-        menu.addSeparator(); menu.addItem (2, "Show file in Explorer", item.available);
-        menu.addItem (3, "Copy location", item.path.isNotEmpty());
+        menu.addSeparator(); menu.addItem (2, RememberUI::tr ("Show file in Explorer"), item.available);
+        menu.addItem (3, RememberUI::tr ("Copy location"), item.path.isNotEmpty());
     }
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
         .withTargetScreenArea ({ position.x, position.y, 1, 1 }),
@@ -263,10 +267,10 @@ void StatisticsDialog::performMenuAction (int action, ProjectStatistics::Categor
         ProjectScanner::queryAsync ([path, reveal = revealFile]
         {
             const juce::File file (path);
-            if (! file.existsAsFile()) return juce::Result::fail ("The original sample is no longer available");
+            if (! file.existsAsFile()) return juce::Result::fail (RememberUI::tr ("The original sample is no longer available"));
             reveal (file); return juce::Result::ok();
         }, [safe = juce::Component::SafePointer<StatisticsDialog> (this)] (juce::Result result)
-        { if (safe && result.failed()) safe->setStatus (result.getErrorMessage()); });
+        { if (safe && result.failed()) safe->setStatus (RememberUI::diagnostic (result.getErrorMessage())); });
     }
     else if (action == 3 && targetCategory == ProjectStatistics::Category::Samples)
         copyLocation (path);
@@ -302,7 +306,7 @@ void StatisticsDialog::audition (size_t index)
 {
     if (category != ProjectStatistics::Category::Samples || index >= items().size()) return;
     const auto& item = items()[index];
-    if (! item.available) { setStatus ("Sample missing. Use Locate to choose its original file."); return; }
+    if (! item.available) { setStatus (RememberUI::tr ("Sample missing. Use Locate to choose its original file.")); return; }
     if (mainPlayer) mainPlayer->suspendOutput();
     ProjectEntry entry; entry.name = entryName (index); entry.previewOgg = juce::File (item.path);
     player.loadEntry (entry); if (autoPlay) player.play();
@@ -313,45 +317,44 @@ void StatisticsDialog::exportFile (size_t index, bool drag, juce::Component* sou
     const juce::File file (items()[index].path);
     if (drag)
     {
-        if (! startFileDrag ({ file.getFullPathName() }, false, source, [] {})) setStatus ("Cannot start drag. Use Save copy instead.");
+        if (! startFileDrag ({ file.getFullPathName() }, false, source, [] {})) setStatus (RememberUI::tr ("Cannot start drag. Use Save copy instead."));
         return;
     }
-    chooser = std::make_unique<juce::FileChooser> ("Save a copy", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (file.getFileName()), "*" + file.getFileExtension());
+    chooser = std::make_unique<juce::FileChooser> (RememberUI::tr ("Save a copy"), juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (file.getFileName()), "*" + file.getFileExtension());
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safe = juce::Component::SafePointer<StatisticsDialog> (this), file] (const juce::FileChooser& selected)
         {
             const auto target = selected.getResult(); if (! safe || target == juce::File{}) return;
             ProjectScanner::queryAsync ([file, target]
             {
-                if (file == target) return juce::Result::fail ("Choose a different destination for the copy");
-                return file.copyFileTo (target) ? juce::Result::ok() : juce::Result::fail ("Cannot save the copy");
-            }, [safe] (juce::Result result) { if (safe) safe->setStatus (result.wasOk() ? "Copy saved" : result.getErrorMessage()); });
+                if (file == target) return juce::Result::fail (RememberUI::tr ("Choose a different destination for the copy"));
+                return file.copyFileTo (target) ? juce::Result::ok() : juce::Result::fail (RememberUI::tr ("Cannot save the copy"));
+            }, [safe] (juce::Result result) { if (safe) safe->setStatus (result.wasOk() ? RememberUI::tr ("Copy saved") : RememberUI::diagnostic (result.getErrorMessage())); });
         });
 }
 void StatisticsDialog::locate (size_t index)
 {
     if (category != ProjectStatistics::Category::Samples || index >= items().size()) return;
     const auto identity = items()[index].identity; const auto request = generation->load();
-    chooser = std::make_unique<juce::FileChooser> ("Locate original sample", juce::File{}, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+    chooser = std::make_unique<juce::FileChooser> (RememberUI::tr ("Locate original sample"), juce::File{}, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [safe = juce::Component::SafePointer<StatisticsDialog> (this), identity, request] (const juce::FileChooser& selected)
         {
             const auto file = selected.getResult(); if (! safe || file == juce::File{} || safe->generation->load() != request) return;
             for (auto& item : safe->data->items[0]) if (item.identity == identity) { item.path = file.getFullPathName(); item.available = true; }
-            safe->list.updateContent(); safe->list.repaint(); safe->setStatus ("Sample located for this session. Saved projects were not changed.");
+            safe->list.updateContent(); safe->list.repaint(); safe->setStatus (RememberUI::tr ("Sample located for this session. Saved projects were not changed."));
         });
 }
 void StatisticsDialog::details()
 {
-    auto message = "FL Studio (.flp) and Ableton Live (.als). Saved projects in the whole library, including all loaded sounds. "
-        "Each sample path or plugin is counted once per project. Repeated recordings of the same project path count once.\n\n";
+    auto message = RememberUI::tr ("FL Studio (.flp) and Ableton Live (.als). Saved projects in the whole library, including all loaded sounds. ") + RememberUI::tr ("Each sample path or plugin is counted once per project. Repeated recordings of the same project path count once.\n\n");
     juce::String text (message);
-    text += "Metadata estimate: " + juce::String ((double) data->metadataBytes() / 1024.0, 1) + " KiB (excludes player and temporary reader memory).\n";
-    if (data->unclassifiedPlugins > 0) text += juce::String (data->unclassifiedPlugins) + " plugins have unknown type/name and were omitted.\n";
-    if (data->error.isNotEmpty()) text += data->error + "\n";
+    text += RememberUI::tr ("Metadata estimate: ") + juce::String ((double) data->metadataBytes() / 1024.0, 1) + RememberUI::tr (" KiB (excludes player and temporary reader memory).\n");
+    if (data->unclassifiedPlugins > 0) text += juce::String (data->unclassifiedPlugins) + RememberUI::tr (" plugins have unknown type/name and were omitted.\n");
+    if (data->error.isNotEmpty()) text += RememberUI::diagnostic (data->error) + "\n";
     if (lastStatus.isNotEmpty()) text += lastStatus + "\n";
     text += "\n" + data->details.joinIntoString ("\n");
-    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Statistics details", text, "OK", this);
+    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, RememberUI::tr ("Statistics details"), text, RememberUI::tr ("OK"), this);
 }
 void StatisticsDialog::paint (juce::Graphics& g)
 {
@@ -359,10 +362,10 @@ void StatisticsDialog::paint (juce::Graphics& g)
     if (! list.isVisible())
     {
         g.setColour (RememberUI::colour (data->error.isNotEmpty() ? Pal::Error : Pal::Subtext)); g.setFont (RememberUI::font (14));
-        const auto text = ! loaded ? "Reading saved projects..." : data->error.isNotEmpty() ? data->error
-            : search.getText().trim().isNotEmpty() ? "No matching names in this ranking." : data->read == 0
-            ? "No readable supported projects. See Details." : ! showHidden && ! items().empty()
-            ? "All entries are hidden. Use Show hidden entries." : "No items in this category.";
+        const auto text = ! loaded ? RememberUI::tr ("Reading saved projects...") : data->error.isNotEmpty() ? RememberUI::diagnostic (data->error)
+            : search.getText().trim().isNotEmpty() ? RememberUI::tr ("No matching names in this ranking.") : data->read == 0
+            ? RememberUI::tr ("No readable supported projects. See Details.") : ! showHidden && ! items().empty()
+            ? RememberUI::tr ("All entries are hidden. Use Show hidden entries.") : RememberUI::tr ("No items in this category.");
         g.drawFittedText (text, list.getBounds().reduced (20), juce::Justification::centred, 4);
     }
 }
@@ -384,7 +387,7 @@ void StatisticsDialog::launch (WaveformPlayerComponent* main)
 {
     juce::DialogWindow::LaunchOptions options;
     auto* zoom = new RememberUI::ZoomView (std::make_unique<StatisticsDialog> (main)); zoom->setSize (840, 640);
-    options.content.setOwned (zoom); options.dialogTitle = "Statistics"; options.useNativeTitleBar = true;
+    options.content.setOwned (zoom); options.dialogTitle = RememberUI::tr ("Statistics"); options.useNativeTitleBar = true;
     options.escapeKeyTriggersCloseButton = true; options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep); options.resizable = true;
     if (auto* window = RememberUI::launchDialog (options)) window->setResizeLimits (640, 480, 1600, 1200);
 }

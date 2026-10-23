@@ -82,7 +82,7 @@ private:
     friend struct WaveformTestAccess;
     RememberUI::Style uiStyle { *this };
     PlaybackQueue queue;
-    juce::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
+    RememberUI::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
     RememberUI::ContextMenuButton repeatBtn, metronomeBtn;
     juce::Component::SafePointer<juce::CallOutBox> metronomePopup;
     bool compactMode = false;
@@ -142,18 +142,18 @@ private:
     std::shared_ptr<std::atomic<uint64_t>> loadGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
 
     // Buttons
-    juce::TextButton playBtn   { ">" };
-    juce::TextButton openBtn   { "Open in DAW" };
-    juce::TextButton assignBtn { "Assign path" };
-    class PreviewDragButton final : public juce::TextButton
+    RememberUI::TextButton playBtn   { ">" };
+    RememberUI::TextButton openBtn   { RememberUI::tr ("Open in DAW") };
+    RememberUI::TextButton assignBtn { RememberUI::tr ("Assign path") };
+    class PreviewDragButton final : public RememberUI::TextButton
     {
     public:
-        PreviewDragButton() : juce::TextButton ("Drag") {}
+        PreviewDragButton() : RememberUI::TextButton (RememberUI::tr ("Drag")) {}
         std::function<void()> begin;
-        void mouseDown (const juce::MouseEvent& e) override { started = false; juce::TextButton::mouseDown (e); }
+        void mouseDown (const juce::MouseEvent& e) override { started = false; RememberUI::TextButton::mouseDown (e); }
         void mouseDrag (const juce::MouseEvent& e) override
         {
-            juce::TextButton::mouseDrag (e);
+            RememberUI::TextButton::mouseDrag (e);
             if (! started && isEnabled() && e.mods.isLeftButtonDown() && e.getDistanceFromDragStart() >= 6)
             { started = true; if (begin) begin(); }
         }
@@ -164,11 +164,11 @@ private:
     std::function<bool (const juce::StringArray&, bool, juce::Component*)> startPreviewDrag =
         [] (const juce::StringArray& files, bool move, juce::Component* source)
         { return juce::DragAndDropContainer::performExternalDragDropOfFiles (files, move, source); };
-    juce::TextButton audioBtn { "Audio" };
+    RememberUI::TextButton audioBtn { RememberUI::tr ("Audio") };
 
-    juce::Label nameLabel;
-    juce::Label pathLabel;
-    juce::Label timeLabel;
+    RememberUI::Label nameLabel;
+    RememberUI::Label pathLabel;
+    RememberUI::Label timeLabel;
 
     // Waveform area cached bounds (set in resized)
     juce::Rectangle<int> waveArea;
@@ -176,5 +176,6 @@ private:
     PlaybackFramePacer cursorPacer;
     double cursorSeconds = 0, lastVBlankTime = 0;
 
+    RememberUI::LanguageCallback languageUpdates { [this] { updatePathLabel(); updateRepeatButton(); repaint(); } };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformPlayerComponent)
 };

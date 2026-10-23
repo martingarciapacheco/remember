@@ -32,9 +32,9 @@ struct Summary
     juce::StringArray errors;
     juce::String text() const
     {
-        return juce::String (compacted) + " compacted; " + juce::String (skipped) + " skipped; "
-            + juce::String (failed + incomplete) + " need attention. "
-            + juce::String (std::abs (before - after) / 1000000.0, 2) + (after <= before ? " MB freed" : " MB added");
+        return juce::String (compacted) + RememberUI::tr (" compacted; ") + juce::String (skipped) + RememberUI::tr (" skipped; ")
+            + juce::String (failed + incomplete) + RememberUI::tr (" need attention. ")
+            + juce::String (std::abs (before - after) / 1000000.0, 2) + (after <= before ? RememberUI::tr (" MB freed") : RememberUI::tr (" MB added"));
     }
 };
 inline bool eligible (const ProjectEntry& entry)
@@ -59,17 +59,17 @@ inline void run (const juce::File& root, const juce::Array<ProjectEntry>& entrie
         }
         else if (result.result.wasOk()) ++summary.skipped;
         else ++summary.failed;
-        if (result.result.failed()) summary.errors.add (entry.name + ": " + result.result.getErrorMessage());
+        if (result.result.failed()) summary.errors.add (entry.name + ": " + RememberUI::diagnostic (result.result.getErrorMessage()));
     }
 }
 inline juce::MessageBoxOptions confirmation (const juce::String& target)
 {
     return juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
-        .withTitle ("Compact preview audio?")
-        .withMessage (target + "\n\nRe-encode at the quality selected in Settings into one OGG per preview. "
-            "This adds a lossy encoding generation and removes the old fragments and recovery audio. It cannot be undone. "
-            "Choosing a higher quality than the source may increase its size. "
-            "A later partial capture converts the compacted tail to fragments once; subsequent captures reuse them.")
-        .withButton ("Compact").withButton ("Cancel");
+        .withTitle (RememberUI::tr ("Compact preview audio?"))
+        .withMessage (target + RememberUI::tr ("\n\nRe-encode at the quality selected in Settings into one OGG per preview. ") +
+        RememberUI::tr ("This adds a lossy encoding generation and removes the old fragments and recovery audio. It cannot be undone. ") +
+        RememberUI::tr ("Choosing a higher quality than the source may increase its size. ") +
+        RememberUI::tr ("A later partial capture converts the compacted tail to fragments once; subsequent captures reuse them."))
+        .withButton (RememberUI::tr ("Compact")).withButton (RememberUI::tr ("Cancel"));
 }
 }

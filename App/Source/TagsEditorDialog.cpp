@@ -44,11 +44,11 @@ namespace
         return (int) std::ceil (ga.getBoundingBox (0, -1, true).getRight()) + 1;
     }
 
-    class TagButton final : public juce::TextButton
+    class TagButton final : public RememberUI::TextButton
     {
     public:
         TagButton (const juce::String& value, bool canRemove, int width)
-            : juce::TextButton ("#" + value + (canRemove ? "  x" : "")), tag (value), removable (canRemove),
+            : RememberUI::TextButton ("#" + value + (canRemove ? "  x" : "")), tag (value), removable (canRemove),
               fontHeight (canRemove ? 12.0f : 11.5f),
               preferredWidth (width) {}
         const juce::String tag;
@@ -108,7 +108,7 @@ public:
             measure(); publish (std::move (*wanted)); return;
         }
         auto& status = removable ? owner.currentEmpty : owner.suggestEmpty;
-        status.setText ("Loading tags...", juce::dontSendNotification); status.setVisible (true);
+        status.setText (RememberUI::tr ("Loading tags..."), juce::dontSendNotification); status.setVisible (true);
         ProjectScanner::queryAsync (measure,
             [safe = juce::Component::SafePointer<TagFlow> (this), wanted, version] (juce::Result result)
             {
@@ -117,8 +117,8 @@ public:
                 else
                 {
                     auto& message = safe->removable ? safe->owner.currentEmpty : safe->owner.suggestEmpty;
-                    message.setText ("Tags could not be loaded. Close and reopen this editor.", juce::dontSendNotification);
-                    message.setTooltip (result.getErrorMessage()); message.setVisible (true);
+                    message.setText (RememberUI::tr ("Tags could not be loaded. Close and reopen this editor."), juce::dontSendNotification);
+                    message.setTooltip (RememberUI::diagnostic (result.getErrorMessage())); message.setVisible (true);
                 }
             });
     }
@@ -157,8 +157,8 @@ public:
             else
             {
                 button = std::make_unique<TagButton> (item->tag, removable, item->width);
-                RememberUI::bindColour (*button, juce::TextButton::buttonColourId, removable ? Pal::Accent : Pal::Elevated, removable ? 0.25f : 1.0f);
-                RememberUI::bindColour (*button, juce::TextButton::textColourOffId, removable ? Pal::Text : Pal::Subtext);
+                RememberUI::bindColour (*button, RememberUI::TextButton::buttonColourId, removable ? Pal::Accent : Pal::Elevated, removable ? 0.25f : 1.0f);
+                RememberUI::bindColour (*button, RememberUI::TextButton::textColourOffId, removable ? Pal::Text : Pal::Subtext);
                 button->setWantsKeyboardFocus (false);
                 button->setMouseCursor (juce::MouseCursor::PointingHandCursor);
                 button->setTooltip (button->getButtonText());
@@ -184,7 +184,7 @@ private:
         for (const auto& item : next) widths.emplace (item.tag.toStdString(), item.width);
         items = std::move (next);
         auto& status = removable ? owner.currentEmpty : owner.suggestEmpty;
-        status.setText (removable ? "(no tags yet)" : "(no other tags in your library)", juce::dontSendNotification);
+        status.setText (removable ? RememberUI::tr ("(no tags yet)") : RememberUI::tr ("(no other tags in your library)"), juce::dontSendNotification);
         status.setTooltip ({}); status.setVisible (items.empty());
         layout();
     }
@@ -218,13 +218,13 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
 
     allKnownTags = ProjectScanner::getAllUniqueTags();
 
-    auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
+    auto styleLabel = [] (RememberUI::Label& l, float h, uint32_t col, bool bold = false)
     {
         l.setFont (RememberUI::font (h, bold));
-        RememberUI::bindColour (l, juce::Label::textColourId, col);
+        RememberUI::bindColour (l, RememberUI::Label::textColourId, col);
     };
 
-    header.setText ("Edit tags - \"" + entryName + "\"", juce::dontSendNotification);
+    header.setText (RememberUI::tr ("Edit tags - \"") + entryName + "\"", juce::dontSendNotification);
     styleLabel (header, 20.0f, Pal::Text, true);
     addAndMakeVisible (header);
 
@@ -240,11 +240,11 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
     addAndMakeVisible (suggestEmpty);
 
     input.setFont (RememberUI::font (14.0f));
-    RememberUI::bindColour (input, juce::TextEditor::backgroundColourId, Pal::Elevated);
-    RememberUI::bindColour (input, juce::TextEditor::textColourId, Pal::Text);
-    input.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
-    RememberUI::bindColour (input, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
-    RememberUI::placeholder (input, "  type tag + Enter...", Pal::Subtext);
+    RememberUI::bindColour (input, RememberUI::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (input, RememberUI::TextEditor::textColourId, Pal::Text);
+    input.setColour (RememberUI::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
+    RememberUI::bindColour (input, RememberUI::TextEditor::focusedOutlineColourId, Pal::Accent);
+    RememberUI::placeholder (input, RememberUI::tr ("  type tag + Enter..."), Pal::Subtext);
     input.onReturnKey = [this]
     {
         auto t = normaliseTag (input.getText());
@@ -253,10 +253,10 @@ TagsEditorDialog::TagsEditorDialog (const juce::String& en,
     };
     addAndMakeVisible (input);
 
-    auto styleBtn = [] (juce::TextButton& b, uint32_t bg, uint32_t fg)
+    auto styleBtn = [] (RememberUI::TextButton& b, uint32_t bg, uint32_t fg)
     {
-        RememberUI::bindColour (b, juce::TextButton::buttonColourId, bg);
-        RememberUI::bindColour (b, juce::TextButton::textColourOffId, fg);
+        RememberUI::bindColour (b, RememberUI::TextButton::buttonColourId, bg);
+        RememberUI::bindColour (b, RememberUI::TextButton::textColourOffId, fg);
     };
 
     styleBtn (okBtn, Pal::Action,   Pal::OnAction);
@@ -397,7 +397,7 @@ void TagsEditorDialog::launch (const juce::String& entryName,
     auto dialog = create (entryName, initialTags, std::move (onCommit));
 
     juce::DialogWindow::LaunchOptions opts;
-    opts.dialogTitle               = "Edit tags";
+    opts.dialogTitle               = RememberUI::tr ("Edit tags");
     opts.content.setOwned          (dialog.release());
     opts.componentToCentreAround   = nullptr;
     opts.escapeKeyTriggersCloseButton = true;

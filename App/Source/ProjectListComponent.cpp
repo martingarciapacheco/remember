@@ -15,48 +15,48 @@ ProjectRowComponent::ProjectRowComponent()
     favBtn .setWantsKeyboardFocus (false);
     actionsBtn.setWantsKeyboardFocus (false);
     usedSoundsBtn.setWantsKeyboardFocus (false);
-    RememberUI::iconButton (usedSoundsBtn, "sounds", "Used sounds");
-    RememberUI::bindColour (usedSoundsBtn, juce::TextButton::buttonColourId, Pal::Elevated);
-    RememberUI::bindColour (usedSoundsBtn, juce::TextButton::textColourOffId, Pal::Text);
+    RememberUI::iconButton (usedSoundsBtn, "sounds", RememberUI::tr ("Used sounds"));
+    RememberUI::bindColour (usedSoundsBtn, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (usedSoundsBtn, RememberUI::TextButton::textColourOffId, Pal::Text);
     usedSoundsBtn.onClick = [this] { if (onUsedSounds) onUsedSounds(); };
     addAndMakeVisible (usedSoundsBtn);
 
-    RememberUI::iconButton (favBtn, "star", "Toggle favorite");
-    RememberUI::iconButton (actionsBtn, "more", "Preview actions");
-    favBtn.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
+    RememberUI::iconButton (favBtn, "star", RememberUI::tr ("Toggle favorite"));
+    RememberUI::iconButton (actionsBtn, "more", RememberUI::tr ("Preview actions"));
+    favBtn.setColour (RememberUI::TextButton::buttonColourId,  juce::Colours::transparentBlack);
     favBtn.onClick = [this]
     {
         entry.favorite = ! entry.favorite;
         favBtn.setButtonText (entry.favorite ? "*" : ".");
-        RememberUI::bindColour (favBtn, juce::TextButton::textColourOffId, entry.favorite ? Pal::Star : Pal::Subtext);
+        RememberUI::bindColour (favBtn, RememberUI::TextButton::textColourOffId, entry.favorite ? Pal::Star : Pal::Subtext);
         if (onFavoriteToggle) onFavoriteToggle (entry.favorite);
         repaint();
     };
     addAndMakeVisible (favBtn);
 
-    RememberUI::bindColour (actionsBtn, juce::TextButton::buttonColourId, Pal::Elevated);
-    RememberUI::bindColour (actionsBtn, juce::TextButton::textColourOffId, Pal::Text);
+    RememberUI::bindColour (actionsBtn, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (actionsBtn, RememberUI::TextButton::textColourOffId, Pal::Text);
     actionsBtn.onClick = [this] { if (onActions) onActions (this); };
     addAndMakeVisible (actionsBtn);
 
     statusBtn.setWantsKeyboardFocus (false);
-    statusBtn.setTitle ("Change preview status");
-    statusBtn.setTooltip ("Change preview status");
+    statusBtn.setTitle (RememberUI::tr ("Change preview status"));
+    statusBtn.setTooltip (RememberUI::tr ("Change preview status"));
     addAndMakeVisible (statusBtn);
     statusBtn.onClick = [this]
     {
         const juce::StringArray values { "Idea", "In progress", "Finished", "Archived" };
         juce::PopupMenu menu;
-        for (int i = 0; i < values.size(); ++i) menu.addItem (i + 1, values[i], true, entry.status == values[i]);
+        for (int i = 0; i < values.size(); ++i) menu.addItem (i + 1, RememberUI::tr (values[i]), true, entry.status == values[i]);
         const auto action = onStatusChanged;
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&statusBtn), [values, action] (int result)
         { if (result > 0 && result <= values.size() && action) action (values[result - 1]); });
     };
 
     renameEditor.setFont (RememberUI::font (13.0f, true));
-    RememberUI::bindColour (renameEditor, juce::TextEditor::backgroundColourId, Pal::Elevated);
-    RememberUI::bindColour (renameEditor, juce::TextEditor::textColourId, Pal::Text);
-    RememberUI::bindColour (renameEditor, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
+    RememberUI::bindColour (renameEditor, RememberUI::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (renameEditor, RememberUI::TextEditor::textColourId, Pal::Text);
+    RememberUI::bindColour (renameEditor, RememberUI::TextEditor::focusedOutlineColourId, Pal::Accent);
     renameEditor.setVisible (false);
     auto commit = [this]
     {
@@ -102,22 +102,22 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
     entry    = e;
     selected = isSelected;
     setTitle (e.name);
-    setDescription ((e.storageError.isNotEmpty() ? e.storageError : e.projectProblem)
-        + (e.audioBytes >= 0 ? " Audio including recovery: " + juce::File::descriptionOfSizeInBytes (e.audioBytes) : juce::String{}));
+    setDescription (RememberUI::diagnostic (e.storageError.isNotEmpty() ? e.storageError : e.projectProblem)
+        + (e.audioBytes >= 0 ? RememberUI::tr (" Audio including recovery: ") + juce::File::descriptionOfSizeInBytes (e.audioBytes) : juce::String{}));
     // These keys act on the selected row, even when another row is hovered.
     // Rebind hints along with identity/selection when ListBox recycles rows.
-    favBtn.setTooltip (selected ? RememberUI::shortcutTooltip ("Toggle favorite", "F", "Selected recording") : "Toggle favorite");
-    actionsBtn.setTooltip ("Preview actions");
+    favBtn.setTooltip (selected ? RememberUI::shortcutTooltip (RememberUI::tr ("Toggle favorite"), "F", RememberUI::tr ("Selected recording")) : RememberUI::tr ("Toggle favorite"));
+    actionsBtn.setTooltip (RememberUI::tr ("Preview actions"));
     favBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
     actionsBtn.setEnabled (true);
     usedSoundsBtn.setEnabled (! e.trashed && ! e.pending && e.projectPath.isNotEmpty());
-    usedSoundsBtn.setTooltip (e.projectPath.isEmpty() ? "Associate a saved project to inspect its sounds" : "Used sounds from the saved project");
-    statusBtn.setButtonText (e.status);
+    usedSoundsBtn.setTooltip (e.projectPath.isEmpty() ? RememberUI::tr ("Associate a saved project to inspect its sounds") : RememberUI::tr ("Used sounds from the saved project"));
+    statusBtn.setButtonText (RememberUI::tr (e.status));
     statusBtn.setEnabled (e.storageError.isEmpty() && ! e.trashed);
     setTooltip ({});
 
     favBtn.setButtonText (e.favorite ? "*" : ".");
-    RememberUI::bindColour (favBtn, juce::TextButton::textColourOffId, e.favorite ? Pal::Star : Pal::Subtext);
+    RememberUI::bindColour (favBtn, RememberUI::TextButton::textColourOffId, e.favorite ? Pal::Star : Pal::Subtext);
 
     repaint();
 }
@@ -143,24 +143,24 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
         juce::PopupMenu m;
         if (entry.trashed)
         {
-            m.addItem (1, "Restore recording");
+            m.addItem (1, RememberUI::tr ("Restore recording"));
             const auto action = onRestore;
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [action] (int r) { if (r == 1 && action) action(); });
             return;
         }
         bool canRename = entry.storageError.isEmpty() && (entry.projectPath.isEmpty() || entry.pending);
-        m.addItem (1, canRename ? "Rename  (R)" : "Name follows DAW file", canRename);
-        m.addItem (2, "Edit tags  (T)", entry.storageError.isEmpty());
-        m.addItem (3, entry.projectPath.isNotEmpty() ? "Open in DAW" : "Open in DAW (no path)",
+        m.addItem (1, canRename ? RememberUI::tr ("Rename  (R)") : RememberUI::tr ("Name follows DAW file"), canRename);
+        m.addItem (2, RememberUI::tr ("Edit tags  (T)"), entry.storageError.isEmpty());
+        m.addItem (3, entry.projectPath.isNotEmpty() ? RememberUI::tr ("Open in DAW") : RememberUI::tr ("Open in DAW (no path)"),
                    entry.projectAvailable);
         const auto clickedEntry = entry;
-        m.addItem (5, "Show project file in Explorer", ! entry.pending && entry.projectAvailable);
+        m.addItem (5, RememberUI::tr ("Show project file in Explorer"), ! entry.pending && entry.projectAvailable);
         const auto canRecover = ! entry.pending || entry.pendingOwner != LibraryStore::OwnerState::Active;
-        m.addItem (6, "Check and repair recording", canRecover);
-        if (entry.pending) m.addItem (7, "Keep recording", canRecover && entry.storageError.isEmpty());
+        m.addItem (6, RememberUI::tr ("Check and repair recording"), canRecover);
+        if (entry.pending) m.addItem (7, RememberUI::tr ("Keep recording"), canRecover && entry.storageError.isEmpty());
         m.addSeparator();
-        m.addItem (4, "Delete entry (Delete / Backspace)", canRecover);
-        m.addSeparator(); m.addItem (8, "Project details and musical metadata", entry.storageError.isEmpty());
+        m.addItem (4, RememberUI::tr ("Delete entry (Delete / Backspace)"), canRecover);
+        m.addSeparator(); m.addItem (8, RememberUI::tr ("Project details and musical metadata"), entry.storageError.isEmpty());
         const auto detailsAction = onDetails;
         const auto recoverAction = onRecover;
         const auto tagsAction = onEditTags;
@@ -178,7 +178,7 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
                                  ProjectScanner::openProjectAsync (clickedEntry, true, [safe] (juce::Result result)
                                  {
                                      if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-                                         juce::AlertWindow::WarningIcon, "Cannot show project", result.getErrorMessage());
+                                         juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot show project"), RememberUI::diagnostic (result.getErrorMessage()));
                                  });
                                  return;
                              }
@@ -292,7 +292,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
     juce::String meta;
     auto sep = [&] { if (meta.isNotEmpty()) meta += "  |  "; };
     if (entry.daw.isNotEmpty())         { sep(); meta += entry.daw; }
-    if (entry.bpm > 0.0)                { sep(); meta += juce::String ((int) entry.bpm) + " BPM"; }
+    if (entry.bpm > 0.0)                { sep(); meta += juce::String ((int) entry.bpm) + RememberUI::tr (" BPM"); }
     if (entry.key.isNotEmpty())         { sep(); meta += entry.key; }
     juce::String audioDetails = entry.recordedAt.substring (0, 10);
     if (entry.audioBytes >= 0)
@@ -300,9 +300,9 @@ void ProjectRowComponent::paint (juce::Graphics& g)
         if (audioDetails.isNotEmpty()) audioDetails += "  |  ";
         audioDetails += juce::File::descriptionOfSizeInBytes (entry.audioBytes);
     }
-    if (entry.trashed) { sep(); meta += "Trash - retained for 30 days"; }
-    else if (entry.previewLocked) { sep(); meta += "Locked"; }
-    if (! entry.pending && ! entry.projectAvailable && ! entry.trashed) { sep(); meta += "Project not located"; }
+    if (entry.trashed) { sep(); meta += RememberUI::tr ("Trash - retained for 30 days"); }
+    else if (entry.previewLocked) { sep(); meta += RememberUI::tr ("Locked"); }
+    if (! entry.pending && ! entry.projectAvailable && ! entry.trashed) { sep(); meta += RememberUI::tr ("Project not located"); }
 
     g.setFont (RememberUI::font (12.0f));
     g.setColour (RememberUI::colour (Pal::Subtext));
@@ -337,31 +337,31 @@ void ProjectRowComponent::resized()
 
 ProjectListComponent::ProjectListComponent()
 {
-    RememberUI::placeholder (searchBox, "Search projects, tags, key...", Pal::Subtext);
+    RememberUI::placeholder (searchBox, RememberUI::tr ("Search projects, tags, key..."), Pal::Subtext);
     searchBox.setFont (RememberUI::font (13.0f));
-    RememberUI::bindColour (searchBox, juce::TextEditor::backgroundColourId, Pal::Elevated);
-    RememberUI::bindColour (searchBox, juce::TextEditor::textColourId, Pal::Text);
-    searchBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
-    RememberUI::bindColour (searchBox, juce::TextEditor::focusedOutlineColourId, Pal::Accent);
-    searchBox.setTitle ("Search library");
-    searchBox.setTooltip (RememberUI::shortcutTooltip ("Search library", "Ctrl+F"));
+    RememberUI::bindColour (searchBox, RememberUI::TextEditor::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (searchBox, RememberUI::TextEditor::textColourId, Pal::Text);
+    searchBox.setColour (RememberUI::TextEditor::outlineColourId,        juce::Colours::transparentBlack);
+    RememberUI::bindColour (searchBox, RememberUI::TextEditor::focusedOutlineColourId, Pal::Accent);
+    searchBox.setTitle (RememberUI::tr ("Search library"));
+    searchBox.setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Search library"), "Ctrl+F"));
     searchBox.setIndents (10, 0);
     searchBox.setJustification (juce::Justification::centredLeft);
     searchBox.onTextChange = [this] { scheduleSearchDebounce(); };
     addAndMakeVisible (searchBox);
 
     favFilterBtn.setClickingTogglesState (true);
-    favFilterBtn.setTitle ("Filter favorites");
-    favFilterBtn.setTooltip (RememberUI::shortcutTooltip ("Filter favorites", "Ctrl+Shift+F"));
-    RememberUI::bindColour (favFilterBtn, juce::TextButton::buttonColourId, Pal::Elevated);
-    RememberUI::bindColour (favFilterBtn, juce::TextButton::buttonOnColourId, Pal::Action);
-    RememberUI::bindColour (favFilterBtn, juce::TextButton::textColourOffId, Pal::Subtext);
-    favFilterBtn.setColour (juce::TextButton::textColourOnId,    juce::Colours::white);
+    favFilterBtn.setTitle (RememberUI::tr ("Filter favorites"));
+    favFilterBtn.setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Filter favorites"), "Ctrl+Shift+F"));
+    RememberUI::bindColour (favFilterBtn, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (favFilterBtn, RememberUI::TextButton::buttonOnColourId, Pal::Action);
+    RememberUI::bindColour (favFilterBtn, RememberUI::TextButton::textColourOffId, Pal::Subtext);
+    favFilterBtn.setColour (RememberUI::TextButton::textColourOnId,    juce::Colours::white);
     favFilterBtn.onClick = [this] { showFavOnly = favFilterBtn.getToggleState(); applyFilter(); };
     addAndMakeVisible (favFilterBtn);
 
-    RememberUI::bindColour (refreshBtn, juce::TextButton::buttonColourId, Pal::Elevated);
-    RememberUI::bindColour (refreshBtn, juce::TextButton::textColourOffId, Pal::Subtext);
+    RememberUI::bindColour (refreshBtn, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (refreshBtn, RememberUI::TextButton::textColourOffId, Pal::Subtext);
     refreshBtn.onClick = [this] { refresh(); };
     addAndMakeVisible (refreshBtn);
 
@@ -373,14 +373,14 @@ ProjectListComponent::ProjectListComponent()
     addAndMakeVisible (listBox);
 
     libraryStatus.setFont (RememberUI::font (12.0f));
-    RememberUI::bindColour (libraryStatus, juce::Label::textColourId, Pal::Subtext);
-    RememberUI::bindColour (libraryStatus, juce::Label::backgroundColourId, Pal::Elevated);
+    RememberUI::bindColour (libraryStatus, RememberUI::Label::textColourId, Pal::Subtext);
+    RememberUI::bindColour (libraryStatus, RememberUI::Label::backgroundColourId, Pal::Elevated);
     addChildComponent (libraryStatus);
 
-    itemCount.setTitle ("Recording count");
+    itemCount.setTitle (RememberUI::tr ("Recording count"));
     itemCount.setFont (RememberUI::font (12));
     itemCount.setJustificationType (juce::Justification::centredRight);
-    RememberUI::bindColour (itemCount, juce::Label::textColourId, Pal::Subtext);
+    RememberUI::bindColour (itemCount, RememberUI::Label::textColourId, Pal::Subtext);
     addAndMakeVisible (itemCount);
 
     configureWorkflow();
@@ -408,7 +408,7 @@ void ProjectListComponent::publishLibrary()
     collections = snapshot->smartCollections;
     refreshSmartFolderScope();
     collectionCombo.clear (juce::dontSendNotification);
-    collectionCombo.addItem ("Custom filters", 1);
+    collectionCombo.addItem (RememberUI::tr ("Custom filters"), 1);
     int selectedItem = 1;
     if (const auto* array = collections.getArray())
         for (int i = 0; i < array->size(); ++i)
@@ -422,39 +422,39 @@ void ProjectListComponent::publishLibrary()
     juce::String text, tooltip;
     if (snapshot->error.isNotEmpty())
     {
-        text = snapshot->stale ? "Library update failed; showing saved results. Check Settings and press Refresh."
-                               : "Library unavailable. Check Settings and press Refresh.";
-        tooltip = snapshot->error;
+        text = snapshot->stale ? RememberUI::tr ("Library update failed; showing saved results. Check Settings and press Refresh.")
+                               : RememberUI::tr ("Library unavailable. Check Settings and press Refresh.");
+        tooltip = RememberUI::diagnostic (snapshot->error);
     }
     else if (snapshot->loading)
-        text = "Loading library... You can search while projects are indexed.";
+        text = RememberUI::tr ("Loading library... You can search while projects are indexed.");
     else
     {
         juce::StringArray warnings, details;
         if (snapshot->unavailableEntries > 0)
         {
-            warnings.add (juce::String (snapshot->unavailableEntries) + " recording(s) unavailable. Right-click to check and repair.");
+            warnings.add (juce::String (snapshot->unavailableEntries) + RememberUI::tr (" recording(s) unavailable. Right-click to check and repair."));
             for (const auto& entry : snapshot->entries)
-                if (entry.storageError.isNotEmpty()) { details.add (entry.storageError); break; }
+                if (entry.storageError.isNotEmpty()) { details.add (RememberUI::diagnostic (entry.storageError)); break; }
         }
         if (snapshot->missingProjects > 0)
         {
             warnings.add (juce::String (snapshot->missingProjects)
-                + (snapshot->missingProjects == 1 ? " project not located." : " projects not located.") + " Check search folders in Settings.");
-            details.add ("Add project search folders in Settings and press Refresh, or select a recording and use Assign path. "
-                         "Previews remain available; entries are only deleted when you choose Delete entry.");
+                + (snapshot->missingProjects == 1 ? RememberUI::tr (" project not located.") : RememberUI::tr (" projects not located.")) + RememberUI::tr (" Check search folders in Settings."));
+            details.add (RememberUI::tr ("Add project search folders in Settings and press Refresh, or select a recording and use Assign path. ") +
+        RememberUI::tr ("Previews remain available; entries are only deleted when you choose Delete entry."));
             for (const auto& entry : snapshot->entries)
                 if (! entry.pending && ! entry.projectAvailable && entry.storageError.isEmpty() && entry.projectPath.isNotEmpty())
                 { details.add (entry.projectPath); break; }
         }
         if (warnings.isEmpty() && snapshot->entries.isEmpty())
-            warnings.add ("No recordings yet. Record a preview with the plugin to add a project.");
+            warnings.add (RememberUI::tr ("No recordings yet. Record a preview with the plugin to add a project."));
         text = warnings.joinIntoString ("\n");
         tooltip = details.joinIntoString ("\n");
     }
     libraryStatus.setText (text, juce::dontSendNotification);
     if (view == 3 && snapshot->error.isEmpty())
-        libraryStatus.setText ("Deleted recordings are kept for 30 days. Restore to keep them.", juce::dontSendNotification);
+        libraryStatus.setText (RememberUI::tr ("Deleted recordings are kept for 30 days. Restore to keep them."), juce::dontSendNotification);
     libraryStatus.setTooltip (tooltip);
     libraryStatus.setVisible (text.isNotEmpty() || view == 3);
     resized();
@@ -487,7 +487,7 @@ void ProjectListComponent::applyFilter()
     // Normal publications already arrive newest first; preserve that order
     // instead of sorting the whole library again on every search/favorite edit.
     if (view == 3 || filter.sort != LibraryFilter::Latest) filter.order (filtered);
-    itemCount.setText (juce::String (filtered.size()) + (filtered.size() == 1 ? " item" : " items"), juce::dontSendNotification);
+    itemCount.setText (juce::String (filtered.size()) + (filtered.size() == 1 ? RememberUI::tr (" item") : RememberUI::tr (" items")), juce::dontSendNotification);
     listBox.updateContent();
     juce::SparseSet<int> selection;
     for (int i = 0; i < filtered.size(); ++i)
@@ -524,7 +524,7 @@ void ProjectListComponent::paint (juce::Graphics& g)
     g.fillAll (RememberUI::colour (Pal::BgDeep));
     g.setFont (RememberUI::font (13, true));
     g.setColour (RememberUI::colour (Pal::Text));
-    const auto title = folderFilter.isEmpty() ? juce::String ("All recordings") : folderFilter.fromLastOccurrenceOf ("/", false, false);
+    const auto title = folderFilter.isEmpty() ? juce::String (RememberUI::tr ("All recordings")) : folderFilter.fromLastOccurrenceOf ("/", false, false);
     juce::ignoreUnused (title);
     if (filtered.isEmpty() && ! allEntries.isEmpty())
     {
@@ -532,10 +532,10 @@ void ProjectListComponent::paint (juce::Graphics& g)
         if (libraryStatus.isVisible()) empty.removeFromTop (48);
         g.setFont (RememberUI::font (16, true));
         g.setColour (RememberUI::colour (Pal::Text));
-        g.drawText (view == 3 ? "Trash is empty" : view == 2 ? "No missing projects match" : "No matching recordings", empty.withHeight (28).withY (empty.getCentreY() - 28), juce::Justification::centred);
+        g.drawText (view == 3 ? RememberUI::tr ("Trash is empty") : view == 2 ? RememberUI::tr ("No missing projects match") : RememberUI::tr ("No matching recordings"), empty.withHeight (28).withY (empty.getCentreY() - 28), juce::Justification::centred);
         g.setFont (RememberUI::font (13));
         g.setColour (RememberUI::colour (Pal::Subtext));
-        g.drawText ("Try another search or change your filters.", empty.withHeight (28).withY (empty.getCentreY()), juce::Justification::centred);
+        g.drawText (RememberUI::tr ("Try another search or change your filters."), empty.withHeight (28).withY (empty.getCentreY()), juce::Justification::centred);
     }
 }
 
@@ -552,7 +552,7 @@ void ProjectListComponent::resized()
     auto workflow = content.withY (52).withHeight (32).withRight (favFilterBtn.getRight());
     const auto sortFont = sortCombo.getLookAndFeel().getComboBoxFont (sortCombo);
     juce::GlyphArrangement sortText;
-    sortText.addLineOfText (sortFont, "BPM descending", 0, 0);
+    sortText.addLineOfText (sortFont, RememberUI::tr ("BPM descending"), 0, 0);
     const int sortWidth = juce::jmax (152, juce::roundToInt (std::ceil (sortText.getBoundingBox (0, -1, true).getWidth())) + 40);
     sortCombo.setBounds (workflow.removeFromRight (sortWidth));
     workflow.removeFromRight (8);
@@ -624,7 +624,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         {
             if (safe == nullptr) return;
             if (result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon,
-                                                                        "Cannot edit entry", result.getErrorMessage());
+                                                                        RememberUI::tr ("Cannot edit entry"), RememberUI::diagnostic (result.getErrorMessage()));
         });
     };
     comp->onActions = [safe, entry] (ProjectRowComponent* rowComponent)
@@ -654,10 +654,10 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
     comp->onRenameRequested = [safe, entry, persist]
     {
         if (safe == nullptr) return;
-        auto* dialog = new juce::AlertWindow ("Rename entry", entry.name, juce::AlertWindow::NoIcon);
-        dialog->addTextEditor ("name", entry.name, "Name");
-        dialog->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
-        dialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        auto* dialog = new juce::AlertWindow (RememberUI::tr ("Rename entry"), entry.name, juce::AlertWindow::NoIcon);
+        dialog->addTextEditor ("name", entry.name, RememberUI::tr ("Name"));
+        dialog->addButton (RememberUI::tr ("Save"), 1, juce::KeyPress (juce::KeyPress::returnKey));
+        dialog->addButton (RememberUI::tr ("Cancel"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
         dialog->enterModalState (true, juce::ModalCallbackFunction::create (
             [safe, alert = juce::Component::SafePointer<juce::AlertWindow> (dialog), entry, persist] (int result) mutable
             {
@@ -688,7 +688,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         ProjectScanner::openProjectAsync (entry, false, [safe] (juce::Result result)
         {
             if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-                juce::AlertWindow::WarningIcon, "Cannot open project", result.getErrorMessage());
+                juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot open project"), RememberUI::diagnostic (result.getErrorMessage()));
         });
     };
     comp->onConfirmOpenInDaw = [safe, entry]
@@ -698,23 +698,22 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         {
             RememberUI::showMessageBox (
                 juce::MessageBoxOptions().withAssociatedComponent (safe.getComponent())
-                    .withIconType (juce::MessageBoxIconType::WarningIcon).withTitle ("Cannot open project")
-                    .withMessage ("Locate the project file before opening it in your DAW.").withButton ("OK"), [] (int) {});
+                    .withIconType (juce::MessageBoxIconType::WarningIcon).withTitle (RememberUI::tr ("Cannot open project"))
+                    .withMessage (RememberUI::tr ("Locate the project file before opening it in your DAW.")).withButton (RememberUI::tr ("OK")), [] (int) {});
             return;
         }
         RememberUI::showMessageBox (
             juce::MessageBoxOptions().withAssociatedComponent (safe.getComponent()).withIconType (juce::MessageBoxIconType::QuestionIcon)
-                .withTitle ("Open project?")
-                .withMessage ("Open \"" + entry.name + "\" in "
-                    + (entry.daw.isNotEmpty() ? entry.daw : "its associated DAW") + "?\n\n" + entry.projectPath)
-                .withButton ("Open project").withButton ("Cancel"),
+                .withTitle (RememberUI::tr ("Open project?"))
+                .withMessage (RememberUI::format ("Open \"{name}\" in {daw}?", { { "{name}", entry.name }, { "{daw}", entry.daw.isNotEmpty() ? entry.daw : RememberUI::tr ("its associated DAW") } }) + "\n\n" + entry.projectPath)
+                .withButton (RememberUI::tr ("Open project")).withButton (RememberUI::tr ("Cancel")),
             [safe, entry] (int result)
             {
                 if (safe == nullptr || result != 1) return;
                 ProjectScanner::openProjectAsync (entry, false, [safe] (juce::Result opened)
                 {
                     if (safe != nullptr && opened.failed()) juce::AlertWindow::showMessageBoxAsync (
-                        juce::AlertWindow::WarningIcon, "Cannot open project", opened.getErrorMessage());
+                        juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot open project"), RememberUI::diagnostic (opened.getErrorMessage()));
                 });
             });
     };
@@ -724,11 +723,11 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         if (safe == nullptr) return;
         juce::AlertWindow::showAsync (
             juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
-                .withTitle ("Delete entry?")
-                .withMessage ("Remove the preview and metadata for \"" + entry.name + "\"? The DAW project is kept."
+                .withTitle (RememberUI::tr ("Delete entry?"))
+                .withMessage (RememberUI::format ("Remove the preview and metadata for \"{name}\"? The DAW project is kept.", { { "{name}", entry.name } })
                     + (entry.pending && entry.pendingOwner == LibraryStore::OwnerState::Unknown
-                        ? "\nClose any DAW session that may still use this recording before deleting it." : juce::String{}))
-                .withButton ("Delete").withButton ("Cancel"),
+                        ? RememberUI::tr ("\nClose any DAW session that may still use this recording before deleting it.") : juce::String{}))
+                .withButton (RememberUI::tr ("Delete")).withButton (RememberUI::tr ("Cancel")),
             [safe, entry] (int result)
             {
                 if (safe == nullptr || result != 1) return;
@@ -739,7 +738,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
                 }, [safe] (juce::Result deletion)
                 {
                     if (safe != nullptr && deletion.failed()) juce::AlertWindow::showMessageBoxAsync (
-                        juce::AlertWindow::WarningIcon, "Cannot delete entry", deletion.getErrorMessage());
+                        juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot delete entry"), RememberUI::diagnostic (deletion.getErrorMessage()));
                 });
             });
     };
@@ -755,9 +754,9 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
         if (entry.pending && entry.pendingOwner == LibraryStore::OwnerState::Unknown)
             juce::AlertWindow::showAsync (
                 juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
-                    .withTitle (keep ? "Keep this recording?" : "Repair this recording?")
+                    .withTitle (keep ? RememberUI::tr ("Keep this recording?") : RememberUI::tr ("Repair this recording?"))
                     .withMessage ("Remember cannot verify whether a DAW still owns this recording. Close any session that may use it before recovering it.")
-                    .withButton (keep ? "Keep recording" : "Check recording").withButton ("Cancel"),
+                    .withButton (keep ? RememberUI::tr ("Keep recording") : RememberUI::tr ("Check recording")).withButton (RememberUI::tr ("Cancel")),
                 [run] (int result) { if (result == 1) run (true); });
         else run (false);
     };
@@ -775,12 +774,12 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
     {
         const auto folder = entry.metadataFile.getParentDirectory();
         const auto root = ProjectScanner::getPreviewsFolder();
-        if (! folder.isAChildOf (root)) return juce::Result::fail ("Recording is outside the configured library");
+        if (! folder.isAChildOf (root)) return juce::Result::fail (RememberUI::tr ("Recording is outside the configured library"));
         if (entry.pending)
         {
             const auto owner = LibraryStore::pendingOwnerState (folder, LibraryStore::readJson (entry.metadataFile));
             if (owner == LibraryStore::OwnerState::Active || (owner == LibraryStore::OwnerState::Unknown && ! confirmed))
-                return juce::Result::fail ("The DAW owner changed; close its session and review this recording again");
+                return juce::Result::fail (RememberUI::tr ("The DAW owner changed; close its session and review this recording again"));
         }
         *outcome = selection ? LibraryStore::recoverEntryRevision (folder, *selection, token, confirmed)
                              : LibraryStore::recoverEntry (folder);
@@ -791,7 +790,7 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
         if (safe == nullptr || result.wasOk()) return;
         if (outcome->choices.isEmpty())
         {
-            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Cannot recover recording", result.getErrorMessage());
+            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot recover recording"), RememberUI::diagnostic (result.getErrorMessage()));
             return;
         }
         if (safe->recoveryWindow != nullptr) safe->recoveryWindow->exitModalState (0);
@@ -801,7 +800,7 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
                 if (safe == nullptr || ! safe->onEntryPlay) return;
                 auto preview = entry;
                 preview.previewOgg = choice.previewOgg; preview.storageError.clear();
-                preview.name = "Recovery preview " + choice.revision.substring (0, 12);
+                preview.name = RememberUI::tr ("Recovery preview ") + choice.revision.substring (0, 12);
                 preview.projectPath.clear(); preview.projectAvailable = false;
                 preview.bpm = choice.bpm; preview.key = choice.key;
                 safe->onEntryPlay (preview);
@@ -812,7 +811,7 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
             }, keep);
         juce::DialogWindow::LaunchOptions options;
         options.content.setOwned (dialog.release());
-        options.dialogTitle = "Choose a recovery revision";
+        options.dialogTitle = RememberUI::tr ("Choose a recovery revision");
         options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep);
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
@@ -868,7 +867,7 @@ void ProjectListComponent::openSelectedInDaw()
         [safe = juce::Component::SafePointer<ProjectListComponent> (this)] (juce::Result result)
         {
             if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-                juce::AlertWindow::WarningIcon, "Cannot open project", result.getErrorMessage());
+                juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot open project"), RememberUI::diagnostic (result.getErrorMessage()));
         });
 }
 
@@ -911,7 +910,7 @@ void ProjectListComponent::toggleFavoriteForSelected()
     ProjectScanner::editAsync ([entry] { return entry.save ({ "favorite" }); }, [safe] (juce::Result result)
     {
         if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-            juce::AlertWindow::WarningIcon, "Cannot edit favorite", result.getErrorMessage());
+            juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot edit favorite"), RememberUI::diagnostic (result.getErrorMessage()));
     });
     for (auto& e : allEntries) if (e.metadataFile == entry.metadataFile) e.favorite = entry.favorite;
     applyFilter();

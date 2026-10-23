@@ -182,7 +182,7 @@ public:
         : onOpen (std::move (open)), onExit (std::move (exit))
     {
         setIconImage (createIcon(), {});
-        setIconTooltip ("Remember - click to open");
+        setIconTooltip (RememberUI::tr ("Remember - click to open"));
     }
 
     void mouseDown (const juce::MouseEvent& event) override
@@ -192,9 +192,9 @@ public:
             juce::SharedResourcePointer<RememberUI::TrayMenuLookAndFeel> theme;
             juce::PopupMenu menu;
             menu.setLookAndFeel (&theme.get());
-            menu.addItem (1, "Open Remember");
+            menu.addItem (1, RememberUI::tr ("Open Remember"));
             menu.addSeparator();
-            menu.addItem (2, "Exit");
+            menu.addItem (2, RememberUI::tr ("Exit"));
             menu.showMenuAsync (juce::PopupMenu::Options(),
                 [safe = juce::Component::SafePointer<TrayIcon> (this), theme] (int result)
                 {
@@ -230,6 +230,7 @@ private:
 
     std::function<void()> onOpen;
     std::function<void()> onExit;
+    RememberUI::LanguageCallback languageUpdates { [this] { setIconTooltip (RememberUI::tr ("Remember - click to open")); } };
 };
 
 AppShell::AppShell (std::function<void()> onReadyToQuit) : readyToQuit (std::move (onReadyToQuit))
@@ -259,7 +260,7 @@ void AppShell::requestQuit()
     juce::PopupMenu::dismissAllActiveMenus();
     mainWindow.reset();
     ProjectScanner::beginShutdown();
-    trayIcon->setIconTooltip ("Remember - finishing background work");
+    trayIcon->setIconTooltip (RememberUI::tr ("Remember - finishing background work"));
     startTimer (50);
 }
 bool AppShell::hasTaskbarButtons() const { return mainWindow && mainWindow->hasTaskbarButtons(); }

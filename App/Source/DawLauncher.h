@@ -14,7 +14,7 @@ public:
     struct Application { juce::String name; juce::File executable; juce::Image icon; };
     DawLauncher()
     {
-        setTitle ("Installed DAWs");
+        setTitle (RememberUI::tr ("Installed DAWs"));
         viewport.setViewedComponent (&body, false);
         viewport.setScrollBarsShown (false, true);
         addAndMakeVisible (viewport);
@@ -36,9 +36,9 @@ public:
             button->onClick = [app, safe = juce::Component::SafePointer<DawLauncher> (this)]
             {
                 ProjectScanner::queryAsync ([app]
-                { return app.executable.startAsProcess() ? juce::Result::ok() : juce::Result::fail ("Cannot open " + app.name); },
+                { return app.executable.startAsProcess() ? juce::Result::ok() : juce::Result::fail (RememberUI::tr ("Cannot open ") + app.name); },
                     [safe] (juce::Result result)
-                    { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Open DAW", result.getErrorMessage()); });
+                    { if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, RememberUI::tr ("Open DAW"), RememberUI::diagnostic (result.getErrorMessage())); });
             };
             body.addAndMakeVisible (*button); buttons.push_back (std::move (button));
         }
@@ -181,14 +181,14 @@ private:
         DeleteDC (dc); DestroyIcon (info.hIcon); return image;
     }
 #endif
-    class LaunchButton : public juce::TextButton
+    class LaunchButton : public RememberUI::TextButton
     {
     public:
-        explicit LaunchButton (const Application& app) : juce::TextButton (app.name.substring (0, 2)), icon (app.icon)
-        { setTitle ("Open " + app.name); setTooltip ("Open " + app.name); }
+        explicit LaunchButton (const Application& app) : RememberUI::TextButton (app.name.substring (0, 2)), icon (app.icon)
+        { setTitle (RememberUI::tr ("Open ") + app.name); setTooltip (RememberUI::tr ("Open ") + app.name); }
         void paintButton (juce::Graphics& g, bool over, bool down) override
         {
-            if (! icon.isValid()) { juce::TextButton::paintButton (g, over, down); return; }
+            if (! icon.isValid()) { RememberUI::TextButton::paintButton (g, over, down); return; }
             getLookAndFeel().drawButtonBackground (g, *this, RememberUI::colour (Pal::Elevated), over, down);
             g.drawImageWithin (icon, 4, 4, getWidth() - 8, getHeight() - 8, juce::RectanglePlacement::centred);
         }
