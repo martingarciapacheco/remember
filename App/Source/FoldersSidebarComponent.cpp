@@ -1,4 +1,5 @@
 #include "FoldersSidebarComponent.h"
+#include "LibraryFilter.h"
 #include "ProjectListComponent.h"   // for Pal::
 
 // Drag payload formats:
@@ -176,6 +177,54 @@ private:
 };
 
 // ── TreeRootItem: invisible root that holds "All" + the folder hierarchy ─────
+class FoldersSidebarComponent::SmartFolderItem final : public juce::TreeViewItem
+{
+public:
+    SmartFolderItem (FoldersSidebarComponent& o, juce::String identity, juce::String label, int count)
+        : owner (o), id (std::move (identity)), name (std::move (label)), matches (count) {}
+    juce::String id, name;
+    int matches;
+    bool mightContainSubItems() override { return false; }
+    int getItemHeight() const override { return 34; }
+    juce::String getUniqueName() const override { return "__SMART__" + id; }
+    juce::String getTooltip() override { return name + " — automatic folder (" + juce::String (matches) + " previews)"; }
+    void paintItem (juce::Graphics& g, int w, int h) override
+    {
+        if (isSelected())
+        {
+            g.setColour (RememberUI::colour (Pal::Selected));
+            g.fillRoundedRectangle (juce::Rectangle<float> (2, 2, (float) w - 4, (float) h - 4), RememberUI::controlRadius);
+        }
+        g.setColour (RememberUI::colour (isSelected() ? Pal::Accent : Pal::Text));
+        RememberUI::icon (g, "smart-folder", { 6, 0, 20, (float) h });
+        g.setFont (RememberUI::font (13));
+        g.drawText (name, 32, 0, w - 82, h, juce::Justification::centredLeft, true);
+        g.setColour (RememberUI::colour (Pal::Subtext)); g.setFont (RememberUI::font (10.5f));
+        g.drawText (juce::String (matches), w - 46, 0, 32, h, juce::Justification::centredRight);
+    }
+    void itemSelectionChanged (bool) override { owner.triggerAsyncUpdate(); }
+    void itemClicked (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu())
+        {
+            owner.applyTreeSelection();
+            juce::PopupMenu menu; menu.addItem (1, "Edit conditions...");
+            auto safe = juce::Component::SafePointer<FoldersSidebarComponent> (&owner);
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&owner)
+                .withTargetScreenArea ({ e.getScreenPosition(), { 1, 1 } }), [safe, identity = id] (int result)
+                { if (safe != nullptr && result == 1 && safe->onEditSmartFolder) safe->onEditSmartFolder (identity); });
+        }
+        else
+        {
+            owner.selectedSmartFolder = id; owner.selectedFolder.clear(); owner.selectedFolders.clear();
+            owner.applyTreeSelection();
+            if (owner.onSmartFolderSelected) owner.onSmartFolderSelected (id);
+        }
+    }
+private:
+    FoldersSidebarComponent& owner;
+};
+
 class FoldersSidebarComponent::TreeRootItem : public juce::TreeViewItem
 {
 public:
@@ -224,6 +273,10 @@ FoldersSidebarComponent::FoldersSidebarComponent()
     sortBtn   .onClick = [this] { chooseSortMode(); };
     addAndMakeVisible (newRootBtn);
     addAndMakeVisible (sortBtn);
+    RememberUI::iconButton (smartFolderBtn, "smart-folder", "Create smart folder");
+    smartFolderBtn.setTooltip ("Create an automatic folder using filter conditions");
+    smartFolderBtn.onClick = [this] { if (onCreateSmartFolder) onCreateSmartFolder(); };
+    addAndMakeVisible (smartFolderBtn);
 
     rootItem = std::make_unique<TreeRootItem> (*this);
     tree.setRootItem (rootItem.get());
@@ -257,6 +310,8 @@ void FoldersSidebarComponent::resized()
     sortBtn   .setBounds (h.removeFromRight (44));
     h.removeFromRight (4);
     newRootBtn.setBounds (h.removeFromRight (32));
+    h.removeFromRight (4);
+    smartFolderBtn.setBounds (h.removeFromRight (32));
     h.removeFromRight (6);
     header    .setBounds (h.withTrimmedLeft (RememberUI::folderIconLeading - h.getX()));
 
@@ -270,6 +325,7 @@ void FoldersSidebarComponent::refresh()
 
 void FoldersSidebarComponent::selectFolder (const juce::String& path, juce::ModifierKeys modifiers)
 {
+    selectedSmartFolder.clear();
     if (path.isEmpty())
     {
         selectedFolders.clear(); selectedFolder.clear(); selectionAnchor.clear();
@@ -312,8 +368,10 @@ void FoldersSidebarComponent::applyTreeSelection()
     std::function<void(juce::TreeViewItem*)> apply = [&] (juce::TreeViewItem* item)
     {
         if (auto* folder = dynamic_cast<FolderItem*> (item))
-            folder->setSelected (folder->fullPath.isEmpty() ? selectedFolders.isEmpty() : selectedFolders.contains (folder->fullPath),
+            folder->setSelected (selectedSmartFolder.isEmpty() && (folder->fullPath.isEmpty() ? selectedFolders.isEmpty() : selectedFolders.contains (folder->fullPath)),
                                  false, juce::dontSendNotification);
+        if (auto* smart = dynamic_cast<SmartFolderItem*> (item))
+            smart->setSelected (smart->id == selectedSmartFolder, false, juce::dontSendNotification);
         for (int i = 0; i < item->getNumSubItems(); ++i) apply (item->getSubItem (i));
     };
     apply (tree.getRootItem());
@@ -347,6 +405,15 @@ void FoldersSidebarComponent::handleAsyncUpdate()
     // Keyboard and accessibility selection changes use the same filter model.
     juce::StringArray paths;
     for (int i = 0; i < tree.getNumSelectedItems(); ++i)
+        if (auto* item = dynamic_cast<SmartFolderItem*> (tree.getSelectedItem (i)))
+        {
+            if (selectedSmartFolder == item->id) return;
+            selectedSmartFolder = item->id; selectedFolder.clear(); selectedFolders.clear();
+            applyTreeSelection();
+            if (onSmartFolderSelected) onSmartFolderSelected (selectedSmartFolder);
+            return;
+        }
+    for (int i = 0; i < tree.getNumSelectedItems(); ++i)
         if (auto* item = dynamic_cast<FolderItem*> (tree.getSelectedItem (i)))
         {
             if (item->fullPath.isEmpty()) { paths.clear(); break; }
@@ -354,7 +421,8 @@ void FoldersSidebarComponent::handleAsyncUpdate()
         }
     bool same = paths.size() == selectedFolders.size();
     for (const auto& path : paths) same = same && selectedFolders.contains (path);
-    if (same) return;
+    if (same && selectedSmartFolder.isEmpty()) return;
+    selectedSmartFolder.clear();
     selectedFolders = paths;
     selectedFolder = paths.isEmpty() ? juce::String{} : paths[paths.size() - 1];
     selectionAnchor = selectedFolder;
@@ -488,6 +556,18 @@ void FoldersSidebarComponent::rebuildTree()
     // 1) "All" pseudo-folder
     auto* allItem = new FolderItem (*this, "All", {}, (int) allEntries.size());
     rootItem->addSubItem (allItem);
+    bool smartStillExists = false;
+    if (auto* values = publication->smartCollections.getArray())
+        for (const auto& item : *values)
+            if ((bool) item.getProperty ("smartFolder", false))
+            {
+                const auto id = item.getProperty ("id", "").toString();
+                smartStillExists = smartStillExists || id == selectedSmartFolder;
+                const auto filter = LibraryFilter::fromJson (item.getProperty ("filter", {}));
+                int count = 0; for (const auto& entry : allEntries) if (! entry.trashed && filter.matches (entry)) ++count;
+                rootItem->addSubItem (new SmartFolderItem (*this, id, item.getProperty ("name", "").toString(), count));
+            }
+    if (! smartStillExists) selectedSmartFolder.clear();
 
     // 2) Build the folder tree under root from sorted records
     //    Group paths by parent, sort siblings together, recurse.

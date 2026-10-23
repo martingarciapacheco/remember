@@ -13,7 +13,7 @@ La validación se registra por separado; no se deduce del estado.
 | Grabación de previews mediante el VST3 | Genérico | Genérico | Genérico, requiere host VST3 compatible |
 | Biblioteca, carpetas, tags, favoritos, filtros, recuperación y reproducción de previews | Genérico | Genérico | Genérico |
 | Arrastre de preview completa como WAV desde el reproductor principal | Genérico; implementado | Genérico; implementado | WAV PCM de 24 bits; validar el arrastre nativo en cada host |
-| Asociación de proyecto y apertura en el DAW | Implementado | Implementado | Resolución por extensión: REAPER, Cubase/Nuendo, Studio One, Pro Tools y Bitwig; validar integración por host |
+| Asociación de proyecto y apertura en el DAW (doble clic con confirmación) | Implementado | Implementado | Resolución por extensión: REAPER, Cubase/Nuendo, Studio One, Pro Tools y Bitwig; validar integración por host |
 | Detección de backups para resolver el proyecto principal | Implementado | Implementado | REAPER, Cubase/Nuendo y Studio One: reglas específicas; ampliar pruebas por DAW |
 | Used Sounds: inventario de samples | Implementado | Pendiente | Pendiente |
 | Used Sounds: MIDI, playlist y audición básica | Parcial: notas, sin efectos/automatización compleja | Pendiente | Pendiente |
@@ -24,6 +24,36 @@ La validación se registra por separado; no se deduce del estado.
 | Statistics: top 50 instrumentos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: top 50 efectos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: búsqueda, drag de copias y reproductor de samples independiente | Genérico sobre el inventario | Genérico sobre el inventario | Requiere lector de inventario |
+
+## Apertura desde la lista de previews
+
+El doble clic en una fila solicita confirmación antes de abrir el proyecto
+asociado. El diálogo identifica nombre, DAW y ruta, y conserva la identidad de la
+grabación aunque se recicle la fila. Cancelar no abre el DAW. Si falta el proyecto,
+se indica que hay que localizarlo primero. Usa el mismo resolvedor y lanzamiento
+asíncrono ya existente; no añade lectores ni amplía la matriz de soporte por DAW.
+La validación nativa por host sigue siendo la indicada en la matriz.
+
+La opción Capture from any position muestra en app y VST3 un aviso asíncrono
+sobre posibles artefactos y colas de sonido incorrectas. No cambia el motor de
+captura ni los formatos admitidos por los hosts.
+
+Validación del 22 de octubre de 2026: frontend de app aprobado, con gesto de doble
+clic, nombre/DAW/ruta capturados y cancelación sin lanzamiento; menú contextual y
+confirmación de condiciones de smart folders; aviso de captura en Settings.
+`out/seven-changes-app-themed-tests2.log`. Captura y frontend del VST3: 2/2,
+`out/seven-changes-plugin-themed-tests.log`. Regresión completa de app, workflow
+y shell nativo: 3/3, `out/seven-changes-app-native-regression.log`. Used Sounds,
+Statistics y recuperación mantienen sus suites aprobadas en
+`out/seven-changes-app-final-ui.log`. Estas pruebas no abren un DAW real ni
+amplían la certificación por host de la matriz.
+
+Revalidación tras separar las condiciones de smart folders de los filtros
+temporales: app y VST3 compilados, frontend de app y workflow de filtros aprobados,
+captura/frontend del VST3 2/2 y regresión completa/workflow/shell Windows 3/3.
+Logs: `out/smart-scope-app-build.log`, `out/smart-scope-plugin-build.log`,
+`out/smart-scope-frontend.log`, `out/smart-scope-workflow.log`,
+`out/smart-scope-plugin-tests.log` y `out/smart-scope-full-regression.log`.
 
 ## Arrastre de previews
 

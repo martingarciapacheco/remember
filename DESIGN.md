@@ -253,10 +253,61 @@ audio/storage behavior and bounded list/tag component creation intact.
 
 ## Preview storage information
 
+The tray context menu uses the shared surface and typography. On Windows its
+native window region follows the rounded surface at the current DPI, excluding
+all four rectangular corners regardless of the application behind it. Keep Open,
+Exit, keyboard navigation and late callback lifetime protection intact.
+
+The Folders header includes a separate, accessible Create smart folder button,
+using the shared folder-and-spark vector. Creation offers Use active filters or
+Create a new filter, followed by a named, scrollable conditions form.
+The two source actions sit side by side in a compact dialog and open the editor
+directly, without a dropdown or a separate Apply step. Smart
+folders store predicates rather than recording memberships and evaluate new or
+changed library metadata automatically. Their sidebar rows show matching counts;
+right-click opens Edit conditions. Confirm changes before persisting them on
+the existing edit worker. Keep ordinary folder selection, drag/drop and undo.
+Selecting a smart folder clears temporary library filters and scopes the list to
+its saved predicates. Search, favorites and project filters refine that scope;
+Clear filters returns to the whole smart folder and keeps it selected. Background
+publications refresh saved membership without replacing temporary refinements.
+The search placeholder names the selected smart folder. Creating from active
+filters inside one preserves both its predicates and the refinements as an AND;
+the scrollable editor exposes each condition group for explicit editing.
+
+Double-clicking a preview row asks before opening the captured project identity
+in its associated DAW. Cancel launches nothing; retain single-click selection,
+playback shortcuts and recycled rows.
+The first row press selects/starts the preview immediately. Subsequent presses
+within the same JUCE multi-click gesture do not reload or restart it; the second
+press only requests project opening. Do not add a double-click timeout to playback.
+Missing projects explain that Locate is
+required. Enabling capture from any position in the app or plugin shows an
+asynchronous warning about small artifacts and incorrectly captured sound tails.
+
+Settings groups controls into Recording & storage, Appearance, and Projects &
+audition. Appearance and zoom retain immediate saving; other pending controls
+retain OK/Cancel. Use shared semantic tabs with focus treatment. All secondary
+JUCE dialogs use the same 34-pixel Windows caption and 46-pixel close target as
+the main window, preserving native macOS frames and window actions. Read saved
+main-window geometry on a worker before the first visible frame, including the
+maximised state and the rectangle restored from it; never show provisional bounds.
+
+Release packaging takes its SetupIconPath from the freshly built app's
+JUCE-generated icon.ico. This keeps setup, app and VST3 on the same PNG source
+and prevents a stale installer-only icon from returning.
+
 The library toolbar places Clear filters immediately after the smart-collection
 save button. It resets search, favorites, folder selections and project filters;
-saved collections remain available. Keep the actions and count visible at the
-minimum size. The Tags filter opens an anchored, scrollable list of existing
+saved collections remain available.
+
+Each saved-filter row in the Custom filters dropdown offers Delete saved filter
+on right-click. Delete only that saved definition on the edit worker, preserving
+recordings, active filter conditions and other saved selections by stable identity.
+
+Inside a selected smart folder, reset only
+temporary filters and preserve that folder's saved scope and selection. Keep the
+actions and count visible at the minimum size. The Tags filter opens an anchored, scrollable list of existing
 library tags on focus/click, filters the current comma-separated token as the
 user types, and supports pointer selection and Up/Down/Return/Escape. Use one
 recycled list rather than creating a component for every tag.
@@ -275,6 +326,7 @@ total audio size, including recovery. Measure on the scanner worker and cache
 with the entry metadata; never enumerate files while painting. Each row's
 ellipsis menu offers Compact preview audio. Settings places a compact button,
 editable positive MB limit (10 by default), and units below the storage summary.
+Centre the MB value horizontally and vertically in its field.
 Before either operation, explain the selected OGG quality, lossy generation,
 permanent removal of fragments/recovery, and one conversion on a later partial
 capture. Keep encoding, validation and cleanup on workers; release the selected

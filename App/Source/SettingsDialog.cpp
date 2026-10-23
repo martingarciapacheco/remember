@@ -5,6 +5,7 @@
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/AppearanceSettings.h"
 #include "../../Shared/ZoomSettings.h"
+#include "../../Shared/CaptureWarning.h"
 
 // ── ListBoxModel for the project folders list ────────────────────────────────
 class SettingsDialog::FoldersListModel : public juce::ListBoxModel
@@ -93,10 +94,20 @@ static constexpr double kMonoSizeFactor = 0.6;
 
 SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner::SettingsSnapshot()> reader) : firstRun (firstRunFlag)
 {
-    setSize (680, 848);
+    sections.addTab ("Recording & storage", RememberUI::colour (Pal::BgDeep), 0);
+    sections.addTab ("Appearance", RememberUI::colour (Pal::BgDeep), 1);
+    sections.addTab ("Projects & audition", RememberUI::colour (Pal::BgDeep), 2);
+    sections.setTitle ("Settings sections");
+    sections.changed = [this] { resized(); };
+    addAndMakeVisible (sections);
+    setSize (680, 640);
     for (auto* toggle : { &manualToggle, &lockToggle, &replaceToggle })
     { toggle->setTitle (toggle->getButtonText()); addAndMakeVisible (*toggle); }
     manualToggle.setTooltip ("Default for new Remember instances. Existing instances and saved DAW projects keep their own setting.");
+    manualToggle.onClick = [this]
+    {
+        if (manualToggle.getToggleState()) RememberUI::showCaptureFromAnyPositionWarning (this);
+    };
 
     auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
     {
@@ -179,6 +190,8 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     compactBtn.onClick = [this] { compactLargePreviews(); };
     compactLimit.setTitle ("Compaction limit in MB"); compactLimit.setText ("10", false);
     compactLimit.setInputRestrictions (9, "0123456789."); compactLimit.setFont (RememberUI::font (13));
+    compactLimit.setJustification (juce::Justification::centred);
+    compactLimit.setIndents (8, 0);
     compactLimit.setTooltip ("Total audio including recovery; 1 MB = 1,000,000 bytes. Saved with OK.");
     RememberUI::bindColour (compactLimit, juce::TextEditor::backgroundColourId, Pal::Content);
     RememberUI::bindColour (compactLimit, juce::TextEditor::textColourId, Pal::Text);
@@ -707,6 +720,20 @@ void SettingsDialog::resized()
     area.removeFromTop (16);
     area = area.reduced (16, 0);
 
+    sections.setBounds (area.removeFromTop (36));
+    area.removeFromTop (20);
+    const int section = sections.getCurrentTabIndex();
+    auto show = [section] (int index, std::initializer_list<juce::Component*> controls)
+    { for (auto* control : controls) control->setVisible (section == index); };
+    show (1, { &appearanceCaption, &appearanceHint, &appearanceCombo, &zoomCaption, &zoomHint, &zoomCombo });
+    show (0, { &previewsCaption, &previewsHint, &previewsPath, &previewsBrowse,
+        &recordCaption, &recordHint, &durationLbl, &qualityLbl, &durationCombo, &qualityCombo,
+        &monoToggle, &manualToggle, &lockToggle, &replaceToggle, &sizeEstimate, &storageUsage,
+        &pcmPolicy, &storageInfo, &compactBtn, &compactLimit, &compactUnits });
+    show (2, { &midiCaption, &midiHint, &midiVoiceCombo, &projectsCaption, &projectsHint,
+        &foldersList, &addProjectsBtn, &refreshProjectsBtn, &searchStatus });
+    if (section == 1)
+    {
     auto appearanceRow = area.removeFromTop (32);
     appearanceCaption.setBounds (appearanceRow.removeFromLeft (110));
     appearanceCombo.setBounds (appearanceRow.removeFromLeft (150));
@@ -719,11 +746,9 @@ void SettingsDialog::resized()
     zoomRow.removeFromLeft (16);
     zoomHint.setBounds (zoomRow);
     area.removeFromTop (12);
-    auto midiRow = area.removeFromTop (32);
-    midiCaption.setBounds (midiRow.removeFromLeft (110));
-    midiVoiceCombo.setBounds (midiRow.removeFromLeft (150)); midiRow.removeFromLeft (16);
-    midiHint.setBounds (midiRow); area.removeFromTop (12);
-
+    }
+    if (section == 0)
+    {
     // ── Previews block ──────────────────────────────────────────────────────
     auto block1 = area.removeFromTop (78);
     previewsCaption.setBounds (block1.removeFromTop (20));
@@ -771,11 +796,20 @@ void SettingsDialog::resized()
 
     area.removeFromTop (12);
 
+    }
+    if (section == 2)
+    {
+    auto midiRow = area.removeFromTop (32);
+    midiCaption.setBounds (midiRow.removeFromLeft (110));
+    midiVoiceCombo.setBounds (midiRow.removeFromLeft (150)); midiRow.removeFromLeft (16);
+    midiHint.setBounds (midiRow); area.removeFromTop (12);
+
     // ── Project folders block ───────────────────────────────────────────────
     projectsCaption.setBounds (area.removeFromTop (20));
     projectsHint   .setBounds (area.removeFromTop (16));
     area.removeFromTop (4);
 
+    }
     int problemHeight = 0;
     if (settingsProblem.isVisible())
     {
@@ -818,5 +852,5 @@ void SettingsDialog::launch (bool firstRun, std::function<void()> onDone, std::f
     opts.useNativeTitleBar         = true;
     opts.resizable                 = false;
     opts.dialogBackgroundColour    = RememberUI::colour (Pal::BgDeep);
-    opts.launchAsync();
+    RememberUI::launchDialog (opts);
 }

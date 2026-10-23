@@ -28,6 +28,8 @@ public:
     std::function<void (juce::String folderPath)> onFolderSelected;
     // Empty selection means All; several folders are combined as a union.
     std::function<void (juce::StringArray paths)> onFoldersSelected;
+    std::function<void()> onCreateSmartFolder;
+    std::function<void (juce::String)> onSmartFolderSelected, onEditSmartFolder;
 
     // Fired when the user dropped an entry on a folder. The host wires this
     // to the actual mutation (loading the entry, calling
@@ -63,6 +65,8 @@ private:
     RememberUI::Style uiStyle { *this };
     class TreeRootItem;
     class FolderItem;
+    class SmartFolderItem;
+    juce::String selectedSmartFolder;
 
     void rebuildTree();
     void runFolderEdit (std::function<juce::Result()>, juce::String oldPath = {}, juce::String newPath = {});
@@ -78,6 +82,7 @@ private:
 
     juce::Label      header { {}, "Folders" };
     juce::TextButton newRootBtn { "+" };
+    juce::TextButton smartFolderBtn { "Create smart folder" };
     juce::TextButton sortBtn    { "Sort" };
     juce::TreeView   tree;
 

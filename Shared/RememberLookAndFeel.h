@@ -310,12 +310,17 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
             g.drawLine (x + 2 + i * 4.0f, y + top, x + 2 + i * 4.0f, y + 16 - top, 1.6f);
         }
     }
-    else if (kind == "folder")
+    else if (kind == "folder" || kind == "smart-folder")
     {
         p.startNewSubPath (x + 1, y + 4); p.lineTo (x + 6, y + 4);
         p.lineTo (x + 8, y + 6); p.lineTo (x + 15, y + 6);
         p.lineTo (x + 15, y + 14); p.lineTo (x + 1, y + 14); p.closeSubPath();
         g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved));
+        if (kind == "smart-folder")
+        {
+            g.drawLine (x + 12, y, x + 12, y + 5, 1.2f);
+            g.drawLine (x + 9.5f, y + 2.5f, x + 14.5f, y + 2.5f, 1.2f);
+        }
     }
     else if (kind == "plus")
     {
@@ -380,6 +385,69 @@ private:
 class LookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    class WindowButton final : public juce::Button
+    {
+    public:
+        explicit WindowButton (int typeIn)
+            : Button (typeIn == juce::DocumentWindow::closeButton ? "Close"
+                      : typeIn == juce::DocumentWindow::minimiseButton ? "Minimise" : "Maximise or restore"),
+              type (typeIn)
+        {
+            setTitle (getName());
+            setTooltip (getName());
+            setWantsKeyboardFocus (true);
+        }
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            auto area = getLocalBounds().toFloat().reduced (2);
+            if (over || down)
+            {
+                g.setColour (colour (down ? Pal::Selected : Pal::Elevated));
+                g.fillRoundedRectangle (area, controlRadius);
+            }
+            if (hasKeyboardFocus (false))
+            {
+                g.setColour (colour (Pal::Accent));
+                g.drawRoundedRectangle (area.reduced (1), controlRadius, 2);
+            }
+            g.setColour (colour (isEnabled() ? Pal::Text : Pal::Subtext));
+            const auto symbol = area.withSizeKeepingCentre (10, 10);
+            if (type == juce::DocumentWindow::closeButton)
+            {
+                g.drawLine (symbol.getX(), symbol.getY(), symbol.getRight(), symbol.getBottom(), 1.2f);
+                g.drawLine (symbol.getX(), symbol.getBottom(), symbol.getRight(), symbol.getY(), 1.2f);
+            }
+            else if (type == juce::DocumentWindow::minimiseButton)
+                g.drawHorizontalLine (juce::roundToInt (symbol.getCentreY()), symbol.getX(), symbol.getRight());
+            else if (getToggleState())
+            {
+                g.drawRect (symbol.translated (2, -2).withTrimmedLeft (2).withTrimmedBottom (2), 1);
+                g.setColour (colour (down ? Pal::Selected : over ? Pal::Elevated : Pal::BgDeep));
+                g.fillRect (symbol.withTrimmedRight (2).withTrimmedTop (2));
+                g.setColour (colour (Pal::Text));
+                g.drawRect (symbol.withTrimmedRight (2).withTrimmedTop (2), 1);
+            }
+            else g.drawRect (symbol, 1);
+        }
+    private:
+        int type;
+    };
+public:
+    void drawDocumentWindowTitleBar (juce::DocumentWindow&, juce::Graphics& g,
+                                    int, int, int, int, const juce::Image*, bool) override
+    { g.fillAll (colour (Pal::BgDeep)); }
+
+    juce::Button* createDocumentWindowButton (int type) override { return new WindowButton (type); }
+
+    void positionDocumentWindowButtons (juce::DocumentWindow&, int x, int y, int w, int h,
+                                       juce::Button* minimise, juce::Button* maximise,
+                                       juce::Button* close, bool) override
+    {
+        int right = x + w;
+        for (auto* button : { close, maximise, minimise })
+            if (button != nullptr) { right -= 46; button->setBounds (right, y, 46, h); }
+    }
+
     LookAndFeel() { applyPalette(); }
     void drawTreeviewPlusMinusBox (juce::Graphics& g, const juce::Rectangle<float>& area,
                                   juce::Colour, bool open, bool over) override
@@ -442,6 +510,23 @@ public:
         return juce::LookAndFeel_V4::getTypefaceForFont (requested);
     }
     juce::Font getComboBoxFont (juce::ComboBox&) override { return font(); }
+    int getTabButtonOverlap (int) override { return 0; }
+    void drawTabbedButtonBarBackground (juce::TabbedButtonBar&, juce::Graphics&) override {}
+    void drawTabAreaBehindFrontButton (juce::TabbedButtonBar&, juce::Graphics&, int, int) override {}
+    void drawTabButton (juce::TabBarButton& button, juce::Graphics& g, bool over, bool down) override
+    {
+        auto bounds = button.getLocalBounds().toFloat().reduced (2);
+        g.setColour (colour (button.getToggleState() ? Pal::Selected : over || down ? Pal::Elevated : Pal::Surface));
+        g.fillRoundedRectangle (bounds, controlRadius);
+        g.setColour (colour (button.getToggleState() ? Pal::Accent : Pal::Text).withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.45f));
+        g.setFont (font (13, button.getToggleState()));
+        g.drawText (button.getButtonText(), bounds.reduced (10, 0), juce::Justification::centred, true);
+        if (button.hasKeyboardFocus (false))
+        {
+            g.setColour (colour (Pal::Accent));
+            g.drawRoundedRectangle (bounds, controlRadius, 2);
+        }
+    }
     juce::Font getPopupMenuFont() override { return font(); }
     void preparePopupMenuWindow (juce::Component& window) override
     {
@@ -597,71 +682,49 @@ public:
 
 // Standalone Windows chrome. DocumentWindow still supplies native caption hit
 // testing and window actions; only its presentation is replaced.
-class MainWindowLookAndFeel final : public LookAndFeel
+class MainWindowLookAndFeel final : public LookAndFeel {};
+
+// Prepare chrome before showing the window; keep the content's semantic theme.
+inline juce::DialogWindow* launchDialog (juce::DialogWindow::LaunchOptions& options)
 {
-    class WindowButton final : public juce::Button
+   #if JUCE_WINDOWS
+    options.useNativeTitleBar = false;
+   #else
+    options.useNativeTitleBar = true;
+   #endif
+    class ThemedDialog final : public juce::DialogWindow
     {
     public:
-        explicit WindowButton (int typeIn)
-            : Button (typeIn == juce::DocumentWindow::closeButton ? "Close"
-                      : typeIn == juce::DocumentWindow::minimiseButton ? "Minimise" : "Maximise or restore"),
-              type (typeIn)
+        explicit ThemedDialog (juce::DialogWindow::LaunchOptions& opts)
+            : DialogWindow (opts.dialogTitle, opts.dialogBackgroundColour, opts.escapeKeyTriggersCloseButton, true,
+                opts.componentToCentreAround != nullptr ? juce::Component::getApproximateScaleFactorForComponent (opts.componentToCentreAround) : 1.0f)
         {
-            setTitle (getName());
-            setTooltip (getName());
-            setWantsKeyboardFocus (true);
+            setLookAndFeel (&theme.get());
+            if (opts.content.willDeleteObject()) setContentOwned (opts.content.release(), true);
+            else setContentNonOwned (opts.content.release(), true);
+            centreAroundComponent (opts.componentToCentreAround, getWidth(), getHeight());
+            setResizable (opts.resizable, opts.useBottomRightCornerResizer);
+            setUsingNativeTitleBar (opts.useNativeTitleBar);
+            setAlwaysOnTop (juce::WindowUtils::areThereAnyAlwaysOnTopWindows());
         }
-        void paintButton (juce::Graphics& g, bool over, bool down) override
+        ~ThemedDialog() override { setLookAndFeel (nullptr); }
+        void closeButtonPressed() override { setVisible (false); }
+        void lookAndFeelChanged() override
         {
-            auto area = getLocalBounds().toFloat().reduced (2);
-            if (over || down)
-            {
-                g.setColour (colour (down ? Pal::Selected : Pal::Elevated));
-                g.fillRoundedRectangle (area, controlRadius);
-            }
-            if (hasKeyboardFocus (false))
-            {
-                g.setColour (colour (Pal::Accent));
-                g.drawRoundedRectangle (area.reduced (1), controlRadius, 2);
-            }
-            g.setColour (colour (isEnabled() ? Pal::Text : Pal::Subtext));
-            const auto symbol = area.withSizeKeepingCentre (10, 10);
-            if (type == juce::DocumentWindow::closeButton)
-            {
-                g.drawLine (symbol.getX(), symbol.getY(), symbol.getRight(), symbol.getBottom(), 1.2f);
-                g.drawLine (symbol.getX(), symbol.getBottom(), symbol.getRight(), symbol.getY(), 1.2f);
-            }
-            else if (type == juce::DocumentWindow::minimiseButton)
-                g.drawHorizontalLine (juce::roundToInt (symbol.getCentreY()), symbol.getX(), symbol.getRight());
-            else if (getToggleState())
-            {
-                g.drawRect (symbol.translated (2, -2).withTrimmedLeft (2).withTrimmedBottom (2), 1);
-                g.setColour (colour (down ? Pal::Selected : over ? Pal::Elevated : Pal::BgDeep));
-                g.fillRect (symbol.withTrimmedRight (2).withTrimmedTop (2));
-                g.setColour (colour (Pal::Text));
-                g.drawRect (symbol.withTrimmedRight (2).withTrimmedTop (2), 1);
-            }
-            else g.drawRect (symbol, 1);
+            setBackgroundColour (colour (Pal::BgDeep));
+            DialogWindow::lookAndFeelChanged();
         }
     private:
-        int type;
+        juce::SharedResourcePointer<LookAndFeel> theme;
     };
-public:
-    void drawDocumentWindowTitleBar (juce::DocumentWindow&, juce::Graphics& g,
-                                    int, int, int, int, const juce::Image*, bool) override
-    { g.fillAll (colour (Pal::BgDeep)); }
-
-    juce::Button* createDocumentWindowButton (int type) override { return new WindowButton (type); }
-
-    void positionDocumentWindowButtons (juce::DocumentWindow&, int x, int y, int w, int h,
-                                       juce::Button* minimise, juce::Button* maximise,
-                                       juce::Button* close, bool) override
-    {
-        int right = x + w;
-        for (auto* button : { close, maximise, minimise })
-            if (button != nullptr) { right -= 46; button->setBounds (right, y, 46, h); }
-    }
-};
+    auto* window = new ThemedDialog (options);
+   #if JUCE_WINDOWS
+    window->setTitleBarHeight (34);
+    window->setTitleBarButtonsRequired (juce::DocumentWindow::closeButton, false);
+   #endif
+    window->enterModalState (true, nullptr, true);
+    return window;
+}
 
 // One native OS listener per module, retained only while UI roots exist.
 // An injectable read source lets tests deliver OS notifications without changing

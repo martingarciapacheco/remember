@@ -118,8 +118,12 @@ $provenance = [ordered]@{ schema = 1; product = 'Remember'; version = $version.v
     validation = @{ ctest = $testEvidence; nativeVst3 = $native } }
 Write-RememberJson (Join-Path $payload 'build-provenance.json') $provenance
 if (!$SkipPackage) {
+    # JUCE generates this multi-resolution icon from ICON_BIG in this build.
+    # Use the exact app icon so packaging cannot retain an older checked-in ICO.
+    $setupIcon = Join-Path $buildRootPath 'App/RememberApp_artefacts/JuceLibraryCode/icon.ico'
+    if (!(Test-Path -LiteralPath $setupIcon -PathType Leaf)) { throw 'Freshly built application icon is missing' }
     Invoke-RememberProcess $iscc @("/DMyAppVersion=$($version.version)", "/DMyNumericVersion=$($version.windows)",
-        "/DPayloadDir=$payload", "/DReleaseOutputDir=$artifactRoot", (Join-Path $PSScriptRoot 'Remember.iss')) (Join-Path $artifactRoot 'installer-build.log')
+        "/DPayloadDir=$payload", "/DReleaseOutputDir=$artifactRoot", "/DSetupIconPath=$setupIcon", (Join-Path $PSScriptRoot 'Remember.iss')) (Join-Path $artifactRoot 'installer-build.log')
     $installer = Join-Path $artifactRoot "Remember-$($version.version)-setup.exe"
     if (!(Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Expected explicit installer was not produced' }
     $null = Get-RememberInstallerCompiler $iscc

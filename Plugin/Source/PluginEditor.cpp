@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "SettingsManager.h"
 #include "BuildInfo.h"
+#include "../../Shared/CaptureWarning.h"
 
 namespace
 {
@@ -25,6 +26,7 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     {
         auto options = processor.getEngine().getCaptureOptions();
         options.manual = manualToggle.getToggleState();
+        if (options.manual) RememberUI::showCaptureFromAnyPositionWarning (this);
         processor.getEngine().setCaptureOptions (options);
         processor.updateHostDisplay (juce::AudioProcessorListener::ChangeDetails().withNonParameterStateChanged (true));
         refreshFromEngine();

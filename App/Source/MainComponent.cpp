@@ -51,6 +51,9 @@ MainComponent::MainComponent()
     dawLauncher.onLayoutChanged = [this] { resized(); };
 
     list.onFiltersCleared = [this] { sidebar.selectFolder ({}); };
+    sidebar.onCreateSmartFolder = [this] { list.createSmartFolder(); };
+    sidebar.onSmartFolderSelected = [this] (juce::String id) { list.selectSmartFolder (id); };
+    sidebar.onEditSmartFolder = [this] (juce::String id) { list.editSmartFolder (id); };
 
     // Sidebar selects a folder → list filters by it
     sidebar.onFoldersSelected = [this] (juce::StringArray paths)

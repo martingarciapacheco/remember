@@ -102,7 +102,7 @@ public:
         options.content.setOwned (form.release()); options.componentToCentreAround = parent;
         options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep);
         options.useNativeTitleBar = true; options.escapeKeyTriggersCloseButton = true;
-        options.resizable = true; options.launchAsync();
+        options.resizable = true; RememberUI::launchDialog (options);
     }
 private:
     struct KeyControls : juce::Component

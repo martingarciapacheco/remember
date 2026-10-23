@@ -98,7 +98,7 @@ void testShellCase (const juce::File& root, const juce::String& mode)
     juce::ignoreUnused (root, mode);
     check (false, "Native shell acceptance currently requires Windows");
 #else
-    check (mode == "early-close" || mode == "restore" || mode == "user-move"
+    check (mode == "early-close" || mode == "restore" || mode == "maximised" || mode == "user-move"
            || mode == "read-failure" || mode == "read-locked" || mode == "early-move"
            || mode == "move-hidden" || mode == "tray" || mode == "late-menu", "Invalid shell case");
     const auto library = root.getChildFile ("library"), projects = root.getChildFile ("projects");
@@ -108,7 +108,7 @@ void testShellCase (const juce::File& root, const juce::String& mode)
            "Native shell acceptance needs a usable Windows desktop of at least 700x560");
     const auto savedBounds = juce::Rectangle<int> (display->userArea.getX() + 20, display->userArea.getY() + 30,
         juce::jmin (930, display->userArea.getWidth() - 60), juce::jmin (700, display->userArea.getHeight() - 60));
-    const auto savedState = savedBounds.toString();
+    const auto savedState = (mode == "maximised" ? "fs " : "") + savedBounds.toString();
     juce::var config (new juce::DynamicObject()); auto* object = config.getDynamicObject();
     object->setProperty ("previewsFolder", library.getFullPathName());
     object->setProperty ("projectsRootFolders", juce::Array<juce::var> { projects.getFullPathName() });
@@ -131,7 +131,7 @@ void testShellCase (const juce::File& root, const juce::String& mode)
     const auto constructorMs = juce::Time::getMillisecondCounterHiRes() - begun;
     auto* window = desktopComponent<juce::DocumentWindow>();
     auto* tray = desktopComponent<juce::SystemTrayIconComponent>();
-    check (window && tray && window->getName() == "Remember" && window->isVisible(), "Production native shell was not created");
+    check (window && tray && window->getName() == "Remember" && ! window->isVisible(), "Startup showed provisional geometry before reading saved state");
     const auto windowHandle = static_cast<HWND> (window->getPeer()->getNativeHandle());
     requireOwnWindow (windowHandle);
     check (! window->isUsingNativeTitleBar() && window->getTitleBarHeight() == 34
@@ -156,7 +156,7 @@ void testShellCase (const juce::File& root, const juce::String& mode)
         if (mode == "early-move")
         {
             window->setBounds (savedBounds.translated (16, 16).withSize (savedBounds.getWidth() - 20, savedBounds.getHeight() - 20));
-            expectedState = window->getWindowStateAsString();
+            expectedState = savedState;
         }
         const auto closing = juce::Time::getMillisecondCounterHiRes();
         shell->requestQuit(); quitRequestMs = juce::Time::getMillisecondCounterHiRes() - closing;
@@ -174,11 +174,6 @@ void testShellCase (const juce::File& root, const juce::String& mode)
     }
     else
     {
-        if (mode == "user-move")
-        {
-            window->setBounds (savedBounds.translated (16, 16).withSize (savedBounds.getWidth() - 20, savedBounds.getHeight() - 20));
-            expectedState = window->getWindowStateAsString();
-        }
         // A malformed configuration produces a failed strict read without
         // simulating an I/O failure or modifying any installed profile.
         const auto malformed = "{ broken shell configuration";
@@ -198,6 +193,12 @@ void testShellCase (const juce::File& root, const juce::String& mode)
         auto readsDrained = std::make_shared<bool> (false);
         ProjectScanner::queryAsync ([] { return juce::Result::ok(); }, [readsDrained] (juce::Result) { *readsDrained = true; });
         gate->release.signal(); awaitUi ([&] { return *readsDrained; });
+        awaitUi ([&] { return window->isVisible(); });
+        if (mode == "user-move")
+        {
+            window->setBounds (savedBounds.translated (16, 16).withSize (savedBounds.getWidth() - 20, savedBounds.getHeight() - 20));
+            expectedState = window->getWindowStateAsString();
+        }
         if (mode == "restore")
         {
             awaitUi ([&] { return shell->hasTaskbarButtons(); });
@@ -265,7 +266,18 @@ void testShellCase (const juce::File& root, const juce::String& mode)
         {
             const auto actualState = window->getWindowStateAsString();
             std::cout << "SHELL_BOUNDS expected=" << expectedState << " actual=" << actualState << std::endl;
-            if (mode == "user-move")
+            if (mode == "maximised")
+            {
+                check (window->isFullScreen() && actualState.startsWith ("fs "), "First shown window did not restore maximised state");
+                window->setFullScreen (false);
+                check (std::abs (window->getX() - savedBounds.getX()) <= 1
+                    && std::abs (window->getY() - savedBounds.getY()) <= 1
+                    && std::abs (window->getWidth() - savedBounds.getWidth()) <= 1
+                    && std::abs (window->getHeight() - savedBounds.getHeight()) <= 1, "Restore lost saved normal window bounds");
+                window->setFullScreen (true);
+                expectedState = window->getWindowStateAsString();
+            }
+            else if (mode == "user-move")
                 check (actualState == expectedState, "Late saved bounds read undid a user move");
             else
             {
@@ -343,6 +355,25 @@ void testShellCase (const juce::File& root, const juce::String& mode)
                 trayEvent (identifier, WM_RBUTTONDOWN); trayEvent (identifier, WM_RBUTTONUP);
                 auto* popup = juce::Component::getCurrentlyModalComponent();
                 check (popup != nullptr, "Native tray notification did not open the real menu");
+                const auto popupHandle = static_cast<HWND> (popup->getPeer()->getNativeHandle());
+                requireOwnWindow (popupHandle);
+                RECT menuBounds {};
+                check (GetWindowRect (popupHandle, &menuBounds) != FALSE, "Cannot inspect native tray menu bounds");
+                const auto region = CreateRectRgn (0, 0, 0, 0);
+                const auto regionKind = GetWindowRgn (popupHandle, region);
+                const auto width = menuBounds.right - menuBounds.left, height = menuBounds.bottom - menuBounds.top;
+                const bool rounded = regionKind == COMPLEXREGION
+                    && ! PtInRegion (region, 0, 0) && ! PtInRegion (region, width - 1, 0)
+                    && ! PtInRegion (region, 0, height - 1) && ! PtInRegion (region, width - 1, height - 1)
+                    && PtInRegion (region, width / 2, height / 2);
+                DeleteObject (region);
+                check (rounded, "Native tray popup retains rectangular corners");
+                const auto image = popup->createComponentSnapshot (popup->getLocalBounds(), true, 1.0f, juce::SoftwareImageType{});
+                check (image.getPixelAt (0, 0).getAlpha() == 0 && image.getPixelAt (image.getWidth() / 2, image.getHeight() / 2).getAlpha() > 0,
+                    "Tray menu painted an opaque rectangular background");
+                juce::PNGImageFormat png;
+                juce::FileOutputStream output (artifact (mode).getSiblingFile (mode + "-menu.png"));
+                check (output.openedOk() && png.writeImageToStream (image, output), "Cannot save native tray menu snapshot");
                 juce::ModalComponentManager::getInstance()->attachCallback (popup,
                     juce::ModalCallbackFunction::create ([menuResult] (int selected) { *menuResult = selected; }));
                 check (popup->keyPressed (juce::KeyPress (exit ? juce::KeyPress::upKey : juce::KeyPress::downKey))
@@ -408,7 +439,7 @@ void testShellLifecycle (const juce::File& root, bool trayOnly)
 {
     juce::ignoreUnused (root);
     const juce::StringArray modes = trayOnly ? juce::StringArray { "tray", "late-menu" }
-        : juce::StringArray { "early-close", "early-move", "restore", "user-move", "read-failure", "read-locked", "move-hidden" };
+        : juce::StringArray { "early-close", "early-move", "restore", "maximised", "user-move", "read-failure", "read-locked", "move-hidden" };
     for (const auto& mode : modes)
     {
         const auto report = artifact (mode);

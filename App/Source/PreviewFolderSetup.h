@@ -33,7 +33,7 @@ public:
         options.componentToCentreAround = parent;
         options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep);
         options.useNativeTitleBar = true; options.resizable = false;
-        options.escapeKeyTriggersCloseButton = true; options.launchAsync();
+        options.escapeKeyTriggersCloseButton = true; RememberUI::launchDialog (options);
     }
     // Worker-only: preserve all existing plugin and app settings.
     static juce::Result saveFolder (const juce::File& folder)

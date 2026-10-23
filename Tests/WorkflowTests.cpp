@@ -112,6 +112,17 @@ void testWorkflowFeatures (const juce::File& root)
     check (matches == 1, "Combined musical/date/tag filters are not ANDed");
     const auto roundtrip = LibraryFilter::fromJson (filter.json());
     check (juce::JSON::toString (filter.json()) == juce::JSON::toString (roundtrip.json()), "Smart collection lost filters");
+    LibraryFilter scoped; scoped.query = "Sketch"; scoped.folders = { "Ideas" };
+    LibraryFilter refinement; refinement.query = "bass"; refinement.folders = { "Other" }; refinement.bpmFrom = 120;
+    scoped.allOf.push_back (refinement);
+    auto scopedEntry = entries[0]; scopedEntry.folders = { "Ideas/Ambient", "Other/Child" };
+    check (scoped.matches (scopedEntry), "Independent folder constraints did not accept a preview in both subtrees");
+    const auto scopedRoundtrip = LibraryFilter::fromJson (scoped.json());
+    check (scopedRoundtrip.matches (scopedEntry), "Smart folder conjunction lost conditions on round-trip");
+    scopedEntry.folders = { "Other/Child" };
+    check (! scopedRoundtrip.matches (scopedEntry), "Refinement broadened the saved folder membership");
+    scopedEntry.folders = { "Ideas/Ambient" };
+    check (! scopedRoundtrip.matches (scopedEntry), "Saved folder membership bypassed the refinement");
     LibraryFilter folderGroup; folderGroup.folders = { "Ideas", "Other" };
     auto groupedEntry = entries[0]; groupedEntry.folders = { "Other/Child" };
     check (folderGroup.matches (groupedEntry), "Selected folder union omitted the second subtree");

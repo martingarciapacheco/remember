@@ -437,5 +437,5 @@ void UsedSoundsDialog::launch (ProjectEntry entry, Audition audition, std::funct
     zoom->setSize (840, 620); options.content.setOwned (zoom);
     options.dialogTitle = "Used sounds"; options.useNativeTitleBar = true; options.escapeKeyTriggersCloseButton = true;
     options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep); options.resizable = true;
-    if (auto* window = options.launchAsync()) window->setResizeLimits (640, 480, 1600, 1200);
+    if (auto* window = RememberUI::launchDialog (options)) window->setResizeLimits (640, 480, 1600, 1200);
 }

@@ -386,5 +386,5 @@ void StatisticsDialog::launch (WaveformPlayerComponent* main)
     auto* zoom = new RememberUI::ZoomView (std::make_unique<StatisticsDialog> (main)); zoom->setSize (840, 640);
     options.content.setOwned (zoom); options.dialogTitle = "Statistics"; options.useNativeTitleBar = true;
     options.escapeKeyTriggersCloseButton = true; options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep); options.resizable = true;
-    if (auto* window = options.launchAsync()) window->setResizeLimits (640, 480, 1600, 1200);
+    if (auto* window = RememberUI::launchDialog (options)) window->setResizeLimits (640, 480, 1600, 1200);
 }

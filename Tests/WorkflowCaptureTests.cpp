@@ -91,6 +91,12 @@ void testWorkflowCapture (const juce::File& root)
         check (! persisted.locked && ! persisted.manual && persisted.replace, "Plugin switch did not persist to app Settings or changed other options");
         manualToggle->setToggleState (false, juce::dontSendNotification); manualToggle->onClick();
         manualToggle->setToggleState (true, juce::dontSendNotification); manualToggle->onClick();
+        waitFor ([] { juce::MessageManager::getInstance()->runDispatchLoopUntil (2); return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        auto* captureWarning = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (captureWarning->getDescription().contains ("artifacts") && captureWarning->getDescription().contains ("tails"),
+               "Capture from any position omitted its audio warning");
+        captureWarning->exitModalState (0);
+        waitFor ([] { juce::MessageManager::getInstance()->runDispatchLoopUntil (2); return juce::Component::getNumCurrentlyModalComponents() == 0; });
         check (processor.getEngine().getCaptureOptions().manual && ! ProjectScanner::readSettings().capture.manual,
                "Local manual switch changed the creation default");
         juce::MemoryBlock state; processor.getStateInformation (state);

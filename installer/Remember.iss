@@ -17,6 +17,9 @@
 #ifndef ReleaseOutputDir
   #error "ReleaseOutputDir is required"
 #endif
+#ifndef SetupIconPath
+  #error "SetupIconPath from the freshly built application is required"
+#endif
 #define MyAppPublisher  "Martin Garcia Pacheco"
 #define MyAppURL        "https://github.com/martingarciapacheco/remember"
 #define MyAppExeName    "Remember.exe"
@@ -43,7 +46,7 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 ; Beta marker in the title bar so the tester always sees it
-SetupIconFile=..\Assets\Remember.ico
+SetupIconFile={#SetupIconPath}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; VersionInfoVersion / VersionInfoProductVersion must be pure numeric (a.b.c.d).

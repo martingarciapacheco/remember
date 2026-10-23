@@ -1,4 +1,5 @@
 #include "ProjectListComponent.h"
+#include "../../Shared/RememberDialogs.h"
 #include "TagsEditorDialog.h"
 #include "RecoveryChoiceDialog.h"
 #include "WorkflowForm.h"
@@ -195,6 +196,10 @@ void ProjectRowComponent::mouseDown (const juce::MouseEvent& e)
                          });
         return;
     }
+    // JUCE delivers mouseDown again before mouseDoubleClick. The first press
+    // already selected/started this preview; reserve later presses for opening
+    // the project without reloading its audio or delaying ordinary clicks.
+    if (e.getNumberOfClicks() > 1) return;
     if (onSelectionGesture) onSelectionGesture (e.mods);
     else if (onSelect) onSelect();
 }
@@ -396,13 +401,24 @@ void ProjectListComponent::publishLibrary()
 {
     const auto snapshot = ProjectScanner::librarySnapshot();
     allEntries = snapshot->entries;
-    const auto selectedCollection = collectionCombo.getSelectedId();
+    const auto previousIndex = collectionCombo.getSelectedId() - 2;
+    const auto* previousCollections = collections.getArray();
+    const auto selectedCollection = previousCollections != nullptr && juce::isPositiveAndBelow (previousIndex, previousCollections->size())
+        ? (*previousCollections)[previousIndex].getProperty ("id", "").toString() : juce::String{};
     collections = snapshot->smartCollections;
+    refreshSmartFolderScope();
     collectionCombo.clear (juce::dontSendNotification);
     collectionCombo.addItem ("Custom filters", 1);
+    int selectedItem = 1;
     if (const auto* array = collections.getArray())
-        for (int i = 0; i < array->size(); ++i) collectionCombo.addItem ((*array)[i].getProperty ("name", "Collection").toString(), i + 2);
-    collectionCombo.setSelectedId (juce::jlimit (1, juce::jmax (1, collectionCombo.getNumItems()), selectedCollection), juce::dontSendNotification);
+        for (int i = 0; i < array->size(); ++i)
+        {
+            collectionCombo.addItem ((*array)[i].getProperty ("name", "Collection").toString(), i + 2);
+            if (selectedCollection.isNotEmpty() && (*array)[i].getProperty ("id", "").toString() == selectedCollection)
+                selectedItem = i + 2;
+        }
+    collectionCombo.setSelectedId (selectedItem, juce::dontSendNotification);
+    configureCollectionMenu();
     juce::String text, tooltip;
     if (snapshot->error.isNotEmpty())
     {
@@ -466,7 +482,8 @@ void ProjectListComponent::applyFilter()
     const auto& candidates = view == 3 ? snapshot->trash : allEntries;
     filtered.clearQuick();
     for (const auto& entry : candidates)
-        if (view == 3 ? entry.matches (filter.query) : active.matches (entry)) filtered.add (entry);
+        if ((activeSmartFolder.isEmpty() || smartFolderScope.matches (entry))
+            && (view == 3 ? entry.matches (filter.query) : active.matches (entry))) filtered.add (entry);
     // Normal publications already arrive newest first; preserve that order
     // instead of sorting the whole library again on every search/favorite edit.
     if (view == 3 || filter.sort != LibraryFilter::Latest) filter.order (filtered);
@@ -487,7 +504,10 @@ void ProjectListComponent::setFolderFilter (const juce::String& path)
 
 void ProjectListComponent::setFolderFilters (const juce::StringArray& paths)
 {
-    if (folderFilters == paths) return;
+    const bool leftSmartFolder = activeSmartFolder.isNotEmpty();
+    activeSmartFolder.clear();
+    refreshSmartFolderScope();
+    if (! leftSmartFolder && folderFilters == paths) return;
     folderFilters = paths;
     folderFilter = paths.isEmpty() ? juce::String{} : paths[0];
     applyFilter();
@@ -671,6 +691,33 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
                 juce::AlertWindow::WarningIcon, "Cannot open project", result.getErrorMessage());
         });
     };
+    comp->onConfirmOpenInDaw = [safe, entry]
+    {
+        if (safe == nullptr || entry.trashed || entry.storageError.isNotEmpty()) return;
+        if (! entry.projectAvailable || entry.projectPath.isEmpty())
+        {
+            RememberUI::showMessageBox (
+                juce::MessageBoxOptions().withAssociatedComponent (safe.getComponent())
+                    .withIconType (juce::MessageBoxIconType::WarningIcon).withTitle ("Cannot open project")
+                    .withMessage ("Locate the project file before opening it in your DAW.").withButton ("OK"), [] (int) {});
+            return;
+        }
+        RememberUI::showMessageBox (
+            juce::MessageBoxOptions().withAssociatedComponent (safe.getComponent()).withIconType (juce::MessageBoxIconType::QuestionIcon)
+                .withTitle ("Open project?")
+                .withMessage ("Open \"" + entry.name + "\" in "
+                    + (entry.daw.isNotEmpty() ? entry.daw : "its associated DAW") + "?\n\n" + entry.projectPath)
+                .withButton ("Open project").withButton ("Cancel"),
+            [safe, entry] (int result)
+            {
+                if (safe == nullptr || result != 1) return;
+                ProjectScanner::openProjectAsync (entry, false, [safe] (juce::Result opened)
+                {
+                    if (safe != nullptr && opened.failed()) juce::AlertWindow::showMessageBoxAsync (
+                        juce::AlertWindow::WarningIcon, "Cannot open project", opened.getErrorMessage());
+                });
+            });
+    };
     comp->onDelete = [safe, entry]
     {
         if (entry.trashed) { if (safe != nullptr) safe->restoreRecording (entry); return; }
@@ -770,12 +817,19 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
         options.resizable = false;
-        safe->recoveryWindow = options.launchAsync();
+        safe->recoveryWindow = RememberUI::launchDialog (options);
     });
 }
 
-void ProjectListComponent::listBoxItemClicked (int row, const juce::MouseEvent&)
+void ProjectRowComponent::mouseDoubleClick (const juce::MouseEvent& event)
 {
+    if (event.mods.isLeftButtonDown() && ! renaming && onConfirmOpenInDaw)
+        onConfirmOpenInDaw();
+}
+
+void ProjectListComponent::listBoxItemClicked (int row, const juce::MouseEvent& event)
+{
+    if (event.getNumberOfClicks() > 1) return;
     if (row < 0 || row >= filtered.size()) return;
     if (view != 3 && onEntrySelected) onEntrySelected (filtered.getReference (row));
 }

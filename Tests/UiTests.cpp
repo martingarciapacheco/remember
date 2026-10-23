@@ -8,6 +8,11 @@
 #include "../App/Source/PreviewCompactionActions.h"
 #include "../App/Source/PreviewFolderSetup.h"
 #include "../App/Source/RecoveryChoiceDialog.h"
+#include "../App/Source/WorkflowForm.h"
+#include "../App/Source/StatisticsDialog.h"
+#include "../App/Source/UsedSoundsDialog.h"
+#include "../App/Source/StatisticsDialog.h"
+#include "../App/Source/UsedSoundsDialog.h"
 #include "../Shared/LibraryStore.h"
 #include "../Shared/AppearanceSettings.h"
 #include <iostream>
@@ -482,8 +487,313 @@ void testFrontendDesign (const juce::File& root)
     check (rows->isVisible(), "Clearing search did not restore the list");
     rows->selectRow (0);
     {
+        auto findControl = [] (juce::Component& root, const juce::String& title)
+        {
+            std::function<juce::Component* (juce::Component&)> find = [&] (juce::Component& c) -> juce::Component*
+            {
+                if (c.getTitle() == title) return &c;
+                for (auto* child : c.getChildren()) if (auto* result = find (*child)) return result;
+                return nullptr;
+            };
+            return find (root);
+        };
+        {
+            auto* saved = dynamic_cast<juce::ComboBox*> (findControl (*list, "Smart collections"));
+            check (saved != nullptr, "Saved filters dropdown missing");
+            check (LibraryStore::updateJson (LibraryStore::configFile(), [] (juce::DynamicObject& config)
+            {
+                juce::Array<juce::var> values;
+                for (const auto& id : { "context-delete", "context-keep" })
+                {
+                    juce::var value (new juce::DynamicObject());
+                    value.getDynamicObject()->setProperty ("id", id);
+                    value.getDynamicObject()->setProperty ("name", id);
+                    value.getDynamicObject()->setProperty ("filter", LibraryFilter{}.json());
+                    values.add (value);
+                }
+                config.setProperty ("smartCollections", values);
+                return juce::Result::ok();
+            }, true).wasOk(), "Cannot seed saved filters");
+            list->refresh();
+            awaitUi ([&] { return saved->getNumItems() == 3; });
+            saved->showPopup();
+            awaitUi ([] { return juce::Component::getCurrentlyModalComponent() != nullptr; });
+            auto* selection = juce::Component::getCurrentlyModalComponent();
+            check (selection->keyPressed (juce::KeyPress (juce::KeyPress::downKey))
+                && selection->keyPressed (juce::KeyPress (juce::KeyPress::downKey))
+                && selection->keyPressed (juce::KeyPress (juce::KeyPress::returnKey)),
+                "Saved filter rows lost keyboard selection");
+            awaitUi ([&] { return saved->getSelectedId() == 3 && juce::Component::getNumCurrentlyModalComponents() == 0; });
+            auto openContext = [&]
+            {
+                saved->showPopup();
+                awaitUi ([] { return juce::Component::getCurrentlyModalComponent() != nullptr; });
+                auto* popup = juce::Component::getCurrentlyModalComponent();
+                auto* row = findControl (*popup, "context-delete");
+                check (row != nullptr, "Saved dropdown row cannot receive context click");
+                saveImage (*popup, "saved-filter-dropdown.png", true);
+                const auto now = juce::Time::getCurrentTime();
+                juce::MouseEvent click (juce::Desktop::getInstance().getMainMouseSource(), {},
+                    juce::ModifierKeys::rightButtonModifier, 1, 0, 0, 0, 0, row, row, now, {}, now, 1, false);
+                row->mouseDown (click);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (40);
+                check (saved->getSelectedId() == 3 && list->getNumRows() == 1,
+                    "Right-click applied the unselected saved filter");
+                auto* context = juce::Component::getCurrentlyModalComponent();
+                check (context != nullptr, "Saved filter context menu missing");
+                saveImage (*context, "saved-filter-delete-menu.png", true);
+                return context;
+            };
+            openContext()->keyPressed (juce::KeyPress (juce::KeyPress::escapeKey));
+            awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+            check (saved->getNumItems() == 3, "Cancel deleted a saved filter");
+            auto* context = openContext();
+            check (context->keyPressed (juce::KeyPress (juce::KeyPress::downKey))
+                && context->keyPressed (juce::KeyPress (juce::KeyPress::returnKey)), "Cannot activate filter deletion");
+            awaitUi ([&] { return saved->getNumItems() == 2; });
+            check (saved->getText() == "context-keep" && saved->getSelectedId() == 2,
+                "Deleting another row changed the saved selection");
+            check (ProjectScanner::scan().size() == 1 && list->getNumRows() == 1,
+                "Deleting a saved filter changed recordings");
+            std::cout << "PASS: saved filter row context cancellation/deletion and stable selection\n";
+        }
+        auto modalForm = [] () -> WorkflowForm*
+        {
+            auto* window = dynamic_cast<juce::DialogWindow*> (juce::Component::getCurrentlyModalComponent());
+            return window ? dynamic_cast<WorkflowForm*> (window->getContentComponent()) : nullptr;
+        };
+        auto apply = [] (WorkflowForm& form)
+        {
+            for (auto* child : form.getChildren())
+                if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getButtonText() == "Apply")
+                { button->onClick(); return; }
+            check (false, "Smart folder form lacks Apply");
+        };
+        auto chooseSource = [&] (const juce::String& title)
+        {
+            juce::DialogWindow* window = nullptr;
+            awaitUi ([&]
+            {
+                window = dynamic_cast<juce::DialogWindow*> (juce::Component::getCurrentlyModalComponent());
+                return window && findControl (*window, "Use active filters");
+            });
+            auto* active = dynamic_cast<juce::TextButton*> (findControl (*window, "Use active filters"));
+            auto* fresh = dynamic_cast<juce::TextButton*> (findControl (*window, "Create a new filter"));
+            check (active && fresh && active->getY() == fresh->getY() && active->getRight() < fresh->getX()
+                && window->getContentComponent()->getHeight() <= 210, "Smart folder choices are not compact adjacent buttons");
+            check (childOf<juce::ComboBox> (*window->getContentComponent()) == nullptr, "Smart folder still uses a dropdown");
+            saveImage (*window, "smart-folder-source-light.png", true);
+            RememberUI::setAppearanceMode (RememberAppearance::Dark);
+            saveImage (*window, "smart-folder-source-dark.png", true);
+            RememberUI::setAppearanceMode (RememberAppearance::Light);
+            auto* choice = dynamic_cast<juce::TextButton*> (findControl (*window, title));
+            check (choice != nullptr, "Smart folder source button missing");
+            choice->onClick();
+        };
+        search->setText ("Midnight");
+        awaitUi ([&] { return list->getNumRows() == 1; });
+        list->createSmartFolder();
+        chooseSource ("Use active filters");
+        awaitUi ([&] { auto* f = modalForm(); return f && findControl (*f, "Folder name"); });
+        auto* form = modalForm();
+        auto* query = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search"));
+        auto* name = dynamic_cast<juce::TextEditor*> (findControl (*form, "Folder name"));
+        check (query && name && query->getText() == "Midnight", "Smart folder lost active search");
+        name->setText ("Automatic sketches", false);
+        saveImage (*form->findParentComponentOfClass<juce::DialogWindow>(), "smart-folder-create.png", true);
+        apply (*form);
+        juce::String smartId;
+        awaitUi ([&]
+        {
+            if (auto* items = ProjectScanner::librarySnapshot()->smartCollections.getArray())
+                for (const auto& item : *items) if (item.getProperty ("name", "").toString() == "Automatic sketches")
+                    smartId = item.getProperty ("id", "").toString();
+            return smartId.isNotEmpty() && juce::Component::getNumCurrentlyModalComponents() == 0;
+        });
+        auto* smartSidebar = childOf<FoldersSidebarComponent> (*scene);
+        check (smartSidebar != nullptr, "Smart folder fixture lacks sidebar");
+        smartSidebar->refresh();
+        auto* smartTree = childOf<juce::TreeView> (*smartSidebar);
+        juce::TreeViewItem* smartItem = nullptr;
+        for (int i = 0; i < smartTree->getRootItem()->getNumSubItems(); ++i)
+            if (smartTree->getRootItem()->getSubItem (i)->getUniqueName() == "__SMART__" + smartId)
+                smartItem = smartTree->getRootItem()->getSubItem (i);
+        check (smartItem != nullptr, "Saved smart folder is missing from sidebar");
+        const auto clickedAt = juce::Time::getCurrentTime();
+        juce::MouseEvent selectSmart (juce::Desktop::getInstance().getMainMouseSource(), {},
+            juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, smartTree, smartTree, clickedAt, {}, clickedAt, 1, false);
+        smartItem->itemClicked (selectSmart);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
+        check (list->getNumRows() == 1, "Smart folder did not evaluate saved conditions");
+        check (search->getText().isEmpty() && search->getTextToShowWhenEmpty().contains ("Automatic sketches"),
+            "Selecting smart folder loaded saved conditions instead of a separate search scope");
+        juce::TextButton* clearRefinements = nullptr;
+        for (auto* child : list->getChildren())
+            if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getTitle() == "Clear filters") clearRefinements = button;
+        check (clearRefinements != nullptr, "Smart folder lacks Clear filters");
+        const auto outside = library.getChildFile ("outside-smart-folder");
+        check (outside.isAChildOf (root) && root.isAChildOf (juce::File::getCurrentWorkingDirectory()), "Unbounded smart folder fixture");
+        auto outsideMetadata = ProjectScanner::scan()[0].baseline.clone();
+        outsideMetadata.getDynamicObject()->setProperty ("projectId", juce::Uuid().toString());
+        outsideMetadata.getDynamicObject()->setProperty ("projectName", "Outside smart folder");
+        outsideMetadata.getDynamicObject()->setProperty ("projectPath", "");
+        outsideMetadata.getDynamicObject()->removeProperty ("projectFileId");
+        const auto sourceAudio = ProjectScanner::scan()[0].previewOgg;
+        ProjectScanner::editAsync ([outside, outsideMetadata, sourceAudio]
+        {
+            if (outside.createDirectory().failed() || ! sourceAudio.copyFileTo (outside.getChildFile ("preview.ogg")))
+                return juce::Result::fail ("Cannot create outside-scope preview");
+            return LibraryStore::writeJsonAtomically (outside.getChildFile ("metadata.json"), outsideMetadata);
+        });
+        awaitUi ([] { return ProjectScanner::librarySnapshot()->entries.size() == 2; });
+        check (list->getNumRows() == 1, "Empty refinement included a preview outside saved conditions");
+        search->setText ("Outside smart folder");
+        awaitUi ([&] { return list->getNumRows() == 0; });
+        const auto refinementText = search->getText();
+        list->refresh();
+        awaitUi ([] { return ! ProjectScanner::librarySnapshot()->loading && ProjectScanner::pendingJobs() == 0; });
+        check (search->getText() == refinementText && list->getNumRows() == 0, "Library refresh overwrote temporary smart-folder filters");
+        clearRefinements->onClick();
+        check (search->getText().isEmpty() && list->getNumRows() == 1
+            && search->getTextToShowWhenEmpty().contains ("Automatic sketches"), "Clear filters left the smart folder scope");
+        search->setText ("Outside smart folder");
+        awaitUi ([&] { return list->getNumRows() == 0; });
+        list->createSmartFolder();
+        chooseSource ("Use active filters");
+        awaitUi ([&] { auto* f = modalForm(); return f && findControl (*f, "Folder name"); });
+        form = modalForm();
+        auto* inherited = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search"));
+        auto* additional = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search (2)"));
+        check (inherited && inherited->getText() == "Midnight" && additional && additional->getText() == "Outside smart folder",
+            "Create from active filters did not retain the saved scope and the independent refinement");
+        dynamic_cast<juce::TextEditor*> (findControl (*form, "Folder name"))->setText ("Scoped intersection", false);
+        saveImage (*form, "smart-folder-inherited-conditions.png", true);
+        apply (*form);
+        juce::String scopedCopy;
+        awaitUi ([&]
+        {
+            if (auto* items = ProjectScanner::librarySnapshot()->smartCollections.getArray())
+                for (const auto& item : *items) if (item.getProperty ("name", "").toString() == "Scoped intersection")
+                    scopedCopy = item.getProperty ("id", "").toString();
+            return scopedCopy.isNotEmpty() && juce::Component::getNumCurrentlyModalComponents() == 0;
+        });
+        list->selectSmartFolder (scopedCopy); clearRefinements->onClick();
+        check (list->getNumRows() == 0, "Saving active filters broadened the new smart folder");
+        list->editSmartFolder (scopedCopy);
+        awaitUi ([&] { return modalForm() != nullptr; });
+        form = modalForm();
+        additional = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search (2)"));
+        check (additional != nullptr, "Inherited condition group cannot be edited after saving");
+        additional->setText ({}, false); apply (*form);
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent())->exitModalState (1);
+        awaitUi ([&] { return list->getNumRows() == 1; });
+        list->selectSmartFolder (smartId);
+        ProjectScanner::editAsync ([outside]
+        { return outside.deleteRecursively() ? juce::Result::ok() : juce::Result::fail ("Cannot remove outside-scope fixture"); });
+        awaitUi ([] { return ProjectScanner::librarySnapshot()->entries.size() == 1; });
+        scene->setSize (640, 480); saveImage (*scene, "smart-folder-sidebar-minimum.png", true);
+        scene->setSize (1024, 768); saveImage (*scene, "smart-folder-sidebar.png", true);
+        // A queued index publication can rebuild the tree while pumping layout.
+        // Reacquire the row by identity before delivering the context gesture.
+        smartItem = nullptr;
+        for (int i = 0; i < smartTree->getRootItem()->getNumSubItems(); ++i)
+            if (smartTree->getRootItem()->getSubItem (i)->getUniqueName() == "__SMART__" + smartId)
+                smartItem = smartTree->getRootItem()->getSubItem (i);
+        check (smartItem != nullptr, "Smart folder disappeared during layout");
+        juce::MouseEvent editSmart (juce::Desktop::getInstance().getMainMouseSource(), {},
+            juce::ModifierKeys::rightButtonModifier, 1, 0, 0, 0, 0, smartTree, smartTree, clickedAt, {}, clickedAt, 1, false);
+        smartItem->itemClicked (editSmart);
+        auto* context = juce::Component::getCurrentlyModalComponent();
+        check (context && context->keyPressed (juce::KeyPress (juce::KeyPress::downKey))
+            && context->keyPressed (juce::KeyPress (juce::KeyPress::returnKey)), "Smart folder context menu did not open Edit conditions");
+        awaitUi ([&] { return modalForm() != nullptr; });
+        form = modalForm();
+        query = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search"));
+        query->setText ("No matching preview", false);
+        const auto unchanged = LibraryStore::configFile().loadFileAsString();
+        apply (*form);
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        auto* confirmation = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (confirmation->getName() == "Change smart folder conditions?", "Editing conditions lacks confirmation");
+        check (confirmation->findColour (juce::AlertWindow::backgroundColourId) == RememberUI::colour (Pal::BgDeep), "Smart folder confirmation lost its semantic theme");
+        saveImage (*confirmation, "smart-folder-edit-confirmation.png", true);
+        confirmation->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+        check (LibraryStore::configFile().loadFileAsString() == unchanged, "Cancel changed smart folder conditions");
+        list->editSmartFolder (smartId);
+        awaitUi ([&] { return modalForm() != nullptr; });
+        form = modalForm(); query = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search"));
+        query->setText ("No matching preview", false); apply (*form);
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent())->exitModalState (1);
+        awaitUi ([&] { return list->getNumRows() == 0; });
+        auto matching = ProjectScanner::scan()[0]; const auto originalNotes = matching.notes;
+        matching.notes = "No matching preview";
+        ProjectScanner::editAsync ([matching] { return matching.save ({ "notes" }); });
+        awaitUi ([&] { return list->getNumRows() == 1; }, 10000, "Smart folder did not automatically include changed metadata");
+        matching.notes = originalNotes;
+        ProjectScanner::editAsync ([matching] { return matching.save ({ "notes" }); });
+        awaitUi ([&] { return list->getNumRows() == 0; }, 10000, "Smart folder did not automatically exclude changed metadata");
+        list->createSmartFolder();
+        chooseSource ("Create a new filter");
+        awaitUi ([&] { auto* f = modalForm(); return f && findControl (*f, "Folder name"); });
+        form = modalForm(); query = dynamic_cast<juce::TextEditor*> (findControl (*form, "Search"));
+        check (query && query->getText().isEmpty(), "New folder filter inherited active search");
+        auto* smartWindow = form->findParentComponentOfClass<juce::DialogWindow>();
+        smartWindow->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+        smartSidebar->selectFolder ({}); search->setText ("");
+        awaitUi ([&] { return list->getNumRows() == 1; }, 10000, "Leaving smart folder did not restore ordinary library filters");
+        rows->selectRow (0);
+        std::cout << "PASS: smart folder creation from active filters, saved membership, edit confirmation and cancellation\n";
+    }
+    {
+        auto* row = dynamic_cast<ProjectRowComponent*> (rows->getComponentForRowNumber (0));
+        check (row != nullptr, "Double-click fixture lacks a recycled preview row");
+        const auto previousSelection = list->onEntrySelected;
+        int previewStarts = 0;
+        list->onEntrySelected = [&] (const ProjectEntry&) { ++previewStarts; };
+        const auto now = juce::Time::getCurrentTime();
+        juce::MouseEvent singleClick (juce::Desktop::getInstance().getMainMouseSource(), {},
+            juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, row, row, now, {}, now, 1, false);
+        juce::MouseEvent doubleClick (juce::Desktop::getInstance().getMainMouseSource(), {},
+            juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0, row, row, now, {}, now, 2, false);
+        row->mouseDown (singleClick); row->mouseUp (singleClick);
+        check (previewStarts == 1, "A single preview click no longer starts immediately");
+        row = dynamic_cast<ProjectRowComponent*> (rows->getComponentForRowNumber (0));
+        check (row != nullptr, "Preview row disappeared after its first click");
+        row->mouseDown (doubleClick);
+        check (previewStarts == 1, "Second double-click press restarted the preview");
+        row->mouseDoubleClick (doubleClick);
+        awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+        auto* confirmation = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (confirmation->getName() == "Open project?" && confirmation->getDescription().contains ("Ableton Live")
+            && confirmation->getDescription().contains (project.getFullPathName()), "Double click lost its DAW/project confirmation");
+        check (confirmation->findColour (juce::AlertWindow::backgroundColourId) == RememberUI::colour (Pal::BgDeep), "Project opening confirmation lost its semantic theme");
+        saveImage (*confirmation, "preview-open-confirmation.png", true);
+        confirmation->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+        check (! player->isAudioDeviceOpen(), "Cancelling project opening started audio");
+        check (previewStarts == 1, "Opening or cancelling the double-click confirmation restarted playback");
+        row->mouseDown (singleClick);
+        check (previewStarts == 2, "An independent single click can no longer replay the preview");
+        list->listBoxItemClicked (0, singleClick);
+        list->listBoxItemClicked (0, doubleClick);
+        check (previewStarts == 3, "ListBox fallback duplicated a multi-click playback gesture");
+        list->onEntrySelected = previousSelection;
+        std::cout << "PASS: immediate single-click playback, one start per double click, project confirmation and independent replay\n";
+    }
+    {
         SettingsDialog settings (false);
         awaitUi ([&] { return settings.hasLoadedSettings(); });
+        auto* sections = childOf<juce::TabbedButtonBar> (settings);
+        check (sections && sections->getNumTabs() == 3, "Settings lacks its three sections");
+        check (sections->getTabNames() == juce::StringArray { "Recording & storage", "Appearance", "Projects & audition" },
+            "Settings section order is incorrect");
+        sections->setCurrentTabIndex (1);
+        saveImage (settings, "apple-settings-appearance.png", true);
+        sections->setCurrentTabIndex (0);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
         auto* folders = childOf<juce::ListBox> (settings);
         std::vector<juce::ToggleButton*> recordingSwitches;
@@ -491,6 +801,19 @@ void testFrontendDesign (const juce::File& root)
             if (auto* toggle = dynamic_cast<juce::ToggleButton*> (child)) recordingSwitches.push_back (toggle);
         std::sort (recordingSwitches.begin(), recordingSwitches.end(), [] (auto* a, auto* b) { return a->getY() < b->getY(); });
         check (recordingSwitches.size() == 4, "Settings recording switches missing");
+        for (auto* toggle : recordingSwitches)
+            if (toggle->getButtonText().startsWith ("Capture from any position"))
+            {
+                const bool before = toggle->getToggleState();
+                toggle->setToggleState (true, juce::dontSendNotification); toggle->onClick();
+                awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
+                auto* warning = dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent());
+                check (warning->getDescription().contains ("artifacts") && warning->getDescription().contains ("tails"), "Settings capture warning omitted audio limitations");
+                saveImage (*warning, "capture-from-any-position-warning.png", true);
+                warning->exitModalState (0);
+                awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+                toggle->setToggleState (before, juce::dontSendNotification);
+            }
         for (size_t i = 1; i < recordingSwitches.size(); ++i)
             check (recordingSwitches[i]->getBounds().getCentreY() - recordingSwitches[i - 1]->getBounds().getCentreY() == 30,
                 "Record in mono and the remaining switches have unequal spacing");
@@ -504,8 +827,8 @@ void testFrontendDesign (const juce::File& root)
         }
         check (compact && compactLimit && compact->isEnabled() && compactLimit->getText().getDoubleValue() == 10,
             "Settings lacks the default 10 MB compaction controls");
-        check (compact->getRight() < compactLimit->getX() && compactLimit->getBottom() <= folders->getY(),
-            "Compaction controls overlap each other or project folders");
+        check (compact->getRight() < compactLimit->getX() && compactLimit->getBottom() <= settings.getHeight() - 52,
+            "Compaction controls overlap each other or the footer");
         const auto beforeCompactionPrompt = LibraryStore::configFile().loadFileAsString();
         compact->onClick();
         awaitUi ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; });
@@ -594,6 +917,8 @@ void testFrontendDesign (const juce::File& root)
         replace->setToggleState (originalReplace, juce::dontSendNotification);
         check (estimate->getText() == originalEstimate && LibraryStore::configFile().loadFileAsString() == configBeforeEstimate,
             "Draft storage estimates changed saved settings or failed to restore");
+        sections->setCurrentTabIndex (2);
+        saveImage (settings, "apple-settings-projects.png", true);
         const auto foldersImage = folders->createComponentSnapshot (folders->getLocalBounds(), true, 1, juce::SoftwareImageType{});
         check (foldersImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Settings folder list retained square corners");
         auto* row = folders->getComponentForRowNumber (0);
@@ -621,6 +946,7 @@ void testFrontendDesign (const juce::File& root)
                "Manual folder search missed a nested project or its association");
         check (LibraryStore::configFile().loadFileAsString() == configBeforeSearch, "Searching draft folders saved pending settings");
         saveImage (settings, "apple-settings.png", true);
+        sections->setCurrentTabIndex (1);
         juce::ComboBox* appearance = nullptr;
         for (auto* child : settings.getChildren())
             if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Appearance") appearance = combo;
@@ -694,6 +1020,68 @@ void testFrontendDesign (const juce::File& root)
         auto recovery = RecoveryChoiceDialog::create ({ choice }, [] (auto) {}, [] (auto) {}, false);
         saveImage (*recovery, "apple-recovery.png", true);
     }
+    for (int screen = 0; screen < 3; ++screen)
+    {
+        if (screen == 0) SettingsDialog::launch (false, [] {});
+        else if (screen == 1) StatisticsDialog::launch (player);
+        else UsedSoundsDialog::launch (ProjectScanner::scan()[0], {}, {}, {}, player);
+        auto* window = dynamic_cast<juce::DialogWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (window != nullptr, "Secondary screen did not create its native dialog");
+        if (screen == 0)
+        {
+            auto* settings = dynamic_cast<SettingsDialog*> (window->getContentComponent());
+            check (settings != nullptr, "Settings window lacks its content");
+            awaitUi ([&] { return settings->hasLoadedSettings(); });
+            check (settings->isEnabled() && window->isEnabled(), "Native Settings window is disabled after loading");
+            for (auto* child : settings->getChildren())
+                if (child->getTitle() == "Appearance") check (child->isEnabled(), "Native Settings appearance remains disabled after loading");
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (25);
+        }
+       #if JUCE_WINDOWS
+        check (! window->isUsingNativeTitleBar() && window->getTitleBarHeight() == 34
+            && window->getCloseButton() && window->getCloseButton()->getWidth() == 46,
+            "Secondary window does not share the main caption style");
+       #endif
+        for (auto appearance : { RememberAppearance::Light, RememberAppearance::Dark })
+        {
+            RememberUI::setAppearanceMode (appearance);
+            const auto image = window->createComponentSnapshot (window->getLocalBounds(), true, 1, juce::SoftwareImageType{});
+           #if JUCE_WINDOWS
+            check (image.getPixelAt (40, 15) == RememberUI::colour (Pal::BgDeep), "Secondary caption did not follow live appearance");
+           #endif
+            const auto filename = "secondary-" + juce::String (screen) + (RememberUI::isDark() ? "-dark.png" : "-light.png");
+            saveImage (*window, filename.toRawUTF8(), true);
+        }
+        window->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+    }
+    RememberUI::setAppearanceMode (RememberAppearance::Light);
+    for (int screen = 0; screen < 3; ++screen)
+    {
+        if (screen == 0) SettingsDialog::launch (false, [] {});
+        else if (screen == 1) StatisticsDialog::launch (player);
+        else UsedSoundsDialog::launch (ProjectScanner::scan()[0], {}, {}, {}, player);
+        auto* window = dynamic_cast<juce::DialogWindow*> (juce::Component::getCurrentlyModalComponent());
+        check (window != nullptr, "Secondary screen did not create its native dialog");
+       #if JUCE_WINDOWS
+        check (! window->isUsingNativeTitleBar() && window->getTitleBarHeight() == 34
+            && window->getCloseButton() && window->getCloseButton()->getWidth() == 46,
+            "Secondary window does not share the main caption style");
+       #endif
+        for (auto appearance : { RememberAppearance::Light, RememberAppearance::Dark })
+        {
+            RememberUI::setAppearanceMode (appearance);
+            const auto image = window->createComponentSnapshot (window->getLocalBounds(), true, 1, juce::SoftwareImageType{});
+           #if JUCE_WINDOWS
+            check (image.getPixelAt (40, 15) == RememberUI::colour (Pal::BgDeep), "Secondary caption did not follow live appearance");
+           #endif
+            const auto filename = "secondary-" + juce::String (screen) + (RememberUI::isDark() ? "-dark.png" : "-light.png");
+            saveImage (*window, filename.toRawUTF8(), true);
+        }
+        window->exitModalState (0);
+        awaitUi ([] { return juce::Component::getNumCurrentlyModalComponents() == 0; });
+    }
+    RememberUI::setAppearanceMode (RememberAppearance::Light);
     player->releaseEntry (ProjectScanner::scan()[0].metadataFile);
     check (! openButton->isEnabled() && openButton->getTooltip().isEmpty(), "Clearing selection retained the Open in DAW tooltip");
     check (! assignButton->isEnabled(), "Assign path stayed available after releasing the entry");

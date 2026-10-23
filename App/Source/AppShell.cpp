@@ -3,6 +3,7 @@
 #include "ProjectScanner.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/BackgroundRetirement.h"
+#include "../../Shared/RememberTrayMenu.h"
 #include "WindowsTaskbarTransport.h"
 #include <RememberIconData.h>
 
@@ -33,9 +34,35 @@ public:
 
     void activate()
     {
-        const bool firstShow = ! boundsReady;
-        // Native frame adjustments during the first show are initialisation,
-        // not a user move. Read saved bounds against the final shown geometry.
+        displayRequested = true;
+        if (! boundsReady)
+        {
+            if (boundsReadPending) return;
+            boundsReadPending = true;
+            auto savedBounds = std::make_shared<juce::String>();
+            ProjectScanner::queryAsync ([savedBounds]
+            {
+                return ProjectScanner::readWindowState (*savedBounds);
+            }, [safe = juce::Component::SafePointer<MainWindow> (this), savedBounds] (juce::Result result)
+            {
+                if (safe == nullptr) return;
+                safe->boundsReadSucceeded = result.wasOk();
+                if (result.wasOk() && savedBounds->isNotEmpty())
+                {
+                    // JUCE records the current normal bounds before applying
+                    // "fs". Seed them while hidden so Restore also returns to
+                    // the saved rectangle rather than the constructor size.
+                    if (savedBounds->startsWithIgnoreCase ("fs "))
+                        safe->restoreWindowStateFromString (savedBounds->substring (3));
+                    safe->restoreWindowStateFromString (*savedBounds);
+                }
+                safe->lastObservedBounds = safe->getBounds();
+                safe->boundsReady = true;
+                if (safe->displayRequested) safe->activate();
+            });
+            return;
+        }
+        // The first visible frame already has its saved bounds/maximised state.
         setVisible (true);
        #if JUCE_WINDOWS
         if (! taskbar && getPeer() != nullptr)
@@ -64,28 +91,6 @@ public:
         if (auto* content = mainContent()) content->setUiActive (true);
         setMinimised (false);
         toFront (true);
-        if (! firstShow) return;
-        boundsReady = true;
-        lastObservedBounds = getBounds();
-        auto savedBounds = std::make_shared<juce::String>();
-        const auto initialBounds = getBounds();
-        ProjectScanner::queryAsync ([savedBounds]
-        {
-            return ProjectScanner::readWindowState (*savedBounds);
-        }, [safe = juce::Component::SafePointer<MainWindow> (this), savedBounds, initialBounds] (juce::Result result)
-        {
-            if (safe == nullptr) return;
-            safe->boundsReadSucceeded = result.wasOk();
-            // A late disk read must not undo a move/resize by the user.
-            if (result.wasOk() && ! safe->boundsEdited && safe->getBounds() == initialBounds
-                && savedBounds->isNotEmpty())
-            {
-                safe->boundsReady = false;
-                safe->restoreWindowStateFromString (*savedBounds);
-                safe->lastObservedBounds = safe->getBounds();
-                safe->boundsReady = true;
-            }
-        });
     }
 
     bool hasTaskbarButtons() const
@@ -124,6 +129,7 @@ public:
 
     void closeButtonPressed() override
     {
+        displayRequested = false;
         ProjectScanner::setLibraryVisible (false);
         if (auto* content = mainContent()) content->setUiActive (false);
         setVisible (false);
@@ -157,6 +163,8 @@ private:
         });
     }
     bool boundsReady = false;
+    bool boundsReadPending = false;
+    bool displayRequested = false;
    #if JUCE_WINDOWS
     RememberUI::MainWindowLookAndFeel windowTheme;
     std::unique_ptr<WindowsTaskbarTransport> taskbar;
@@ -181,12 +189,14 @@ public:
     {
         if (event.mods.isPopupMenu())
         {
+            juce::SharedResourcePointer<RememberUI::TrayMenuLookAndFeel> theme;
             juce::PopupMenu menu;
+            menu.setLookAndFeel (&theme.get());
             menu.addItem (1, "Open Remember");
             menu.addSeparator();
             menu.addItem (2, "Exit");
             menu.showMenuAsync (juce::PopupMenu::Options(),
-                [safe = juce::Component::SafePointer<TrayIcon> (this)] (int result)
+                [safe = juce::Component::SafePointer<TrayIcon> (this), theme] (int result)
                 {
                     if (safe == nullptr)
                         return;

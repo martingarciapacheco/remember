@@ -28,6 +28,14 @@ public:
     std::function<void (const ProjectEntry&)> onBeforeCompaction;
 
 private:
+    class SectionTabs final : public juce::TabbedButtonBar
+    {
+    public:
+        SectionTabs() : TabbedButtonBar (juce::TabbedButtonBar::TabsAtTop) {}
+        std::function<void()> changed;
+        void currentTabChanged (int, const juce::String&) override { if (changed) changed(); }
+    };
+    SectionTabs sections;
     RememberUI::Style uiStyle { *this };
     void pickPreviews();
     void addProjectFolder();

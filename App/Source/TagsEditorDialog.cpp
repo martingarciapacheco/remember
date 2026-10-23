@@ -404,7 +404,7 @@ void TagsEditorDialog::launch (const juce::String& entryName,
     opts.useNativeTitleBar         = true;
     opts.resizable                 = false;
     opts.dialogBackgroundColour    = RememberUI::colour (Pal::BgDeep);
-    opts.launchAsync();
+    RememberUI::launchDialog (opts);
 }
 
 std::unique_ptr<TagsEditorDialog> TagsEditorDialog::create (const juce::String& entryName,

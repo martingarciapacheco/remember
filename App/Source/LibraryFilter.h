@@ -1,6 +1,7 @@
 #pragma once
 #include "ProjectScanner.h"
 #include <algorithm>
+#include <vector>
 
 struct LibraryFilter
 {
@@ -10,8 +11,14 @@ struct LibraryFilter
     double bpmFrom = 0, bpmTo = 0;
     bool favorites = false, missing = false, untagged = false;
     int sort = Latest;
+    // Conjunction keeps independent folder/tag/range conditions exact when a
+    // new smart folder is created from another folder plus temporary filters.
+    std::vector<LibraryFilter> allOf;
+    bool matchNone = false;
     bool matches (const ProjectEntry& entry) const
     {
+        if (matchNone) return false;
+        for (const auto& condition : allOf) if (! condition.matches (entry)) return false;
         if (! entry.matches (query) || (favorites && ! entry.favorite)) return false;
         if (missing && (entry.pending || entry.projectAvailable)) return false;
         if (untagged && ! entry.tags.isEmpty()) return false;
@@ -49,11 +56,29 @@ struct LibraryFilter
         o.setProperty ("status", status); o.setProperty ("dateFrom", dateFrom); o.setProperty ("dateTo", dateTo);
         o.setProperty ("bpmFrom", bpmFrom); o.setProperty ("bpmTo", bpmTo);
         o.setProperty ("favorites", favorites); o.setProperty ("missing", missing);
-        o.setProperty ("untagged", untagged); o.setProperty ("sort", sort); return value;
+        o.setProperty ("untagged", untagged); o.setProperty ("sort", sort);
+        if (matchNone) o.setProperty ("matchNone", true);
+        if (! allOf.empty())
+        {
+            juce::Array<juce::var> conditions;
+            for (const auto& condition : allOf) conditions.add (condition.json());
+            o.setProperty ("allOf", conditions);
+        }
+        return value;
     }
-    static LibraryFilter fromJson (const juce::var& v)
+    static LibraryFilter fromJson (const juce::var& v, int* remaining = nullptr)
     {
         LibraryFilter f;
+        int localBudget = 64;
+        auto& budget = remaining != nullptr ? *remaining : localBudget;
+        if (--budget < 0) { f.matchNone = true; return f; }
+        f.matchNone = (bool) v.getProperty ("matchNone", false);
+        if (auto* conditions = v.getProperty ("allOf", {}).getArray())
+            for (const auto& condition : *conditions)
+            {
+                if (budget <= 0) { f.matchNone = true; break; }
+                f.allOf.push_back (fromJson (condition, &budget));
+            }
         f.query = v.getProperty ("query", "").toString(); f.folder = v.getProperty ("folder", "").toString();
         if (auto* paths = v.getProperty ("folders", {}).getArray())
             for (const auto& path : *paths) f.folders.addIfNotAlreadyThere (path.toString());

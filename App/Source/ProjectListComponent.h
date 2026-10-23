@@ -19,6 +19,7 @@ public:
     void resized   () override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
 
     std::function<void()>                 onSelect;
     std::function<void(juce::ModifierKeys)> onSelectionGesture;
@@ -32,6 +33,7 @@ public:
     std::function<void()>                 onRenameRequested;
     std::function<void()>                 onEditTags;
     std::function<void()>                 onOpenInDaw;
+    std::function<void()>                 onConfirmOpenInDaw;
     std::function<void()>                 onDelete;
     std::function<void(bool)>             onRecover; // true: keep pending as a permanent recording
 
@@ -66,6 +68,9 @@ public:
     std::function<void()> onFiltersCleared;
     void setFolderFilter (const juce::String& folderPath);
     void setFolderFilters (const juce::StringArray& paths);
+    void createSmartFolder();
+    void editSmartFolder (const juce::String& id);
+    void selectSmartFolder (const juce::String& id);
 
     // Programmatic actions for keyboard shortcuts in MainComponent
     void playSelected();
@@ -112,11 +117,17 @@ private:
     void applyFilter();
     void configureWorkflow();
     void showFilters();
+    void showSmartFolderEditor (LibraryFilter, juce::String id = {}, juce::String name = {});
+    juce::String activeSmartFolder;
+    LibraryFilter smartFolderScope;
+    void refreshSmartFolderScope();
     void clearFilters();
     void showActions (ProjectEntry, ProjectRowComponent*);
     void editDetails (ProjectEntry);
     void compactRecording (ProjectEntry);
     void saveCollection();
+    void configureCollectionMenu();
+    void removeCollection (const juce::String& id);
     void restoreRecording (ProjectEntry);
     void bulkEdit (juce::Array<ProjectEntry>, juce::String operation);
     LibraryFilter filter;
