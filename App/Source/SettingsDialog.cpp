@@ -4,6 +4,7 @@
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/AppearanceSettings.h"
+#include "../../Shared/LanguageSettings.h"
 #include "../../Shared/ZoomSettings.h"
 #include "../../Shared/CaptureWarning.h"
 
@@ -17,15 +18,15 @@ public:
         FolderRow()
         {
             setInterceptsMouseClicks (false, true);
-            remove.setTitle ("Remove search folder");
-            remove.setTooltip ("Remove search folder");
-            remove.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-            RememberUI::bindColour (remove, juce::TextButton::textColourOffId, Pal::Subtext);
+            remove.setTitle (RememberUI::tr ("Remove search folder"));
+            remove.setTooltip (RememberUI::tr ("Remove search folder"));
+            remove.setColour (RememberUI::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            RememberUI::bindColour (remove, RememberUI::TextButton::textColourOffId, Pal::Subtext);
             remove.setWantsKeyboardFocus (false);
             addAndMakeVisible (remove);
         }
         void resized() override { remove.setBounds (getLocalBounds().removeFromRight (32)); }
-        juce::TextButton remove { "X" };
+        RememberUI::TextButton remove { "X" };
     };
 
     explicit FoldersListModel (SettingsDialog& o) : owner (o) {}
@@ -94,28 +95,28 @@ static constexpr double kMonoSizeFactor = 0.6;
 
 SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner::SettingsSnapshot()> reader) : firstRun (firstRunFlag)
 {
-    sections.addTab ("Recording & storage", RememberUI::colour (Pal::BgDeep), 0);
-    sections.addTab ("Appearance", RememberUI::colour (Pal::BgDeep), 1);
-    sections.addTab ("Projects & audition", RememberUI::colour (Pal::BgDeep), 2);
-    sections.setTitle ("Settings sections");
+    sections.addTab (RememberUI::tr ("Recording & storage"), RememberUI::colour (Pal::BgDeep), 0);
+    sections.addTab (RememberUI::tr ("Appearance"), RememberUI::colour (Pal::BgDeep), 1);
+    sections.addTab (RememberUI::tr ("Projects & audition"), RememberUI::colour (Pal::BgDeep), 2);
+    sections.setTitle (RememberUI::tr ("Settings sections"));
     sections.changed = [this] { resized(); };
     addAndMakeVisible (sections);
     setSize (680, 640);
     for (auto* toggle : { &manualToggle, &lockToggle, &replaceToggle })
     { toggle->setTitle (toggle->getButtonText()); addAndMakeVisible (*toggle); }
-    manualToggle.setTooltip ("Default for new Remember instances. Existing instances and saved DAW projects keep their own setting.");
+    manualToggle.setTooltip (RememberUI::tr ("Default for new Remember instances. Existing instances and saved DAW projects keep their own setting."));
     manualToggle.onClick = [this]
     {
         if (manualToggle.getToggleState()) RememberUI::showCaptureFromAnyPositionWarning (this);
     };
 
-    auto styleLabel = [] (juce::Label& l, float h, uint32_t col, bool bold = false)
+    auto styleLabel = [] (RememberUI::Label& l, float h, uint32_t col, bool bold = false)
     {
         l.setFont (RememberUI::font (h, bold));
-        RememberUI::bindColour (l, juce::Label::textColourId, col);
+        RememberUI::bindColour (l, RememberUI::Label::textColourId, col);
     };
 
-    header.setText (firstRun ? "Welcome to Remember" : "Settings",
+    header.setText (firstRun ? RememberUI::tr ("Welcome to Remember") : RememberUI::tr ("Settings"),
                     juce::dontSendNotification);
     styleLabel (header, 22.0f, Pal::Text, true);
     addAndMakeVisible (header);
@@ -127,11 +128,19 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
 
     styleLabel (appearanceCaption, 13.0f, Pal::Text, true);
     styleLabel (appearanceHint, 11.0f, Pal::Subtext);
-    appearanceCombo.setTitle ("Appearance");
-    appearanceCombo.addItem ("System (automatic)", 3);
-    appearanceCombo.addItem ("Light", 1);
-    appearanceCombo.addItem ("Dark", 2);
+    appearanceCombo.setTitle (RememberUI::tr ("Appearance"));
+    appearanceCombo.addItem (RememberUI::tr ("System (automatic)"), 3);
+    appearanceCombo.addItem (RememberUI::tr ("Light"), 1);
+    appearanceCombo.addItem (RememberUI::tr ("Dark"), 2);
     appearanceCombo.setSelectedId (RememberUI::appearanceMode == RememberAppearance::System ? 3 : RememberUI::isDark() ? 2 : 1, juce::dontSendNotification);
+    styleLabel (languageCaption, 13.0f, Pal::Text, true);
+    styleLabel (languageHint, 11.0f, Pal::Subtext);
+    languageCombo.setTitle (RememberUI::tr ("Language"));
+    languageCombo.addItem ("English", 1);
+    languageCombo.addItem (juce::String::fromUTF8 ("Español (España)"), 2);
+    languageCombo.setSelectedId (RememberUI::language == RememberUI::Language::SpanishSpain ? 2 : 1, juce::dontSendNotification);
+    languageCombo.onChange = [this] { saveLanguage(); };
+    addAndMakeVisible (languageCaption); addAndMakeVisible (languageHint); addAndMakeVisible (languageCombo);
     appearanceCombo.onChange = [this] { saveAppearance(); };
     addAndMakeVisible (appearanceCaption);
     addAndMakeVisible (appearanceHint);
@@ -146,15 +155,20 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     addAndMakeVisible (zoomCombo);
     styleLabel (midiCaption, 13.0f, Pal::Text, true);
     styleLabel (midiHint, 11.0f, Pal::Subtext);
-    midiVoiceCombo.setTitle ("Default MIDI audition instrument");
-    midiVoiceCombo.addItem ("Simple piano", 1); midiVoiceCombo.addItem ("Saw", 2);
-    midiVoiceCombo.addItem ("Square", 3); midiVoiceCombo.addItem ("Sine", 4);
+    midiVoiceCombo.setTitle (RememberUI::tr ("Default MIDI audition instrument"));
+    midiVoiceCombo.addItem (RememberUI::tr ("Simple piano"), 1); midiVoiceCombo.addItem (RememberUI::tr ("Saw"), 2);
+    midiVoiceCombo.addItem (RememberUI::tr ("Square"), 3); midiVoiceCombo.addItem (RememberUI::tr ("Sine"), 4);
     midiVoiceCombo.setSelectedId (1, juce::dontSendNotification);
     addAndMakeVisible (midiCaption); addAndMakeVisible (midiHint); addAndMakeVisible (midiVoiceCombo);
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
     styleLabel (previewsHint,    11.0f, Pal::Subtext);
-    styleLabel (previewsPath,    12.0f, Pal::Accent);
+    previewsPath.setEnabled (false);
+    previewsPath.onClick = [this]
+    {
+        if (settingsLoaded && previewsFolder.getFullPathName().isNotEmpty())
+            previewsFolder.startAsProcess();
+    };
     addAndMakeVisible (previewsCaption);
     addAndMakeVisible (previewsHint);
     addAndMakeVisible (previewsPath);
@@ -167,8 +181,8 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     styleLabel (sizeEstimate,  12.0f, Pal::Text, true);
     styleLabel (storageUsage,  11.0f, Pal::Subtext);
     styleLabel (pcmPolicy, 12.0f, Pal::Subtext);
-    sizeEstimate.setTitle ("Estimated preview storage");
-    pcmPolicy.setTitle ("Preview storage notice");
+    sizeEstimate.setTitle (RememberUI::tr ("Estimated preview storage"));
+    pcmPolicy.setTitle (RememberUI::tr ("Preview storage notice"));
     for (auto* label : { &sizeEstimate, &pcmPolicy })
     {
         label->setJustificationType (juce::Justification::topLeft);
@@ -181,26 +195,26 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     addAndMakeVisible (sizeEstimate);
     addAndMakeVisible (storageUsage);
     addAndMakeVisible (pcmPolicy);
-    RememberUI::iconButton (storageInfo, "info", "About preview storage");
-    storageInfo.setTooltip ("How previews, tail preservation and recovery use disk space");
+    RememberUI::iconButton (storageInfo, "info", RememberUI::tr ("About preview storage"));
+    storageInfo.setTooltip (RememberUI::tr ("How previews, tail preservation and recovery use disk space"));
     storageInfo.onClick = [this] { showStorageInfo(); };
     addAndMakeVisible (storageInfo);
-    compactBtn.setTitle ("Compact large previews");
-    compactBtn.setTooltip ("Re-encode previews above the total audio limit, including recovery, into one OGG each");
+    compactBtn.setTitle (RememberUI::tr ("Compact large previews"));
+    compactBtn.setTooltip (RememberUI::tr ("Re-encode previews above the total audio limit, including recovery, into one OGG each"));
     compactBtn.onClick = [this] { compactLargePreviews(); };
-    compactLimit.setTitle ("Compaction limit in MB"); compactLimit.setText ("10", false);
+    compactLimit.setTitle (RememberUI::tr ("Compaction limit in MB")); compactLimit.setText ("10", false);
     compactLimit.setInputRestrictions (9, "0123456789."); compactLimit.setFont (RememberUI::font (13));
     compactLimit.setJustification (juce::Justification::centred);
     compactLimit.setIndents (8, 0);
-    compactLimit.setTooltip ("Total audio including recovery; 1 MB = 1,000,000 bytes. Saved with OK.");
-    RememberUI::bindColour (compactLimit, juce::TextEditor::backgroundColourId, Pal::Content);
-    RememberUI::bindColour (compactLimit, juce::TextEditor::textColourId, Pal::Text);
+    compactLimit.setTooltip (RememberUI::tr ("Total audio including recovery; 1 MB = 1,000,000 bytes. Saved with OK."));
+    RememberUI::bindColour (compactLimit, RememberUI::TextEditor::backgroundColourId, Pal::Content);
+    RememberUI::bindColour (compactLimit, RememberUI::TextEditor::textColourId, Pal::Text);
     styleLabel (compactUnits, 12, Pal::Subtext);
     addAndMakeVisible (compactBtn); addAndMakeVisible (compactLimit); addAndMakeVisible (compactUnits);
 
 
     // Duration presets
-    durationCombo.setTitle ("Capture duration");
+    durationCombo.setTitle (RememberUI::tr ("Capture duration"));
     durationCombo.addItem ("15 s",  15);
     durationCombo.addItem ("30 s",  30);
     durationCombo.addItem ("60 s",  60);
@@ -220,12 +234,12 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     // Quality presets: Low=2 / Med=4 / High=6 / Max=8.
     // ComboBox IDs encode the quality index directly (shifted by +1 because
     // ComboBox forbids id == 0).
-    qualityCombo.setTitle ("OGG quality");
-    auto kbpsStr = [] (int q) { return " (~" + juce::String (kVorbisBitrate[q]) + " kbps)"; };
-    qualityCombo.addItem ("Low"  + kbpsStr (2), 2 + 1);
-    qualityCombo.addItem ("Med"  + kbpsStr (4), 4 + 1);
-    qualityCombo.addItem ("High" + kbpsStr (6), 6 + 1);
-    qualityCombo.addItem ("Max"  + kbpsStr (8), 8 + 1);
+    qualityCombo.setTitle (RememberUI::tr ("OGG quality"));
+    auto kbpsStr = [] (int q) { return " (~" + juce::String (kVorbisBitrate[q]) + RememberUI::tr (" kbps)"); };
+    qualityCombo.addItem (RememberUI::tr ("Low")  + kbpsStr (2), 2 + 1);
+    qualityCombo.addItem (RememberUI::tr ("Med")  + kbpsStr (4), 4 + 1);
+    qualityCombo.addItem (RememberUI::tr ("High") + kbpsStr (6), 6 + 1);
+    qualityCombo.addItem (RememberUI::tr ("Max")  + kbpsStr (8), 8 + 1);
     int initialQ = (oggQuality == 2 || oggQuality == 6 || oggQuality == 8) ? oggQuality : 4;
     oggQuality = initialQ;   // keep state in sync if config had an unsupported value
     qualityCombo.setSelectedId (initialQ + 1, juce::dontSendNotification);
@@ -235,7 +249,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
         updateSizeEstimate();
     };
 
-    RememberUI::bindColour (monoToggle, juce::ToggleButton::textColourId, Pal::Subtext);
+    RememberUI::bindColour (monoToggle, RememberUI::ToggleButton::textColourId, Pal::Subtext);
     monoToggle.setToggleState (recordMono, juce::dontSendNotification);
     monoToggle.onClick = [this]
     {
@@ -261,21 +275,21 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     foldersList.setOutlineThickness (0);
     addAndMakeVisible (foldersList);
 
-    auto styleBtn = [] (juce::TextButton& b, uint32_t bg, uint32_t fg)
+    auto styleBtn = [] (RememberUI::TextButton& b, uint32_t bg, uint32_t fg)
     {
-        RememberUI::bindColour (b, juce::TextButton::buttonColourId, bg);
-        RememberUI::bindColour (b, juce::TextButton::textColourOffId, fg);
+        RememberUI::bindColour (b, RememberUI::TextButton::buttonColourId, bg);
+        RememberUI::bindColour (b, RememberUI::TextButton::textColourOffId, fg);
     };
 
     styleBtn (previewsBrowse,  Pal::Elevated, Pal::Text);
     styleBtn (addProjectsBtn,  Pal::Elevated, Pal::Text);
     styleBtn (refreshProjectsBtn, Pal::Elevated, Pal::Text);
     styleLabel (searchStatus, 12.0f, Pal::Subtext);
-    searchStatus.setTitle ("Project folder search status");
+    searchStatus.setTitle (RememberUI::tr ("Project folder search status"));
     searchStatus.setMinimumHorizontalScale (1.0f);
-    refreshProjectsBtn.setTitle ("Search project folders");
-    refreshProjectsBtn.setTooltip ("Search every listed folder and subfolder now. Folder settings are saved with OK.");
-    projectsHint.setText ("Searches matching project names in these folders and all subfolders", juce::dontSendNotification);
+    refreshProjectsBtn.setTitle (RememberUI::tr ("Search project folders"));
+    refreshProjectsBtn.setTooltip (RememberUI::tr ("Search every listed folder and subfolder now. Folder settings are saved with OK."));
+    projectsHint.setText (RememberUI::tr ("Searches matching project names in these folders and all subfolders"), juce::dontSendNotification);
     refreshProjectsBtn.onClick = [this] { searchProjectFolders(); };
     styleBtn (okBtn, Pal::Action,   Pal::OnAction);
     styleBtn (cancelBtn,       Pal::Elevated, Pal::Subtext);
@@ -307,7 +321,7 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
         addAndMakeVisible (cancelBtn);
 
     for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
-    previewsPath.setText ("Loading settings...", juce::dontSendNotification);
+    previewsPath.setButtonText (RememberUI::tr ("Loading settings..."));
     loadSettings (std::move (reader));
 }
 
@@ -330,12 +344,48 @@ void SettingsDialog::saveZoom()
             safe->zoomCombo.setSelectedId (RememberUI::appZoom().percent, juce::dontSendNotification);
             if (result.failed())
             {
-                safe->settingsProblem.setText ("Cannot save zoom: " + result.getErrorMessage(), juce::dontSendNotification);
+                safe->settingsProblem.setText (RememberUI::tr ("Cannot save zoom: ") + RememberUI::diagnostic (result.getErrorMessage()), juce::dontSendNotification);
                 safe->settingsProblem.setVisible (true);
                 safe->retrySettings.setVisible (true);
                 safe->resized();
             }
             safe->refreshLabels();
+        });
+}
+
+void SettingsDialog::refreshLanguage()
+{
+    sections.setTabName (0, RememberUI::tr ("Recording & storage"));
+    sections.setTabName (1, RememberUI::tr ("Appearance"));
+    sections.setTabName (2, RememberUI::tr ("Projects & audition"));
+    languageCombo.setSelectedId (RememberUI::language == RememberUI::Language::SpanishSpain ? 2 : 1, juce::dontSendNotification);
+    const auto selectedQuality = qualityCombo.getSelectedId();
+    const char* names[] { "Low", "Med", "High", "Max" };
+    const int qualities[] { 2, 4, 6, 8 };
+    for (int i = 0; i < 4; ++i)
+        qualityCombo.changeItemText (qualities[i] + 1, RememberUI::tr (names[i]) + " (~"
+            + juce::String (kVorbisBitrate[qualities[i]]) + " kbps)");
+    qualityCombo.setSelectedId (selectedQuality, juce::dontSendNotification);
+    const auto selectedZoom = zoomCombo.getSelectedId();
+    zoomCombo.changeItemText (100, "100" + RememberUI::tr ("% (default)"));
+    zoomCombo.setSelectedId (selectedZoom, juce::dontSendNotification);
+    if (refreshStorageText) refreshStorageText();
+    if (settingsLoaded) updateSizeEstimate();
+    resized(); repaint();
+}
+
+void SettingsDialog::saveLanguage()
+{
+    if (! settingsLoaded || languageSaving) return;
+    const auto value = languageCombo.getSelectedId() == 2 ? RememberUI::Language::SpanishSpain : RememberUI::Language::English;
+    languageSaving = true; languageCombo.setEnabled (false);
+    ProjectScanner::editAsync ([value] { return LanguageSettings::save (value); },
+        [safe = juce::Component::SafePointer<SettingsDialog> (this), value] (juce::Result result)
+        {
+            if (safe == nullptr) return;
+            safe->languageSaving = false; safe->languageCombo.setEnabled (true);
+            safe->languageCombo.setSelectedId ((result.wasOk() ? value : RememberUI::language.load()) == RememberUI::Language::SpanishSpain ? 2 : 1, juce::dontSendNotification);
+            if (result.failed()) safe->settingsProblem.setText (RememberUI::tr ("Cannot save language: ") + RememberUI::diagnostic (result.getErrorMessage()), juce::dontSendNotification);
         });
 }
 
@@ -358,7 +408,7 @@ void SettingsDialog::saveAppearance()
             safe->refreshLabels();
             if (result.failed())
             {
-                safe->settingsProblem.setText ("Cannot save appearance: " + result.getErrorMessage(), juce::dontSendNotification);
+                safe->settingsProblem.setText (RememberUI::tr ("Cannot save appearance: ") + RememberUI::diagnostic (result.getErrorMessage()), juce::dontSendNotification);
                 safe->settingsProblem.setVisible (true);
                 safe->retrySettings.setVisible (true);
                 safe->resized();
@@ -373,7 +423,8 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
     searchStatus.setText ({}, juce::dontSendNotification);
     validationGeneration->fetch_add (1); storageGeneration->fetch_add (1); measuredFolder = {};
     for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
-    previewsPath.setText ("Loading settings...", juce::dontSendNotification);
+    previewsPath.setEnabled (false);
+    previewsPath.setButtonText (RememberUI::tr ("Loading settings..."));
     auto settings = std::make_shared<ProjectScanner::SettingsSnapshot>();
     ProjectScanner::queryAsync ([settings, reader = std::move (reader)]
     { *settings = reader ? reader() : ProjectScanner::readSettings(); return settings->result; },
@@ -381,18 +432,18 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
         {
             if (safe == nullptr) return;
             safe->rebuildFingerprint = result.failed() && settings->canRebuild ? settings->fingerprint : juce::String{};
-            const auto problem = result.failed() ? result.getErrorMessage()
-                + (settings->canRebuild ? "\nReview the folders and recording options. Rebuild settings saves an original copy beside config.json."
-                                        : "\nRestore access, then Reload settings. The file will be preserved.") : juce::String{};
+            const auto problem = result.failed() ? RememberUI::diagnostic (result.getErrorMessage())
+                + (settings->canRebuild ? RememberUI::tr ("\nReview the folders and recording options. Rebuild settings saves an original copy beside config.json.")
+                                        : RememberUI::tr ("\nRestore access, then Reload settings. The file will be preserved.")) : juce::String{};
             safe->settingsProblem.setText (problem, juce::dontSendNotification);
             safe->settingsProblem.setTooltip (problem); safe->settingsProblem.setVisible (problem.isNotEmpty());
             safe->settingsProblem.setEnabled (true);
             safe->retrySettings.setVisible (result.failed()); safe->retrySettings.setEnabled (true);
             safe->cancelBtn.setEnabled (true);
-            safe->okBtn.setButtonText (safe->rebuildFingerprint.isNotEmpty() ? "Rebuild settings" : "OK");
+            safe->okBtn.setButtonText (safe->rebuildFingerprint.isNotEmpty() ? RememberUI::tr ("Rebuild settings") : RememberUI::tr ("OK"));
             safe->resized();
             if (result.failed() && ! settings->canRebuild)
-            { safe->previewsPath.setText ("Settings could not be read", juce::dontSendNotification); return; }
+            { safe->previewsPath.setButtonText (RememberUI::tr ("Settings could not be read")); return; }
             safe->previewsFolder = settings->previews;
             safe->projectsFolders = settings->roots;
             safe->recordSeconds = settings->seconds;
@@ -408,12 +459,13 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             if (result.wasOk()) RememberUI::appZoom().set (settings->interfaceZoom);
             safe->zoomCombo.setSelectedId (RememberUI::appZoom().percent, juce::dontSendNotification);
             safe->zoomCombo.setEnabled (result.wasOk());
+            safe->languageCombo.setEnabled (result.wasOk());
             // Preserve all supported config values, rather than silently
             // overwriting a non-preset value when saving an unrelated setting.
             if (safe->durationCombo.indexOfItemId (settings->seconds) < 0)
                 safe->durationCombo.addItem (juce::String (settings->seconds) + " s", settings->seconds);
             if (safe->qualityCombo.indexOfItemId (settings->quality + 1) < 0)
-                safe->qualityCombo.addItem ("Quality " + juce::String (settings->quality), settings->quality + 1);
+                safe->qualityCombo.addItem (RememberUI::tr ("Quality ") + juce::String (settings->quality), settings->quality + 1);
             safe->durationCombo.setSelectedId (settings->seconds, juce::dontSendNotification);
             safe->qualityCombo.setSelectedId (settings->quality + 1, juce::dontSendNotification);
             safe->monoToggle.setToggleState (settings->mono, juce::dontSendNotification);
@@ -430,9 +482,11 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
 
 void SettingsDialog::refreshLabels()
 {
-    previewsPath.setText (previewsFolder.getFullPathName().isEmpty()
-                             ? "(not set)" : previewsFolder.getFullPathName(),
-                          juce::dontSendNotification);
+    previewsPath.setButtonText (previewsFolder.getFullPathName().isEmpty()
+                             ? RememberUI::tr ("(not set)") : previewsFolder.getFullPathName());
+    previewsPath.setEnabled (settingsLoaded && previewsFolder.getFullPathName().isNotEmpty());
+    previewsPath.setTitle (RememberUI::tr ("Previews folder"));
+    previewsPath.setTooltip (previewsFolder.getFullPathName());
 
     okBtn.setEnabled (false);
     if (! settingsLoaded) return;
@@ -452,7 +506,7 @@ void SettingsDialog::refreshLabels()
         return juce::Result::ok();
     }, [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation, valid] (juce::Result result)
     {
-        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid && ! safe->appearanceSaving && ! safe->zoomSaving);
+        if (safe != nullptr && token->load() == generation) safe->okBtn.setEnabled (result.wasOk() && *valid && ! safe->appearanceSaving && ! safe->zoomSaving && ! safe->languageSaving);
     });
 }
 
@@ -469,13 +523,13 @@ void SettingsDialog::updateSizeEstimate()
                    * (recordMono ? kMonoSizeFactor : 1.0) / 8.0;
 
     const auto size = [] (double value) { return juce::File::descriptionOfSizeInBytes ((juce::int64) value); };
-    sizeEstimate.setText ("At 48 kHz: ~" + size (2.0 * bytes) + " of OGG audio, including recovery copy\n"
-        + juce::String (recordSeconds) + " s " + (recordMono ? "mono" : "stereo") + ": ~" + size (bytes) + " per copy, plus fragment overhead", juce::dontSendNotification);
-    sizeEstimate.setTooltip ("Approximate compressed audio size. Fragment headers, overlaps and old retained ranges add space. "
-        "Duration, sample rate, quality and content affect actual size; existing legacy previews may still contain WAV files.");
-    pcmPolicy.setText ("New previews keep OGG fragments without recoding the old tail.\n"
-        "WAVs are temporary while saving. Use the info button for limits and recovery.", juce::dontSendNotification);
-    pcmPolicy.setTooltip ("Current and previous preview packages are retained. Existing previews are read without bulk migration.");
+    sizeEstimate.setText (RememberUI::tr ("At 48 kHz: ~") + size (2.0 * bytes) + RememberUI::tr (" of OGG audio, including recovery copy\n")
+        + juce::String (recordSeconds) + " s " + (recordMono ? "mono" : "stereo") + ": ~" + size (bytes) + RememberUI::tr (" per copy, plus fragment overhead"), juce::dontSendNotification);
+    sizeEstimate.setTooltip (RememberUI::tr ("Approximate compressed audio size. Fragment headers, overlaps and old retained ranges add space. ") +
+        RememberUI::tr ("Duration, sample rate, quality and content affect actual size; existing legacy previews may still contain WAV files."));
+    pcmPolicy.setText (RememberUI::tr ("New previews keep OGG fragments without recoding the old tail.\n") +
+        RememberUI::tr ("WAVs are temporary while saving. Use the info button for limits and recovery."), juce::dontSendNotification);
+    pcmPolicy.setTooltip (RememberUI::tr ("Current and previous preview packages are retained. Existing previews are read without bulk migration."));
 }
 
 void SettingsDialog::showStorageInfo()
@@ -486,24 +540,24 @@ void SettingsDialog::showStorageInfo()
     public:
         Information()
         {
-            title.setText ("How preview storage works", juce::dontSendNotification);
-            title.setFont (RememberUI::font (16, true)); RememberUI::bindColour (title, juce::Label::textColourId, Pal::Text);
+            title.setText (RememberUI::tr ("How preview storage works"), juce::dontSendNotification);
+            title.setFont (RememberUI::font (16, true)); RememberUI::bindColour (title, RememberUI::Label::textColourId, Pal::Text);
             text.setMultiLine (true); text.setReadOnly (true); text.setCaretVisible (false); text.setScrollbarsShown (true);
-            text.setFont (RememberUI::font (13)); text.setTitle ("Preview storage information");
-            RememberUI::bindColour (text, juce::TextEditor::backgroundColourId, Pal::Content);
-            RememberUI::bindColour (text, juce::TextEditor::textColourId, Pal::Text);
-            text.setText ("New captures are encoded once into short OGG fragments. Keeping the old tail reuses its compressed fragments; it does not repeatedly recode them. A short crossfade is applied during playback.\n\n"
-                "Fragments and their playback index are stored together in a .rmp preview package. The current package and one previous package are kept for recovery. These are not ordinary OGG files. Update the app and plugin together; earlier builds cannot read new packages.\n\n"
-                "Capture WAVs are temporary and removed after their jobs finish. A crash can leave temporary files. Older previews remain readable and may still contain permanent WAVs; adding this version does not bulk-delete or migrate your library.\n\n"
-                "The estimate covers OGG audio, not an exact disk limit. Fragment headers, overlap and retained source ranges add space. Higher quality, duration, sample rate and stereo can increase size. Temporary capture needs about 23 MB for 60 s stereo at 48 kHz, or 92 MB at 192 kHz; mono uses half, and queued captures need additional space.\n\n"
-                "Compact preview audio in a recording's actions, or Compact previews above a chosen MB limit here, replaces fragments and recovery audio with one ordinary OGG at the selected quality. It adds one lossy encoding generation and cannot be undone. A later partial capture converts its retained tail to fragments once; later captures reuse those fragments. Entry sizes and the MB threshold count all audio including recovery. Already compacted audio is not encoded again unless it changes.\n\n"
-                "To bound storage and decoding, a package allows at most 256 source ranges, 16 overlapping layers and 32 MiB. Repeated tiny edits can reach a limit. Remember then preserves the previous preview and reports an error: compact explicitly, capture the full preview or enable Replace whole previews. No automatic lossy flattening is performed.", false);
+            text.setFont (RememberUI::font (13)); text.setTitle (RememberUI::tr ("Preview storage information"));
+            RememberUI::bindColour (text, RememberUI::TextEditor::backgroundColourId, Pal::Content);
+            RememberUI::bindColour (text, RememberUI::TextEditor::textColourId, Pal::Text);
+            text.setText (RememberUI::tr ("New captures are encoded once into short OGG fragments. Keeping the old tail reuses its compressed fragments; it does not repeatedly recode them. A short crossfade is applied during playback.\n\n") +
+        RememberUI::tr ("Fragments and their playback index are stored together in a .rmp preview package. The current package and one previous package are kept for recovery. These are not ordinary OGG files. Update the app and plugin together; earlier builds cannot read new packages.\n\n") +
+        RememberUI::tr ("Capture WAVs are temporary and removed after their jobs finish. A crash can leave temporary files. Older previews remain readable and may still contain permanent WAVs; adding this version does not bulk-delete or migrate your library.\n\n") +
+        RememberUI::tr ("The estimate covers OGG audio, not an exact disk limit. Fragment headers, overlap and retained source ranges add space. Higher quality, duration, sample rate and stereo can increase size. Temporary capture needs about 23 MB for 60 s stereo at 48 kHz, or 92 MB at 192 kHz; mono uses half, and queued captures need additional space.\n\n") +
+        RememberUI::tr ("Compact preview audio in a recording's actions, or Compact previews above a chosen MB limit here, replaces fragments and recovery audio with one ordinary OGG at the selected quality. It adds one lossy encoding generation and cannot be undone. A later partial capture converts its retained tail to fragments once; later captures reuse those fragments. Entry sizes and the MB threshold count all audio including recovery. Already compacted audio is not encoded again unless it changes.\n\n") +
+        RememberUI::tr ("To bound storage and decoding, a package allows at most 256 source ranges, 16 overlapping layers and 32 MiB. Repeated tiny edits can reach a limit. Remember then preserves the previous preview and reports an error: compact explicitly, capture the full preview or enable Replace whole previews. No automatic lossy flattening is performed."), false);
             addAndMakeVisible (title); addAndMakeVisible (text); setSize (400, 410);
         }
         void resized() override { auto area = getLocalBounds().reduced (12); title.setBounds (area.removeFromTop (30)); text.setBounds (area); }
     private:
         RememberUI::Style style { *this };
-        juce::Label title; juce::TextEditor text;
+        RememberUI::Label title; RememberUI::TextEditor text;
     };
     auto content = std::make_unique<Information>(); auto* look = &content->getLookAndFeel();
     storageInfoPopup = &juce::CallOutBox::launchAsynchronously (std::move (content), storageInfo.getScreenBounds(), nullptr);
@@ -516,21 +570,21 @@ void SettingsDialog::compactLargePreviews()
     const auto text = compactLimit.getText(); const auto limit = text.getDoubleValue();
     if (! text.containsOnly ("0123456789.") || text.indexOfChar ('.') != text.lastIndexOfChar ('.')
         || ! std::isfinite (limit) || limit <= 0 || limit > 1000000)
-    { pcmPolicy.setText ("Enter a positive compaction limit in MB", juce::dontSendNotification); return; }
+    { pcmPolicy.setText (RememberUI::tr ("Enter a positive compaction limit in MB"), juce::dontSendNotification); return; }
     const auto snapshot = ProjectScanner::librarySnapshot();
     if (snapshot->loading || snapshot->sourceRoot == juce::File{} || snapshot->stale)
-    { pcmPolicy.setText ("Wait for the current library to finish loading, then retry", juce::dontSendNotification); return; }
+    { pcmPolicy.setText (RememberUI::tr ("Wait for the current library to finish loading, then retry"), juce::dontSendNotification); return; }
     const auto entries = snapshot->entries; const auto root = snapshot->sourceRoot;
     const auto quality = oggQuality;
     PreviewCompactionActions::show (PreviewCompactionActions::confirmation (
-        "All previews in the current library above " + juce::String (limit, 2)
-        + " MB of audio, including recovery. Locked/live pending recordings are skipped.\n" + root.getFullPathName()).withAssociatedComponent (this),
+        RememberUI::tr ("All previews in the current library above ") + juce::String (limit, 2)
+        + RememberUI::tr (" MB of audio, including recovery. Locked/live pending recordings are skipped.\n") + root.getFullPathName()).withAssociatedComponent (this),
         [safe = juce::Component::SafePointer<SettingsDialog> (this), entries, root, limit, quality] (int response)
         {
             if (safe == nullptr || response != 1 || safe->compacting) return;
             safe->compacting = true; safe->compactBtn.setEnabled (false); safe->compactLimit.setEnabled (false);
             safe->okBtn.setEnabled (false);
-            safe->pcmPolicy.setText ("Compacting eligible previews in the background...\nOriginal audio is kept until each replacement is validated.", juce::dontSendNotification);
+            safe->pcmPolicy.setText (RememberUI::tr ("Compacting eligible previews in the background...\nOriginal audio is kept until each replacement is validated."), juce::dontSendNotification);
             if (safe->onBeforeCompaction) for (const auto& entry : entries)
                 if (PreviewCompactionActions::eligible (entry) && entry.audioBytes > limit * 1000000.0) safe->onBeforeCompaction (entry);
             auto summary = std::make_shared<PreviewCompactionActions::Summary>();
@@ -543,12 +597,12 @@ void SettingsDialog::compactLargePreviews()
                 if (safe == nullptr) return;
                 safe->compacting = false; safe->compactBtn.setEnabled (true); safe->compactLimit.setEnabled (true);
                 safe->okBtn.setEnabled (true);
-                safe->pcmPolicy.setText (result.failed() ? result.getErrorMessage() : summary->text(), juce::dontSendNotification);
+                safe->pcmPolicy.setText (result.failed() ? RememberUI::diagnostic (result.getErrorMessage()) : summary->text(), juce::dontSendNotification);
                 safe->pcmPolicy.setTooltip (summary->errors.joinIntoString ("\n"));
                 safe->measuredFolder = {}; safe->updateStorageUsage();
                 if (! summary->errors.isEmpty()) PreviewCompactionActions::show (juce::MessageBoxOptions()
-                    .withTitle ("Compaction needs attention").withAssociatedComponent (safe.getComponent())
-                    .withMessage (summary->text() + "\n\n" + summary->errors.joinIntoString ("\n")).withButton ("OK"));
+                    .withTitle (RememberUI::tr ("Compaction needs attention")).withAssociatedComponent (safe.getComponent())
+                    .withMessage (summary->text() + "\n\n" + summary->errors.joinIntoString ("\n")).withButton (RememberUI::tr ("OK")));
             });
         });
 }
@@ -557,7 +611,8 @@ void SettingsDialog::updateStorageUsage()
 {
     if (previewsFolder == measuredFolder) return;
     measuredFolder = previewsFolder;
-    storageUsage.setText ("Calculating library storage...", juce::dontSendNotification);
+    refreshStorageText = {};
+    storageUsage.setText (RememberUI::tr ("Calculating library storage..."), juce::dontSendNotification);
     const auto generation = storageGeneration->fetch_add (1) + 1;
     const auto token = storageGeneration;
     const auto folder = previewsFolder;
@@ -569,19 +624,24 @@ void SettingsDialog::updateStorageUsage()
     }, [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation, usage] (juce::Result)
     {
         if (safe == nullptr || token->load() != generation || usage->cancelled) return;
-        const auto size = [] (juce::int64 bytes) { return juce::File::descriptionOfSizeInBytes (bytes); };
-        const auto text = "Library incl. history: " + size (usage->bytes) + " (PCM " + size (usage->pcmBytes)
-            + ", compressed " + size (usage->previewBytes) + ") | Free: "
-            + (usage->freeBytes >= 0 ? size (usage->freeBytes) : juce::String ("unavailable"));
-        safe->storageUsage.setText (text, juce::dontSendNotification);
-        safe->storageUsage.setTooltip (text);
+        safe->refreshStorageText = [safe, usage]
+        {
+            if (safe == nullptr) return;
+            const auto size = [] (juce::int64 bytes) { return juce::File::descriptionOfSizeInBytes (bytes); };
+            const auto text = RememberUI::tr ("Library incl. history: ") + size (usage->bytes) + " (PCM " + size (usage->pcmBytes)
+                + RememberUI::tr (", compressed ") + size (usage->previewBytes) + RememberUI::tr (") | Free: ")
+                + (usage->freeBytes >= 0 ? size (usage->freeBytes) : juce::String ("unavailable"));
+            safe->storageUsage.setText (text, juce::dontSendNotification);
+            safe->storageUsage.setTooltip (text);
+        };
+        safe->refreshStorageText();
     });
 }
 
 void SettingsDialog::pickPreviews()
 {
     chooser = std::make_unique<juce::FileChooser> (
-        "Select previews folder (where recordings are saved)",
+        RememberUI::tr ("Select previews folder (where recordings are saved)"),
         previewsFolder.getFullPathName().isNotEmpty()
             ? previewsFolder
             : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
@@ -604,7 +664,7 @@ void SettingsDialog::addProjectFolder()
                      ? juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
                      : projectsFolders.getReference (0);
     chooser = std::make_unique<juce::FileChooser> (
-        "Add a folder to search for DAW projects",
+        RememberUI::tr ("Add a folder to search for DAW projects"),
         start);
 
     chooser->launchAsync (
@@ -630,7 +690,7 @@ void SettingsDialog::searchProjectFolders()
     const auto token = searchGeneration;
     const auto generation = token->fetch_add (1) + 1;
     refreshProjectsBtn.setEnabled (false);
-    searchStatus.setText ("Searching folders and subfolders...", juce::dontSendNotification);
+    searchStatus.setText (RememberUI::tr ("Searching folders and subfolders..."), juce::dontSendNotification);
     ProjectScanner::searchDirectoriesAsync (previewsFolder, projectsFolders,
         [token, generation] { return token->load() != generation; },
         [safe = juce::Component::SafePointer<SettingsDialog> (this), token, generation]
@@ -638,10 +698,10 @@ void SettingsDialog::searchProjectFolders()
         {
             if (safe == nullptr || token->load() != generation) return;
             safe->refreshProjectsBtn.setEnabled (true);
-            const auto text = result.failed() ? result.getErrorMessage()
-                : juce::String ((juce::int64) summary.candidates) + " project files; "
-                    + juce::String (summary.available) + " linked, " + juce::String (summary.missing)
-                    + " missing (" + juce::String (summary.elapsedMs / 1000.0, 1) + " s)";
+            const auto text = result.failed() ? RememberUI::diagnostic (result.getErrorMessage())
+                : juce::String ((juce::int64) summary.candidates) + RememberUI::tr (" project files; ")
+                    + juce::String (summary.available) + RememberUI::tr (" linked, ") + juce::String (summary.missing)
+                    + RememberUI::tr (" missing (") + juce::String (summary.elapsedMs / 1000.0, 1) + " s)";
             safe->searchStatus.setText (text, juce::dontSendNotification);
             safe->searchStatus.setTooltip (text);
         });
@@ -649,12 +709,12 @@ void SettingsDialog::searchProjectFolders()
 
 void SettingsDialog::commit()
 {
-    if (appearanceSaving || zoomSaving || compacting) return;
+    if (appearanceSaving || zoomSaving || languageSaving || compacting) return;
     const auto compactText = compactLimit.getText();
     const auto compactMB = compactText.getDoubleValue();
     if (! compactText.containsOnly ("0123456789.") || compactText.indexOfChar ('.') != compactText.lastIndexOfChar ('.')
         || ! std::isfinite (compactMB) || compactMB <= 0 || compactMB > 1000000)
-    { storageUsage.setText ("Enter a positive compaction limit in MB", juce::dontSendNotification); return; }
+    { storageUsage.setText (RememberUI::tr ("Enter a positive compaction limit in MB"), juce::dontSendNotification); return; }
     validationGeneration->fetch_add (1);
     for (auto* child : getChildren()) child->setEnabled (false);
     auto originalBackup = std::make_shared<juce::File>();
@@ -665,7 +725,7 @@ void SettingsDialog::commit()
         bool validRoot = false;
         for (const auto& root : roots) if (root.isDirectory()) { validRoot = true; break; }
         if (! previews.isDirectory() || ! validRoot)
-            return juce::Result::fail ("Select an existing previews folder and at least one accessible project search folder");
+            return juce::Result::fail (RememberUI::tr ("Select an existing previews folder and at least one accessible project search folder"));
         const auto result = fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice, compactMB)
             : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice, compactMB);
         // Saving accepts the search roots independently of the dialog's draft
@@ -679,18 +739,18 @@ void SettingsDialog::commit()
         for (auto* child : safe->getChildren()) child->setEnabled (true);
         if (result.failed())
         {
-            safe->settingsProblem.setText (result.getErrorMessage(), juce::dontSendNotification);
-            safe->settingsProblem.setTooltip (result.getErrorMessage()); safe->settingsProblem.setVisible (true);
+            safe->settingsProblem.setText (RememberUI::diagnostic (result.getErrorMessage()), juce::dontSendNotification);
+            safe->settingsProblem.setTooltip (RememberUI::diagnostic (result.getErrorMessage())); safe->settingsProblem.setVisible (true);
             safe->retrySettings.setVisible (true); safe->resized();
             safe->refreshLabels();
             return;
         }
         if (*originalBackup != juce::File{})
         {
-            const auto message = "Settings rebuilt. Original copy: " + originalBackup->getFullPathName();
+            const auto message = RememberUI::tr ("Settings rebuilt. Original copy: ") + originalBackup->getFullPathName();
             safe->settingsProblem.setText (message, juce::dontSendNotification);
             safe->settingsProblem.setTooltip (message); safe->settingsProblem.setVisible (true);
-            safe->rebuildFingerprint.clear(); safe->okBtn.setButtonText ("OK"); safe->resized();
+            safe->rebuildFingerprint.clear(); safe->okBtn.setButtonText (RememberUI::tr ("OK")); safe->resized();
         }
         auto completed = safe->onCompleted;
         if (completed) completed();
@@ -721,11 +781,12 @@ void SettingsDialog::resized()
     area = area.reduced (16, 0);
 
     sections.setBounds (area.removeFromTop (36));
+    sections.resized();
     area.removeFromTop (20);
     const int section = sections.getCurrentTabIndex();
     auto show = [section] (int index, std::initializer_list<juce::Component*> controls)
     { for (auto* control : controls) control->setVisible (section == index); };
-    show (1, { &appearanceCaption, &appearanceHint, &appearanceCombo, &zoomCaption, &zoomHint, &zoomCombo });
+    show (1, { &appearanceCaption, &appearanceHint, &appearanceCombo, &zoomCaption, &zoomHint, &zoomCombo, &languageCaption, &languageHint, &languageCombo });
     show (0, { &previewsCaption, &previewsHint, &previewsPath, &previewsBrowse,
         &recordCaption, &recordHint, &durationLbl, &qualityLbl, &durationCombo, &qualityCombo,
         &monoToggle, &manualToggle, &lockToggle, &replaceToggle, &sizeEstimate, &storageUsage,
@@ -746,6 +807,11 @@ void SettingsDialog::resized()
     zoomRow.removeFromLeft (16);
     zoomHint.setBounds (zoomRow);
     area.removeFromTop (12);
+    auto languageRow = area.removeFromTop (32);
+    languageCaption.setBounds (languageRow.removeFromLeft (110));
+    languageCombo.setBounds (languageRow.removeFromLeft (210));
+    area.removeFromTop (6);
+    languageHint.setBounds (area.removeFromTop (32));
     }
     if (section == 0)
     {
@@ -790,7 +856,7 @@ void SettingsDialog::resized()
     storageUsage.setBounds (area.removeFromTop (24));
     area.removeFromTop (6);
     auto compactRow = area.removeFromTop (32);
-    compactBtn.setBounds (compactRow.removeFromLeft (220)); compactRow.removeFromLeft (8);
+    compactBtn.setBounds (compactRow.removeFromLeft (RememberUI::language == RememberUI::Language::SpanishSpain ? 390 : 220)); compactRow.removeFromLeft (8);
     compactLimit.setBounds (compactRow.removeFromLeft (96)); compactRow.removeFromLeft (6);
     compactUnits.setBounds (compactRow.removeFromLeft (32));
 
@@ -845,7 +911,7 @@ void SettingsDialog::launch (bool firstRun, std::function<void()> onDone, std::f
     dialog->onBeforeCompaction = std::move (beforeCompaction);
 
     juce::DialogWindow::LaunchOptions opts;
-    opts.dialogTitle               = firstRun ? "Remember - Setup" : "Remember - Settings";
+    opts.dialogTitle               = firstRun ? RememberUI::tr ("Remember - Setup") : RememberUI::tr ("Remember - Settings");
     opts.content.setOwned          (dialog);
     opts.componentToCentreAround   = nullptr;
     opts.escapeKeyTriggersCloseButton = ! firstRun;

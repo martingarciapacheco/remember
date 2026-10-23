@@ -111,6 +111,9 @@ void testDevice (const ProjectEntry& entry)
         if (auto* dialog = dynamic_cast<juce::DialogWindow*> (juce::Desktop::getInstance().getComponent (i));
             dialog && dialog->getName() == "Audio output") playbackDialog = dialog;
     check (playbackDialog != nullptr, "Audio settings did not open during playback");
+    const auto* audioDisplay = juce::Desktop::getInstance().getDisplays().getDisplayForRect (player.getScreenBounds());
+    check (audioDisplay && playbackDialog->getBounds().getCentre().getDistanceFrom (audioDisplay->userArea.getCentre()) <= 1,
+           "Audio settings did not open in the centre of the player's screen");
     check (player.isPlaying() && PlaybackCursorTestAccess::displaySynced (player)
            && state.device->render() > 0.001f,
            "Opening Audio settings slowed the playhead or interrupted playback");

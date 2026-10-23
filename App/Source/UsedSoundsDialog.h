@@ -51,10 +51,16 @@ private:
     std::vector<juce::File> exports;
     UsedSounds::Kind category = UsedSounds::Kind::Sample;
     bool loaded = false;
-    juce::Label title, projectLabel, status, hint;
-    juce::TextButton samples { "Samples" }, midis { "MIDI" }, plugins { "Generators" }, refresh { "Refresh" }, stop { "Stop" }, close { "Close" };
-    juce::ComboBox scope;
+    RememberUI::Label title, projectLabel, status, hint;
+    RememberUI::TextButton samples { RememberUI::tr ("Samples") }, midis { "MIDI" }, plugins { RememberUI::tr ("Generators") }, refresh { RememberUI::tr ("Refresh") }, stop { RememberUI::tr ("Stop") }, close { RememberUI::tr ("Close") };
+    RememberUI::ComboBox scope;
     RememberUI::RecordingListBox list;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
+    RememberUI::LanguageCallback languageUpdates { [this]
+    {
+        const auto selected = list.getSelectedRows();
+        setCategory (category);
+        list.setSelectedRows (selected, juce::dontSendNotification);
+    } };
 };

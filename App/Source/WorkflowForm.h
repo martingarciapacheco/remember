@@ -11,60 +11,61 @@ public:
     {
         viewport.setViewedComponent (&body, false); viewport.setScrollBarsShown (true, false);
         addAndMakeVisible (viewport); addAndMakeVisible (save); addAndMakeVisible (cancel); addAndMakeVisible (error);
-        error.setFont (RememberUI::font (12)); RememberUI::bindColour (error, juce::Label::textColourId, Pal::Error);
-        RememberUI::bindColour (save, juce::TextButton::buttonColourId, Pal::Action);
-        RememberUI::bindColour (save, juce::TextButton::textColourOffId, Pal::OnAction);
+        error.setFont (RememberUI::font (12)); RememberUI::bindColour (error, RememberUI::Label::textColourId, Pal::Error);
+        RememberUI::bindColour (save, RememberUI::TextButton::buttonColourId, Pal::Action);
+        RememberUI::bindColour (save, RememberUI::TextButton::textColourOffId, Pal::OnAction);
         save.onClick = [this]
         {
             const auto result = onAccept ? onAccept (*this) : juce::Result::ok();
-            error.setText (result.getErrorMessage(), juce::dontSendNotification);
+            error.setText (RememberUI::diagnostic (result.getErrorMessage()), juce::dontSendNotification);
             if (result.wasOk()) close (1);
         };
         cancel.onClick = [this] { close (0); };
         setSize (580, 540);
     }
-    juce::TextEditor& text (const juce::String& id, const juce::String& label, const juce::String& value, bool multiline = false)
+    RememberUI::TextEditor& text (const juce::String& id, const juce::String& label, const juce::String& value, bool multiline = false)
     {
-        auto control = std::make_unique<juce::TextEditor>(); auto& result = *control;
+        auto control = std::make_unique<RememberUI::TextEditor>(); auto& result = *control;
         result.setFont (RememberUI::font()); result.setText (value, false); result.setMultiLine (multiline);
         result.setReturnKeyStartsNewLine (multiline); result.setTitle (label); result.setIndents (8, 6);
-        RememberUI::bindColour (result, juce::TextEditor::backgroundColourId, Pal::Content);
-        RememberUI::bindColour (result, juce::TextEditor::textColourId, Pal::Text);
+        RememberUI::bindColour (result, RememberUI::TextEditor::backgroundColourId, Pal::Content);
+        RememberUI::bindColour (result, RememberUI::TextEditor::textColourId, Pal::Text);
         texts[id] = &result; add (label, std::move (control), multiline ? 96 : 34); return result;
     }
-    juce::ComboBox& choice (const juce::String& id, const juce::String& label, juce::StringArray values, const juce::String& value)
+    RememberUI::ComboBox& choice (const juce::String& id, const juce::String& label, juce::StringArray values, const juce::String& value)
     {
-        auto control = std::make_unique<juce::ComboBox>(); auto& result = *control;
-        result.addItemList (values, 1); result.setSelectedId (juce::jmax (1, values.indexOf (value) + 1), juce::dontSendNotification);
+        auto control = std::make_unique<RememberUI::ComboBox>(); auto& result = *control;
+        choiceSources[id] = values;
+        for (int i = 0; i < values.size(); ++i) result.addItem (RememberUI::tr (values[i]), i + 1); result.setSelectedId (juce::jmax (1, values.indexOf (value) + 1), juce::dontSendNotification);
         result.setTitle (label); choices[id] = &result; add (label, std::move (control), 34); return result;
     }
-    juce::TextEditor& tagText (const juce::String& id, const juce::String& label,
+    RememberUI::TextEditor& tagText (const juce::String& id, const juce::String& label,
                                const juce::String& value, juce::StringArray tags)
     {
         auto control = std::make_unique<TagFilterEditor> (std::move (tags)); auto& result = *control;
         result.setFont (RememberUI::font()); result.setText (value, false);
         result.setTitle (label); result.setIndents (8, 6);
-        RememberUI::bindColour (result, juce::TextEditor::backgroundColourId, Pal::Content);
-        RememberUI::bindColour (result, juce::TextEditor::textColourId, Pal::Text);
+        RememberUI::bindColour (result, RememberUI::TextEditor::backgroundColourId, Pal::Content);
+        RememberUI::bindColour (result, RememberUI::TextEditor::textColourId, Pal::Text);
         texts[id] = &result; add (label, std::move (control), 34); return result;
     }
-    juce::ToggleButton& toggle (const juce::String& id, const juce::String& label, bool value)
+    RememberUI::ToggleButton& toggle (const juce::String& id, const juce::String& label, bool value)
     {
-        auto control = std::make_unique<juce::ToggleButton> (label); auto& result = *control;
+        auto control = std::make_unique<RememberUI::ToggleButton> (label); auto& result = *control;
         result.setToggleState (value, juce::dontSendNotification); result.setTitle (label);
         toggles[id] = &result; add ({}, std::move (control), 34); return result;
     }
     void information (const juce::String& value)
     {
-        auto label = std::make_unique<juce::Label> (juce::String{}, value);
-        label->setFont (RememberUI::font (12)); RememberUI::bindColour (*label, juce::Label::textColourId, Pal::Subtext);
+        auto label = std::make_unique<RememberUI::Label> (juce::String{}, value);
+        label->setFont (RememberUI::font (12)); RememberUI::bindColour (*label, RememberUI::Label::textColourId, Pal::Subtext);
         label->setTooltip (value); add ({}, std::move (label), 46);
     }
     void musicalKey (const juce::String& value)
     {
         auto control = std::make_unique<KeyControls> (value);
         keyControls = control.get();
-        add ("Manual key", std::move (control), 36);
+        add (RememberUI::tr ("Manual key"), std::move (control), 36);
     }
     juce::String manualKeyValue() const
     {
@@ -72,7 +73,7 @@ public:
         return keyControls->note.getText() + " " + keyControls->scale.getText().toLowerCase();
     }
     juce::String textValue (const juce::String& id) const { return texts.at (id)->getText().trim(); }
-    juce::String choiceValue (const juce::String& id) const { return choices.at (id)->getText(); }
+    juce::String choiceValue (const juce::String& id) const { return choiceSources.at (id)[choices.at (id)->getSelectedId() - 1]; }
     bool toggleValue (const juce::String& id) const { return toggles.at (id)->getToggleState(); }
     std::function<juce::Result (WorkflowForm&)> onAccept;
     void paint (juce::Graphics& g) override
@@ -110,10 +111,10 @@ private:
         explicit KeyControls (const juce::String& value)
         {
             automatic.getProperties().set ("rememberCheckbox", true);
-            automatic.setTitle ("Automatic key recognition");
-            automatic.setTooltip ("Recognize key automatically. Uncheck to choose a manual key.");
+            automatic.setTitle (RememberUI::tr ("Automatic key recognition"));
+            automatic.setTooltip (RememberUI::tr ("Recognize key automatically. Uncheck to choose a manual key."));
             automatic.setToggleState (value.isEmpty(), juce::dontSendNotification);
-            note.setTitle ("Key note"); scale.setTitle ("Key scale");
+            note.setTitle (RememberUI::tr ("Key note")); scale.setTitle (RememberUI::tr ("Key scale"));
             note.addItemList ({ "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
             juce::StringArray scales { "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian",
                 "Harmonic minor", "Melodic minor", "Major pentatonic", "Minor pentatonic", "Blues", "Whole tone", "Chromatic" };
@@ -132,15 +133,15 @@ private:
             auto area = getLocalBounds(); automatic.setBounds (area.removeFromLeft (32)); area.removeFromLeft (4);
             note.setBounds (area.removeFromLeft (64)); area.removeFromLeft (8); scale.setBounds (area);
         }
-        juce::ToggleButton automatic;
-        juce::ComboBox note, scale;
+        RememberUI::ToggleButton automatic;
+        RememberUI::ComboBox note, scale;
     };
     KeyControls* keyControls = nullptr;
     RememberUI::Style style { *this };
-    struct Row { std::unique_ptr<juce::Label> label; std::unique_ptr<juce::Component> control; int height; };
+    struct Row { std::unique_ptr<RememberUI::Label> label; std::unique_ptr<juce::Component> control; int height; };
     void add (juce::String caption, std::unique_ptr<juce::Component> control, int height)
     {
-        auto label = std::make_unique<juce::Label> (juce::String{}, caption); label->setFont (RememberUI::font());
+        auto label = std::make_unique<RememberUI::Label> (juce::String{}, caption); label->setFont (RememberUI::font());
         body.addAndMakeVisible (*label); body.addAndMakeVisible (*control);
         rows.push_back ({ std::move (label), std::move (control), height }); contentHeight += height + 8; resized();
     }
@@ -148,11 +149,12 @@ private:
     juce::String title;
     juce::Viewport viewport;
     juce::Component body;
-    juce::TextButton save { "Apply" }, cancel { "Cancel" };
-    juce::Label error;
+    RememberUI::TextButton save { RememberUI::tr ("Apply") }, cancel { RememberUI::tr ("Cancel") };
+    RememberUI::Label error;
     std::vector<Row> rows;
-    std::map<juce::String, juce::TextEditor*> texts;
-    std::map<juce::String, juce::ComboBox*> choices;
-    std::map<juce::String, juce::ToggleButton*> toggles;
+    std::map<juce::String, RememberUI::TextEditor*> texts;
+    std::map<juce::String, RememberUI::ComboBox*> choices;
+    std::map<juce::String, juce::StringArray> choiceSources;
+    std::map<juce::String, RememberUI::ToggleButton*> toggles;
     int contentHeight = 0;
 };

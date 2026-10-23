@@ -2,7 +2,7 @@
 #include "../../Shared/RememberLookAndFeel.h"
 
 // One recycled list paints every suggestion; typing keeps focus in the editor.
-class TagFilterEditor final : public juce::TextEditor,
+class TagFilterEditor final : public RememberUI::TextEditor,
                               private juce::ListBoxModel,
                               private juce::FocusChangeListener
 {
@@ -11,7 +11,7 @@ public:
     {
         known.removeDuplicates (true); known.sort (true);
         suggestions.setModel (this); suggestions.setRowHeight (32);
-        suggestions.setTitle ("Existing tags");
+        suggestions.setTitle (RememberUI::tr ("Existing tags"));
         RememberUI::bindColour (suggestions, juce::ListBox::backgroundColourId, Pal::Content);
         suggestions.setOutlineThickness (0);
         suggestions.getProperties().set ("rememberListRadius", RememberUI::surfaceRadius);
@@ -49,8 +49,8 @@ public:
         suggestions.setBounds (getX(), openBelow ? getBottom() + 4 : getY() - height - 4, getWidth(), height);
         suggestions.setVisible (true); suggestions.toFront (false); suggestions.repaint();
     }
-    void mouseDown (const juce::MouseEvent& e) override { juce::TextEditor::mouseDown (e); showSuggestions(); }
-    void focusGained (FocusChangeType type) override { juce::TextEditor::focusGained (type); showSuggestions(); }
+    void mouseDown (const juce::MouseEvent& e) override { RememberUI::TextEditor::mouseDown (e); showSuggestions(); }
+    void focusGained (FocusChangeType type) override { RememberUI::TextEditor::focusGained (type); showSuggestions(); }
     bool keyPressed (const juce::KeyPress& key) override
     {
         if (key == juce::KeyPress::escapeKey && suggestions.isVisible()) { suggestions.setVisible (false); return true; }
@@ -63,7 +63,7 @@ public:
         }
         if (key == juce::KeyPress::returnKey && suggestions.isVisible() && suggestions.getSelectedRow() >= 0)
         { choose (suggestions.getSelectedRow()); return true; }
-        return juce::TextEditor::keyPressed (key);
+        return RememberUI::TextEditor::keyPressed (key);
     }
 private:
     void globalFocusChanged (juce::Component* focused) override
@@ -76,7 +76,7 @@ private:
     {
         if (selected) { g.setColour (RememberUI::colour (Pal::Selected)); g.fillRect (0, 0, w, h); }
         g.setFont (RememberUI::font()); g.setColour (RememberUI::colour (matches.isEmpty() ? Pal::Subtext : Pal::Text));
-        g.drawText (matches.isEmpty() ? (known.isEmpty() ? "No tags in your library yet" : "No matching tags") : matches[row],
+        g.drawText (matches.isEmpty() ? (known.isEmpty() ? RememberUI::tr ("No tags in your library yet") : RememberUI::tr ("No matching tags")) : matches[row],
                     8, 0, w - 16, h, juce::Justification::centredLeft, true);
     }
     void listBoxItemClicked (int row, const juce::MouseEvent&) override { choose (row); }

@@ -1,5 +1,14 @@
 # Remember interface design
 
+Settings > Appearance includes a shared language selector: English and
+Español (España). Persist `language` (`en` / `es-ES`) independently with a worker-only
+atomic config patch, and update open app/plugin interfaces on the message thread.
+Keep the language names recognisable in either interface language. Cancel retains
+the saved language, like appearance. Translate explicit interface text, tooltips,
+accessibility and diagnostic presentation through `Shared/RememberLanguage.h`;
+preserve project names, paths, tags, notes and stable stored choice identifiers.
+Use the native localized controls alongside the shared semantic LookAndFeel.
+
 Statistics is an accessible 34-pixel rising-chart vector button immediately before
 Settings in the app header, separated by eight pixels. Its native resizable window
 contains Samples (top 1000), Instruments (top 50) and Effects (top 50), with name
@@ -287,7 +296,11 @@ asynchronous warning about small artifacts and incorrectly captured sound tails.
 
 Settings groups controls into Recording & storage, Appearance, and Projects &
 audition. Appearance and zoom retain immediate saving; other pending controls
-retain OK/Cancel. Use shared semantic tabs with focus treatment. All secondary
+retain OK/Cancel. Settings tabs use equal widths, eight-pixel gaps and the same
+side edges as their content; long translations wrap to two lines. The previews
+folder path is a keyboard-accessible link that opens the folder in the native
+file manager. Audio output opens centred in the usable area of the player's
+display, after applying window chrome. Use shared semantic tabs with focus treatment. All secondary
 JUCE dialogs use the same 34-pixel Windows caption and 46-pixel close target as
 the main window, preserving native macOS frames and window actions. Read saved
 main-window geometry on a worker before the first visible frame, including the

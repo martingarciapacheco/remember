@@ -18,8 +18,8 @@ private:
     void close();
     juce::Array<LibraryStore::RecoveryChoice> choices;
     Action previewAction, restoreAction;
-    juce::Label explanation, details;
-    juce::ComboBox revisions;
-    juce::TextButton preview { "Listen to selected" }, restore, cancel { "Cancel" };
+    RememberUI::Label explanation, details;
+    RememberUI::ComboBox revisions;
+    RememberUI::TextButton preview { RememberUI::tr ("Listen to selected") }, restore, cancel { RememberUI::tr ("Cancel") };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RecoveryChoiceDialog)
 };

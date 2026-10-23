@@ -48,7 +48,7 @@ target_sources(RememberApp PRIVATE
     ../Shared/ProjectIdentity.cpp
     ../Shared/PreviewAudio.cpp ../Shared/PreviewCompaction.cpp
     ../Shared/LibraryStore.cpp
-    ../Shared/BackgroundRetirement.cpp
+    ../Shared/BackgroundRetirement.cpp ../Shared/RememberLanguage.cpp
 )
 
 target_compile_definitions(RememberApp PRIVATE
@@ -121,7 +121,7 @@ if(REMEMBER_BUILD_TESTS)
         Source/ProjectStatistics.cpp Source/StatisticsDialog.cpp ../Tests/StatisticsTests.cpp
         Source/SettingsDialog.cpp
         Source/ReadAheadSource.cpp Source/MetronomeSource.cpp Source/WaveformEnvelope.cpp
-        ../Shared/PreviewAudio.cpp ../Shared/PreviewCompaction.cpp ../Shared/LibraryStore.cpp ../Shared/ProjectIdentity.cpp ../Shared/BackgroundRetirement.cpp)
+        ../Shared/PreviewAudio.cpp ../Shared/PreviewCompaction.cpp ../Shared/LibraryStore.cpp ../Shared/ProjectIdentity.cpp ../Shared/BackgroundRetirement.cpp ../Shared/RememberLanguage.cpp)
     target_compile_definitions(RememberAppTests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(RememberAppTests PRIVATE

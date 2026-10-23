@@ -46,15 +46,15 @@ private:
     juce::StringArray                     allKnownTags;      // every tag across the DB
     std::function<void (juce::StringArray)> onCommit;
 
-    juce::Label      header;
-    juce::Label      inputCaption    { {}, "Type a tag and press Enter" };
-    juce::TextEditor input;
+    RememberUI::Label      header;
+    RememberUI::Label      inputCaption    { {}, RememberUI::tr ("Type a tag and press Enter") };
+    RememberUI::TextEditor input;
 
-    juce::Label      currentCaption  { {}, "Current tags" };
-    juce::Label      currentEmpty    { {}, "(no tags yet)" };
+    RememberUI::Label      currentCaption  { {}, RememberUI::tr ("Current tags") };
+    RememberUI::Label      currentEmpty    { {}, RememberUI::tr ("(no tags yet)") };
 
-    juce::Label      suggestCaption  { {}, "Quick add" };
-    juce::Label      suggestEmpty    { {}, "(no other tags in your library)" };
+    RememberUI::Label      suggestCaption  { {}, RememberUI::tr ("Quick add") };
+    RememberUI::Label      suggestEmpty    { {}, RememberUI::tr ("(no other tags in your library)") };
 
     // All tags retain logical bounds; only visible chips own controls.
     class TagFlow;
@@ -68,8 +68,8 @@ private:
     std::unique_ptr<TagFlow> chipsContent, suggestionsContent;
     TagViewport chipsViewport, suggestionsViewport;
 
-    juce::TextButton okBtn     { "OK"     };
-    juce::TextButton cancelBtn { "Cancel" };
+    RememberUI::TextButton okBtn     { RememberUI::tr ("OK")     };
+    RememberUI::TextButton cancelBtn { RememberUI::tr ("Cancel") };
 
     // Cached layout rects for the two flow areas (set in resized)
     juce::Rectangle<int> chipsArea;

@@ -2,13 +2,15 @@
 
 **Current beta: 1.0.0-beta5 · Windows x64 · standalone app + VST3.**
 
-Beta5 refreshed on **20 October 2026**. The download keeps the same filename;
+Beta5 refreshed on **23 October 2026**. The download keeps the same filename;
 check the commit shown in the app/plugin or the release's `release-manifest.json`
 to distinguish builds. Install the app and plugin together: older beta5 builds
 cannot read the new `.rmp` preview format. Existing WAV/OGG previews remain readable.
 
-This refresh also adds Statistics, WAV preview export, shared waveform display
-options and contextual undo. See the feature guide below and the
+This refresh adds English/Spanish language selection, sidebar smart folders,
+scoped filters, reorganised Settings and refinements to project opening and dialogs.
+It also includes Statistics, WAV preview export, waveform options and contextual
+undo from the earlier build. See the feature guide below and the
 [DAW compatibility register](DAW_COMPATIBILITY.md) for support and validation limits.
 
 ## Install and record your first preview
@@ -25,14 +27,29 @@ DAW if Remember does not appear. Settings and logs live in `%APPDATA%\Remember`;
 recordings live in your selected previews folder. Closing the app window keeps it
 in the tray; choose **Exit** from the tray menu to quit.
 
+## Interface language
+
+Choose **English** or **Español (España)** in the app's **Settings → Appearance →
+Language**, or the plugin's **Settings → Appearance → Language** menu. In Spanish,
+the app path is **Configuración → Aspecto → Idioma**. The choice is shared by
+the app and plugin instances and updates open interfaces without changing the
+DAW's language, audio state or current project. It saves immediately, even if
+you cancel other pending Settings edits. Existing profiles default to English.
+
+Project names, paths, tags, notes, plugin names and musical metadata remain
+unchanged. Internal identifiers stay stable across language changes; original
+diagnostic logs remain available for support. See [LOCALIZATION.md](LOCALIZATION.md)
+for the translation system, terminology and validation. The Windows installer
+wizard itself remains in English; the installed app and plugin offer both languages.
+
 ## Features at a glance
 
 - **Capture:** automatic recording from transport zero or any position when enabled, preview locking and replacement options. Audio passes through unchanged. Shorter recaptures preserve the existing tail using compressed fragments without repeatedly encoding it.
-- **Library:** search, favourites, tags, nested folders, multiple folder selection, filters with tag suggestions, smart collections, notes, bulk organisation and a recoverable 30-day trash. Clear filters resets search, favourites, folders and project filters together. Project associations follow verified file moves and renames; backups are excluded where recognised.
+- **Library:** search, favourites, tags, nested folders, multiple folder selection, filters with tag suggestions, sidebar smart folders, saved filters, notes, bulk organisation and a recoverable 30-day trash. Clear filters removes temporary restrictions while preserving an active smart folder's conditions. Project associations follow verified file moves and renames; backups are excluded where recognised.
 - **Playback and export:** seekable waveform, queue, shuffle, repeat Off/All/One/Single, loudness normalization, volume/mute, output-device selection, media keys and Windows taskbar controls. Drag the complete preview as a 24-bit WAV; optionally show spectral colours and separate L/R axes.
 - **Musical tools:** BPM/key analysis with manual corrections and a BPM-synchronised metronome with its own saved volume.
 - **Used sounds for FL Studio:** inspect samples, MIDI patterns and generators from the last saved `.flp`; filter by playlist usage, audition samples/MIDI and drag or save copies of samples, `.mid` files and saved generator state as FL Studio `.fst` presets. Supported formats show saved preset names. MIDI audition offers piano, saw, square and sine sounds; supported sample channels use their source sample.
-- **Appearance:** System, Light and Dark themes, interface zoom, shared typography and keyboard shortcuts.
+- **Appearance and language:** System, Light and Dark themes, interface zoom, shared typography, keyboard shortcuts and live English/Spanish selection in app and plugin.
 - **Statistics for FL Studio and Ableton Live:** rank the library's top 1000 sample paths, 50 instruments and 50 effects, counting each item once per saved project. Search, audition or copy samples and hide/unhide ranking entries. See the dedicated section below for coverage and limits.
 - **Contextual undo:** Ctrl+Z follows the last sidebar or recording-list interaction, with separate session histories. Folder deletion keeps recordings; recording deletion can be undone from Trash.
 - **Recovery:** recording integrity checks, repair and revision audition/restoration when complete recoverable audio survives.
@@ -49,6 +66,33 @@ When reporting a problem, include your DAW/version, sample rate, buffer size,
 Remember version, reproduction steps and the relevant `app.log` or `plugin.log`
 from `%APPDATA%\Remember\logs`. Real DAW/device testing and Windows installation,
 upgrade and uninstallation remain part of beta acceptance.
+
+## Smart folders, filters and project opening
+
+The sidebar's **Create smart folder** button lets you start from the active
+conditions or create a new filter, then review the name and conditions before
+saving. Matching recordings update automatically as the library changes; this
+does not move project files or audio. Folder conditions include subfolders.
+Right-click a smart folder and choose **Edit conditions...** to review its saved
+rules; accepting an edit asks for confirmation.
+
+Search and temporary filters narrow the selected smart folder without changing
+its rules. **Clear filters** clears those temporary restrictions and keeps the
+smart folder selected. Outside a smart folder it also clears ordinary folder
+selection. Saved filters remain separately available; right-click one in the
+saved-filter menu to delete it.
+
+Double-click a recording to review its project name, DAW and path before opening
+the associated project. Cancel leaves the DAW closed; a missing project must be
+located first. Single-click preview selection and keyboard transport remain
+available. Enabling **Capture from any position** shows a warning about possible
+artifacts and incorrectly captured sound tails; recording formats are unchanged.
+
+Settings now groups controls into **Recording & storage**, **Appearance**, and
+**Projects & audition**. The previews path is a keyboard-accessible link to the
+folder in the file manager. The audio output window opens centred in the usable
+area of the player's display. Appearance, language and zoom save immediately;
+the other pending Settings edits retain OK/Cancel behavior.
 
 ## Preview storage and compaction
 
@@ -362,11 +406,18 @@ Used sounds handles Enter within its own list. Media keys depend on Windows
 delivering the media command to Remember; they are not system-wide hotkeys.
 The metronome and interface zoom currently have no dedicated keyboard shortcut.
 Hover a control to see its name and shortcut in parentheses.
+These shortcuts remain the same in English and Spanish.
 
 An empty undo history in one context does not undo an action in the other.
 Bulk recording deletion is one undo action. Text fields retain their native undo.
 
 ## Regression checks
+
+The frontend and configuration suites also verify language persistence, live
+app/plugin synchronization, return to English, stable choices and unchanged user
+text. They generate English and Spanish snapshots, including
+`spanish-app-minimum.png`, `spanish-app.png`, Spanish Settings sections and two
+open plugin editors. Text fit must be checked in both languages.
 
 `RememberAppTests --statistics`, `--waveforms` and `--undo` cover Statistics
 readers/rankings, preview export/waveform options and contextual undo respectively.

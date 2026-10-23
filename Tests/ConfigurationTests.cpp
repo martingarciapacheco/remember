@@ -169,6 +169,50 @@ void testPluginFrontend (const juce::File& root)
         if (RememberUI::appearanceMode != RememberAppearance::System
             || RememberUI::isDark() != juce::Desktop::getInstance().isDarkModeActive())
             throw std::runtime_error ("Plugin reopen did not retain system appearance");
+        {
+            std::unique_ptr<RememberEditor> second (static_cast<RememberEditor*> (processor.createEditor()));
+            editor->applyLanguage (RememberUI::Language::SpanishSpain);
+            ready();
+            const auto deadline = juce::Time::getMillisecondCounter() + 5000;
+            while (RememberUI::language != RememberUI::Language::SpanishSpain)
+            {
+                if (juce::Time::getMillisecondCounter() >= deadline) throw std::runtime_error ("Shared language did not reach open plugin editors");
+                second->timerCallback();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+            }
+            editor->timerCallback(); second->timerCallback();
+            if (LibraryStore::readJson (LibraryStore::configFile())["language"].toString() != "es-ES")
+                throw std::runtime_error ("Plugin did not persist the shared Spanish preference");
+            for (auto* instance : { editor.get(), second.get() })
+            {
+                bool translatedToggle = false;
+                for (auto* child : instance->getChildren())
+                {
+                    if (auto* toggle = dynamic_cast<juce::ToggleButton*> (child))
+                        translatedToggle |= toggle->getButtonText() == RememberUI::localize ("Capture from any position");
+                    if (auto* text = dynamic_cast<juce::TextEditor*> (child))
+                        if (! text->getText().contains ("Midnight sketches")) throw std::runtime_error ("Language change altered the project name");
+                }
+                if (! translatedToggle) throw std::runtime_error ("Open plugin control did not change language");
+            }
+            save ("spanish-plugin.png", 1);
+            save ("spanish-plugin-second-instance.png", 1, second.get());
+            for (auto* child : editor->getChildren())
+                if (auto* button = dynamic_cast<juce::TextButton*> (child); button && button->getProperties()["rememberIcon"].toString() == "settings") button->onClick();
+            if (auto* popup = juce::Component::getCurrentlyModalComponent())
+            { save ("spanish-plugin-settings.png", 1, popup); popup->exitModalState (0); }
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (15);
+            editor->applyLanguage (RememberUI::Language::English); ready();
+            const auto restoreDeadline = juce::Time::getMillisecondCounter() + 5000;
+            while (RememberUI::language != RememberUI::Language::English)
+            {
+                if (juce::Time::getMillisecondCounter() >= restoreDeadline) throw std::runtime_error ("Plugin could not return to English");
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+            }
+            if (SettingsManager::getInstance().readSnapshot().seconds != 90
+                || LibraryStore::readJson (LibraryStore::configFile())["futureSetting"].toString() != "preserved")
+                throw std::runtime_error ("Language edit changed unrelated recording preferences");
+        }
         editor->applyOutputFolder (root.getChildFile ("unavailable-design-folder"));
         ready();
         bool errorVisible = false;

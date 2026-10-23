@@ -19,9 +19,9 @@ RememberEditor::RememberEditor (RememberProcessor& p)
         toggle->onClick = [this] { saveCaptureOptions(); };
         addAndMakeVisible (*toggle);
     }
-    lockToggle.setTooltip ("Shared with app Settings. Stops updates in all Remember instances; unlock to capture again.");
-    replaceToggle.setTooltip ("Off: a short capture keeps the old tail. On: only the new capture is kept.");
-    manualToggle.setTooltip ("Only this project. Saved with the DAW project; app Settings sets the default for new instances.");
+    lockToggle.setTooltip (RememberUI::tr ("Shared with app Settings. Stops updates in all Remember instances; unlock to capture again."));
+    replaceToggle.setTooltip (RememberUI::tr ("Off: a short capture keeps the old tail. On: only the new capture is kept."));
+    manualToggle.setTooltip (RememberUI::tr ("Only this project. Saved with the DAW project; app Settings sets the default for new instances."));
     manualToggle.onClick = [this]
     {
         auto options = processor.getEngine().getCaptureOptions();
@@ -32,20 +32,20 @@ RememberEditor::RememberEditor (RememberProcessor& p)
         refreshFromEngine();
     };
     captureStatus.setFont (bodyFont());
-    RememberUI::bindColour (captureStatus, juce::Label::textColourId, Pal::Subtext);
-    captureStatus.setTitle ("Capture status");
-    captureStatus.setTooltip ("Capture starts automatically with playback. Capture from any position also follows seeks and loops.");
+    RememberUI::bindColour (captureStatus, RememberUI::Label::textColourId, Pal::Subtext);
+    captureStatus.setTitle (RememberUI::tr ("Capture status"));
+    captureStatus.setTooltip (RememberUI::tr ("Capture starts automatically with playback. Capture from any position also follows seeks and loops."));
     addAndMakeVisible (captureStatus);
 
     // ── Project name editor ──────────────────────────────────────────────────
     nameEditor.setFont (RememberUI::font (16.0f, true));
     nameEditor.setIndents (10, 9);
-    nameEditor.setTitle ("Project name");
+    nameEditor.setTitle (RememberUI::tr ("Project name"));
     nameEditor.setJustification (juce::Justification::centredLeft);
-    RememberUI::bindColour (nameEditor, juce::TextEditor::backgroundColourId, kElevated);
-    RememberUI::bindColour (nameEditor, juce::TextEditor::textColourId, kText);
-    nameEditor.setColour (juce::TextEditor::outlineColourId,    juce::Colours::transparentBlack);
-    RememberUI::bindColour (nameEditor, juce::TextEditor::focusedOutlineColourId, kAccent);
+    RememberUI::bindColour (nameEditor, RememberUI::TextEditor::backgroundColourId, kElevated);
+    RememberUI::bindColour (nameEditor, RememberUI::TextEditor::textColourId, kText);
+    nameEditor.setColour (RememberUI::TextEditor::outlineColourId,    juce::Colours::transparentBlack);
+    RememberUI::bindColour (nameEditor, RememberUI::TextEditor::focusedOutlineColourId, kAccent);
     nameEditor.setText (processor.getProjectName(), false);
     nameEditor.onReturnKey  = [this] { processor.setProjectName (nameEditor.getText()); nameEditor.unfocusAllComponents(); };
     nameEditor.onFocusLost  = [this] { processor.setProjectName (nameEditor.getText()); };
@@ -53,29 +53,29 @@ RememberEditor::RememberEditor (RememberProcessor& p)
 
     // ── BPM / Key combined label ─────────────────────────────────────────────
     bpmKeyLabel.setFont (RememberUI::font (14.0f, true));
-    RememberUI::bindColour (bpmKeyLabel, juce::Label::textColourId, kAccent);
+    RememberUI::bindColour (bpmKeyLabel, RememberUI::Label::textColourId, kAccent);
     bpmKeyLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (bpmKeyLabel);
 
     // ── Status ───────────────────────────────────────────────────────────────
     statusLabel.setFont (bodyFont());
-    RememberUI::bindColour (statusLabel, juce::Label::textColourId, kSubtext);
+    RememberUI::bindColour (statusLabel, RememberUI::Label::textColourId, kSubtext);
     statusLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (statusLabel);
 
     // ── Settings button ───────────────────────────────────────────────────────
-    RememberUI::iconButton (settingsButton, "settings", "Recording settings");
-    settingsButton.setTooltip ("Settings: appearance and output folder");
-    settingsButton.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
-    RememberUI::bindColour (settingsButton, juce::TextButton::textColourOffId, kSubtext);
+    RememberUI::iconButton (settingsButton, "settings", RememberUI::tr ("Recording settings"));
+    settingsButton.setTooltip (RememberUI::tr ("Settings: appearance and output folder"));
+    settingsButton.setColour (RememberUI::TextButton::buttonColourId,  juce::Colours::transparentBlack);
+    RememberUI::bindColour (settingsButton, RememberUI::TextButton::textColourOffId, kSubtext);
     settingsButton.onClick = [this] { showSettingsPanel(); };
     addAndMakeVisible (settingsButton);
     associationLabel.setFont (RememberUI::font (12.0f));
-    RememberUI::bindColour (associationLabel, juce::Label::textColourId, kSubtext);
+    RememberUI::bindColour (associationLabel, RememberUI::Label::textColourId, kSubtext);
     addAndMakeVisible (associationLabel);
-    RememberUI::bindColour (associationButton, juce::TextButton::buttonColourId, kElevated);
-    RememberUI::bindColour (associationButton, juce::TextButton::textColourOffId, kText);
-    associationButton.setTooltip ("Select a DAW file, keep a recording without a file, or return to automatic association");
+    RememberUI::bindColour (associationButton, RememberUI::TextButton::buttonColourId, kElevated);
+    RememberUI::bindColour (associationButton, RememberUI::TextButton::textColourOffId, kText);
+    associationButton.setTooltip (RememberUI::tr ("Select a DAW file, keep a recording without a file, or return to automatic association"));
     associationButton.onClick = [this] { showAssociationMenu(); };
     addAndMakeVisible (associationButton);
 
@@ -83,7 +83,7 @@ RememberEditor::RememberEditor (RememberProcessor& p)
     versionLabel.setText (juce::String ("v") + REMEMBER_VERSION + "  " + REMEMBER_GIT_HASH,
                           juce::dontSendNotification);
     versionLabel.setFont (RememberUI::font (11.0f));
-    RememberUI::bindColour (versionLabel, juce::Label::textColourId, kSubtext, 1.0f);
+    RememberUI::bindColour (versionLabel, RememberUI::Label::textColourId, kSubtext, 1.0f);
     versionLabel.setJustificationType (juce::Justification::centredRight);
     versionLabel.setTooltip (REMEMBER_VERSION_LINE);
     addAndMakeVisible (versionLabel);
@@ -119,18 +119,18 @@ void RememberEditor::refreshFromEngine()
         lockToggle.setToggleState (options.locked, juce::dontSendNotification);
         replaceToggle.setToggleState (options.replace, juce::dontSendNotification);
     }
-    captureStatus.setText (eng.isPreviewLocked() ? "Preview updates locked"
-        : state == RecordingEngine::State::Recording ? "Capturing preview"
-        : options.manual ? "Automatic capture enabled" : "Capture from project start", juce::dontSendNotification);
+    captureStatus.setText (eng.isPreviewLocked() ? RememberUI::tr ("Preview updates locked")
+        : state == RecordingEngine::State::Recording ? RememberUI::tr ("Capturing preview")
+        : options.manual ? RememberUI::tr ("Automatic capture enabled") : RememberUI::tr ("Capture from project start"), juce::dontSendNotification);
     const auto association = eng.getAssociationInfo();
     const bool followsFile = association.confirmed && association.source != RecordingEngine::Association::ManualRecording;
     nameEditor.setReadOnly (followsFile);
-    nameEditor.setTooltip (followsFile ? "Name follows the associated project filename"
-                                      : "Name this recording; Associate can keep it permanently without a project file");
-    associationLabel.setText (association.problem.isEmpty() ? association.description : "Project search unavailable", juce::dontSendNotification);
-    associationLabel.setTooltip (association.description + "\nEvidence: " + association.confidence
+    nameEditor.setTooltip (followsFile ? RememberUI::tr ("Name follows the associated project filename")
+                                      : RememberUI::tr ("Name this recording; Associate can keep it permanently without a project file"));
+    associationLabel.setText (association.problem.isEmpty() ? RememberUI::diagnostic (association.description) : RememberUI::tr ("Project search unavailable"), juce::dontSendNotification);
+    associationLabel.setTooltip (RememberUI::diagnostic (association.description) + RememberUI::tr ("\nEvidence: ") + association.confidence
         + (association.path.isNotEmpty() ? "\n" + association.path : juce::String{})
-        + (association.problem.isNotEmpty() ? "\n" + association.problem : juce::String{}));
+        + (association.problem.isNotEmpty() ? "\n" + RememberUI::diagnostic (association.problem) : juce::String{}));
 
     // Adapt poll rate: 10Hz only while Recording, 2Hz otherwise
     int desiredHz = (state == RecordingEngine::State::Recording
@@ -152,13 +152,13 @@ void RememberEditor::refreshFromEngine()
     auto   key = eng.getDetectedKey();
 
     juce::String meta;
-    if (bpm > 0.0) meta += juce::String (bpm, 1) + " BPM";
+    if (bpm > 0.0) meta += juce::String (bpm, 1) + RememberUI::tr (" BPM");
     if (key.isNotEmpty())
     {
         if (meta.isNotEmpty()) meta += "  |  ";
         meta += key;
     }
-    juce::String bpmKeyText = meta.isEmpty() ? "Tempo and key appear after recording" : meta;
+    juce::String bpmKeyText = meta.isEmpty() ? RememberUI::tr ("Tempo and key appear after recording") : meta;
     if (bpmKeyText != lastBpmKeyText)
     {
         bpmKeyLabel.setText (bpmKeyText, juce::dontSendNotification);
@@ -175,7 +175,7 @@ void RememberEditor::refreshFromEngine()
     {
         case RecordingEngine::State::Idle:
             progress     = 0.0f;
-            statusText   = "Play from the start to record a preview";
+            statusText   = RememberUI::tr ("Play from the start to record a preview");
             statusColour = kSubtext;
             break;
 
@@ -185,32 +185,32 @@ void RememberEditor::refreshFromEngine()
             progress     = eng.getProgress();
             int total    = eng.getTotalSeconds();
             int secs     = (int) (progress * (float) total);
-            statusText   = "Recording  " + juce::String (secs) + "s / " + juce::String (total) + "s";
+            statusText   = RememberUI::tr ("Recording  ") + juce::String (secs) + "s / " + juce::String (total) + "s";
             statusColour = kAccent;
             break;
         }
         case RecordingEngine::State::Encoding:
             progress     = 1.0f;
-            statusText   = "Analysing & saving...";
+            statusText   = RememberUI::tr ("Analysing & saving...");
             statusColour = kAccent;
             break;
 
         case RecordingEngine::State::Done:
             progress     = 1.0f;
-            statusText   = "Saved  " + eng.getLastSavedTime();
+            statusText   = RememberUI::tr ("Saved  ") + eng.getLastSavedTime();
             statusColour = kSuccess;
             break;
 
         case RecordingEngine::State::Pending:
             progress     = 1.0f;
-            statusText   = eng.getProjectName().isEmpty() ? "Audio pending - name or associate it"
-                                                        : "Pending audio - Associate to keep it";
+            statusText   = eng.getProjectName().isEmpty() ? RememberUI::tr ("Audio pending - name or associate it")
+                                                        : RememberUI::tr ("Pending audio - Associate to keep it");
             statusColour = kSubtext;
             break;
 
         case RecordingEngine::State::Error:
             progress     = 0.0f;
-            statusText   = eng.getLastError().isNotEmpty() ? eng.getLastError() : "Cannot save preview; see Remember log";
+            statusText   = RememberUI::diagnostic (eng.getLastError()).isNotEmpty() ? RememberUI::diagnostic (eng.getLastError()) : RememberUI::tr ("Cannot save preview; see Remember log");
             statusColour = kError;
             break;
     }
@@ -218,11 +218,11 @@ void RememberEditor::refreshFromEngine()
     isRecording = recordingNow;
     if (eng.isPreparingSettings())
     {
-        statusText = recordingNow ? "Capturing audio; reading recording settings..." : "Reading recording settings...";
+        statusText = recordingNow ? RememberUI::tr ("Capturing audio; reading recording settings...") : RememberUI::tr ("Reading recording settings...");
         progress = 0.0f;
         statusColour = kAccent;
     }
-    const auto warning = eng.getTransportWarning();
+    const auto warning = RememberUI::diagnostic (eng.getTransportWarning());
     if (warning.isNotEmpty() && ! recordingNow && state != RecordingEngine::State::Error)
     {
         statusText = warning;
@@ -237,21 +237,21 @@ void RememberEditor::refreshFromEngine()
     if (association.problem.isNotEmpty() && ! recordingNow && state != RecordingEngine::State::Encoding
         && state != RecordingEngine::State::Error)
     {
-        statusText = "Project search unavailable; check Settings or Associate a file";
+        statusText = RememberUI::tr ("Project search unavailable; check Settings or Associate a file");
         statusColour = kError;
     }
-    if (options.locked && state != RecordingEngine::State::Error) statusText = "Preview updates locked; unlock to record";
-    else if (options.manual && state == RecordingEngine::State::Idle) statusText = "Ready: play from any position";
+    if (options.locked && state != RecordingEngine::State::Error) statusText = RememberUI::tr ("Preview updates locked; unlock to record");
+    else if (options.manual && state == RecordingEngine::State::Idle) statusText = RememberUI::tr ("Ready: play from any position");
     statusLabel.setTooltip (statusText + (settingsMessage.isNotEmpty() ? "\n" + settingsMessage : juce::String{})
         + (association.problem.isNotEmpty() ? "\n" + association.problem : juce::String{})
-        + "\nSkipped captures: " + juce::String (eng.getDroppedCaptures())
-        + "; short captures: " + juce::String (eng.getShortCaptures())
-        + "; unknown positions: " + juce::String (eng.getUnknownPositions()));
+        + RememberUI::tr ("\nSkipped captures: ") + juce::String (eng.getDroppedCaptures())
+        + RememberUI::tr ("; short captures: ") + juce::String (eng.getShortCaptures())
+        + RememberUI::tr ("; unknown positions: ") + juce::String (eng.getUnknownPositions()));
 
     if (statusText != lastStatusText || stInt != lastStateInt)
     {
         statusLabel.setText (statusText, juce::dontSendNotification);
-        RememberUI::bindColour (statusLabel, juce::Label::textColourId, statusColour);
+        RememberUI::bindColour (statusLabel, RememberUI::Label::textColourId, statusColour);
         lastStatusText = statusText;
     }
 
@@ -277,15 +277,15 @@ void RememberEditor::paint (juce::Graphics& g)
     g.drawText ("Remember", 24, 16, 210, 28, juce::Justification::centredLeft);
     g.setFont (bodyFont());
     g.setColour (RememberUI::colour (kSubtext));
-    g.drawText ("Capture the idea. Keep the moment.", 24, 46, logicalWidth() - 48, 22, juce::Justification::centredLeft);
+    g.drawText (RememberUI::tr ("Capture the idea. Keep the moment."), 24, 46, logicalWidth() - 48, 22, juce::Justification::centredLeft);
     RememberUI::panel (g, juce::Rectangle<float> (16, 84, (float) logicalWidth() - 32, 140));
     g.setFont (bodyFont());
     g.setColour (RememberUI::colour (kSubtext));
-    g.drawText ("Project", 28, 96, 160, 18, juce::Justification::centredLeft);
+    g.drawText (RememberUI::tr ("Project"), 28, 96, 160, 18, juce::Justification::centredLeft);
     paintProgressBar (g, { 28, 304, logicalWidth() - 56, 5 }, recordProgress);
     g.setFont (RememberUI::font (12));
     g.setColour (RememberUI::colour (kSubtext));
-    g.drawText ("Preview capture", 28, 326, 160, 22, juce::Justification::centredLeft);
+    g.drawText (RememberUI::tr ("Preview capture"), 28, 326, 160, 22, juce::Justification::centredLeft);
 }
 
 void RememberEditor::paintProgressBar (juce::Graphics& g,
@@ -312,8 +312,9 @@ void RememberEditor::resized()
     for (auto* child : getChildren()) child->setTransform (juce::AffineTransform::scale (zoomScale()));
     settingsButton.setBounds (logicalWidth() - 60, 16, 36, 36);
     nameEditor.setBounds (28, 120, logicalWidth() - 56, 38);
-    associationLabel.setBounds (28, 171, logicalWidth() - 152, 36);
-    associationButton.setBounds (logicalWidth() - 116, 173, 88, 32);
+    const int associationWidth = RememberUI::language == RememberUI::Language::SpanishSpain ? 154 : 88;
+    associationLabel.setBounds (28, 171, logicalWidth() - associationWidth - 64, 36);
+    associationButton.setBounds (logicalWidth() - associationWidth - 28, 173, associationWidth, 32);
     bpmKeyLabel.setBounds (28, 239, logicalWidth() - 56, 24);
     statusLabel.setBounds (28, 264, logicalWidth() - 56, 32);
     manualToggle.setBounds (28, 348, logicalWidth() - 56, 30);
@@ -328,32 +329,48 @@ void RememberEditor::resized()
 void RememberEditor::showSettingsPanel()
 {
     if (settingsRequest) return;
-    juce::PopupMenu menu, appearance, zoom;
+    juce::PopupMenu menu, appearance, zoom, languages;
     menu.setLookAndFeel (&getLookAndFeel());
-    appearance.addItem (4, "System (automatic)", true, RememberUI::appearanceMode == RememberAppearance::System);
-    appearance.addItem (2, "Light", true, RememberUI::appearanceMode == RememberAppearance::Light);
-    appearance.addItem (3, "Dark", true, RememberUI::appearanceMode == RememberAppearance::Dark);
-    menu.addSubMenu ("Appearance", appearance);
+    appearance.addItem (4, RememberUI::tr ("System (automatic)"), true, RememberUI::appearanceMode == RememberAppearance::System);
+    appearance.addItem (2, RememberUI::tr ("Light"), true, RememberUI::appearanceMode == RememberAppearance::Light);
+    appearance.addItem (3, RememberUI::tr ("Dark"), true, RememberUI::appearanceMode == RememberAppearance::Dark);
+    languages.addItem (2001, "English", true, RememberUI::language == RememberUI::Language::English);
+    languages.addItem (2002, juce::String::fromUTF8 ("Español (España)"), true, RememberUI::language == RememberUI::Language::SpanishSpain);
+    appearance.addSeparator();
+    appearance.addSubMenu (RememberUI::tr ("Language"), languages);
+    menu.addSubMenu (RememberUI::tr ("Appearance"), appearance);
     for (auto percent : RememberUI::zoomPercentages)
-        zoom.addItem (1000 + percent, juce::String (percent) + (percent == 100 ? "% (default)" : "%"), true, percent == zoomPercent);
-    menu.addSubMenu ("Interface zoom", zoom);
+        zoom.addItem (1000 + percent, juce::String (percent) + (percent == 100 ? RememberUI::tr ("% (default)") : "%"), true, percent == zoomPercent);
+    menu.addSubMenu (RememberUI::tr ("Interface zoom"), zoom);
     menu.addSeparator();
-    menu.addItem (1, "Change previews output folder...");
+    menu.addItem (1, RememberUI::tr ("Change previews output folder..."));
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&settingsButton),
         [safe = juce::Component::SafePointer<RememberEditor> (this)] (int result)
         {
             if (safe == nullptr) return;
-            if (result == 1) safe->chooseOutputFolder();
+            if (result == 2001 || result == 2002)
+            {
+                safe->applyLanguage (result == 2002 ? RememberUI::Language::SpanishSpain : RememberUI::Language::English);
+            }
+            else if (result == 1) safe->chooseOutputFolder();
             else if (result == 2 || result == 3) safe->applyAppearance (result == 3);
             else if (result == 4) safe->applyAppearance (RememberAppearance::System);
             else if (result >= 1050 && result <= 1200) safe->applyZoom (result - 1000);
         });
 }
 
+void RememberEditor::applyLanguage (RememberUI::Language value)
+{
+    if (settingsRequest) return;
+    settingsMessage = RememberUI::tr ("Saving language..."); settingsFailed = false;
+    settingsButton.setEnabled (false);
+    settingsRequest = SettingsManager::getInstance().setLanguageAsync (value);
+}
+
 void RememberEditor::applyZoom (int percent)
 {
     if (settingsRequest) return;
-    settingsMessage = "Saving interface zoom...";
+    settingsMessage = RememberUI::tr ("Saving interface zoom...");
     settingsFailed = false;
     settingsButton.setEnabled (false);
     settingsRequest = SettingsManager::getInstance().setZoomAsync (RememberUI::validZoom (percent));
@@ -363,7 +380,7 @@ void RememberEditor::applyZoom (int percent)
 void RememberEditor::applyAppearance (RememberAppearance dark)
 {
     if (settingsRequest) return;
-    settingsMessage = "Saving appearance...";
+    settingsMessage = RememberUI::tr ("Saving appearance...");
     settingsFailed = false;
     settingsButton.setEnabled (false);
     settingsRequest = SettingsManager::getInstance().setAppearanceAsync (dark);
@@ -375,7 +392,7 @@ void RememberEditor::chooseOutputFolder()
     if (settingsRequest) return;
 
     fileChooser = std::make_unique<juce::FileChooser> (
-        "Select previews output folder",
+        RememberUI::tr ("Select previews output folder"),
         settingsFolder != juce::File{} ? settingsFolder : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
 
     fileChooser->launchAsync (
@@ -391,7 +408,7 @@ void RememberEditor::applyOutputFolder (const juce::File& folder)
 {
     if (settingsRequest) return;
     savingSettings = true; settingsFailed = false;
-    settingsMessage = "Saving output folder...";
+    settingsMessage = RememberUI::tr ("Saving output folder...");
     settingsButton.setEnabled (false);
     settingsRequest = SettingsManager::getInstance().setPreviewsFolderAsync (folder);
     refreshFromEngine();
@@ -404,7 +421,7 @@ void RememberEditor::refreshSettingsRequest()
     settingsButton.setEnabled (true);
     const bool wasInitial = initialSettings; initialSettings = false;
     settingsFailed = request->result.failed();
-    if (settingsFailed) settingsMessage = request->result.getErrorMessage();
+    if (settingsFailed) settingsMessage = RememberUI::diagnostic (request->result.getErrorMessage());
     else
     {
         settingsFolder = request->snapshot.previews;
@@ -420,7 +437,7 @@ void RememberEditor::refreshSettingsRequest()
         if (savingSettings)
         {
             processor.getEngine().setOutputFolder (settingsFolder);
-            settingsMessage = "Output saved; applies to the next capture";
+            settingsMessage = RememberUI::tr ("Output saved; applies to the next capture");
         }
         else settingsMessage.clear();
     }
@@ -432,10 +449,10 @@ void RememberEditor::showAssociationMenu()
 {
     const auto info = processor.getEngine().getAssociationInfo();
     juce::PopupMenu menu;
-    menu.addItem (1, "Select project file...");
-    menu.addItem (2, "Keep recording without a file", ! info.confirmed || info.source == RecordingEngine::Association::ManualRecording);
+    menu.addItem (1, RememberUI::tr ("Select project file..."));
+    menu.addItem (2, RememberUI::tr ("Keep recording without a file"), ! info.confirmed || info.source == RecordingEngine::Association::ManualRecording);
     menu.addSeparator();
-    menu.addItem (3, "Use automatic association");
+    menu.addItem (3, RememberUI::tr ("Use automatic association"));
     const auto name = nameEditor.getText();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&associationButton),
         [safe = juce::Component::SafePointer<RememberEditor> (this), id = info.id, name] (int result)
@@ -448,7 +465,7 @@ void RememberEditor::showAssociationMenu()
 }
 void RememberEditor::chooseProjectFile (const juce::String& expectedId)
 {
-    fileChooser = std::make_unique<juce::FileChooser> ("Associate this recording with a DAW project",
+    fileChooser = std::make_unique<juce::FileChooser> (RememberUI::tr ("Associate this recording with a DAW project"),
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.flp;*.als;*.rpp;*.cpr;*.npr;*.song;*.ptx;*.bwproject;*.logicx");
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [safe = juce::Component::SafePointer<RememberEditor> (this), expectedId] (const juce::FileChooser& chooser)
@@ -461,7 +478,7 @@ void RememberEditor::chooseProjectFile (const juce::String& expectedId)
 void RememberEditor::saveCaptureOptions()
 {
     if (settingsRequest) return;
-    settingsMessage = "Saving shared recording options...";
+    settingsMessage = RememberUI::tr ("Saving shared recording options...");
     settingsFailed = false;
     settingsButton.setEnabled (false);
     settingsRequest = SettingsManager::getInstance().setCaptureOptionsAsync (

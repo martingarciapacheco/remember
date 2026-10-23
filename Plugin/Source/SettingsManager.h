@@ -5,6 +5,7 @@
 #include <memory>
 #include "../../Shared/CaptureOptions.h"
 #include "../../Shared/AppearanceMode.h"
+#include "../../Shared/RememberLanguage.h"
 
 // Manages shared config at %APPDATA%/Remember/config.json.
 // Both the plugin and the browser app read/write this file.
@@ -53,6 +54,7 @@ public:
     static std::shared_ptr<Request> readSnapshotAsync (Reader);
     std::shared_ptr<Request> setPreviewsFolderAsync (const juce::File&) const;
     std::shared_ptr<Request> setAppearanceAsync (RememberAppearance mode) const;
+    std::shared_ptr<Request> setLanguageAsync (RememberUI::Language) const;
     std::shared_ptr<Request> setZoomAsync (int percent) const;
     // Only shared lock/replacement; manualCapture is the app's creation default.
     std::shared_ptr<Request> setCaptureOptionsAsync (CaptureOptions) const;

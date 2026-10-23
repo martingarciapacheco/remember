@@ -23,7 +23,7 @@ void saveWaveformPreferences()
         [] (juce::Result result)
         {
             if (result.failed()) juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon,
-                "Cannot save waveform preferences", result.getErrorMessage());
+                RememberUI::tr ("Cannot save waveform preferences"), RememberUI::diagnostic (result.getErrorMessage()));
         });
 }
 struct LoadTicket
@@ -41,7 +41,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     : outputManager (externalDevice ? *externalDevice : deviceManager), persistAudioState (persistDeviceState)
 {
     auto safePlayer = juce::Component::SafePointer<WaveformPlayerComponent> (this);
-    setTooltip (RememberUI::shortcutTooltip ("Seek preview", "Alt+Left / Alt+Right", "Move backward or forward by 5 seconds."));
+    setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Seek preview"), "Alt+Left / Alt+Right", RememberUI::tr ("Move backward or forward by 5 seconds.")));
     outputManager.addChangeListener (this);
     auto& visual = waveformPreferences();
     visual.addChangeListener (this);
@@ -95,26 +95,26 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
         });
     }
     playBtn.setEnabled (false);
-    RememberUI::iconButton (previousBtn, "previous", "Previous preview; restart after 3 seconds");
-    RememberUI::iconButton (nextBtn, "next", "Next preview");
-    previousBtn.setTooltip (RememberUI::shortcutTooltip ("Previous preview", "Ctrl+Left", "Restart the current preview after 3 seconds; otherwise play the previous preview."));
-    nextBtn.setTooltip (RememberUI::shortcutTooltip ("Next preview", "Ctrl+Right"));
-    RememberUI::iconButton (shuffleBtn, "shuffle", "Shuffle previews");
+    RememberUI::iconButton (previousBtn, "previous", RememberUI::tr ("Previous preview; restart after 3 seconds"));
+    RememberUI::iconButton (nextBtn, "next", RememberUI::tr ("Next preview"));
+    previousBtn.setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Previous preview"), "Ctrl+Left", RememberUI::tr ("Restart the current preview after 3 seconds; otherwise play the previous preview.")));
+    nextBtn.setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Next preview"), "Ctrl+Right"));
+    RememberUI::iconButton (shuffleBtn, "shuffle", RememberUI::tr ("Shuffle previews"));
     shuffleBtn.setTooltip (RememberUI::shortcutTooltip (shuffleBtn.getTitle(), "S"));
-    RememberUI::iconButton (repeatBtn, "repeat", "Repeat: off");
-    RememberUI::iconButton (metronomeBtn, "metronome", "Metronome");
-    metronomeBtn.setTooltip ("Metronome follows the project BPM. Right-click to adjust its volume.");
+    RememberUI::iconButton (repeatBtn, "repeat", RememberUI::tr ("Repeat: off"));
+    RememberUI::iconButton (metronomeBtn, "metronome", RememberUI::tr ("Metronome"));
+    metronomeBtn.setTooltip (RememberUI::tr ("Metronome follows the project BPM. Right-click to adjust its volume."));
     metronomeBtn.setClickingTogglesState (true); metronomeBtn.setEnabled (false);
     metronomeBtn.onClick = [this] { setMetronomeEnabled (metronomeBtn.getToggleState()); };
     metronomeBtn.onContextMenu = [this] { showMetronomeVolume(); };
-    RememberUI::iconButton (muteBtn, "volume", "Mute volume");
+    RememberUI::iconButton (muteBtn, "volume", RememberUI::tr ("Mute volume"));
     muteBtn.setTooltip (RememberUI::shortcutTooltip (muteBtn.getTitle(), "M"));
-    RememberUI::iconButton (normalizeBtn, "normalize", "Normalize preview loudness to -14 LUFS");
-    for (auto* button : std::initializer_list<juce::TextButton*> { &previousBtn, &nextBtn, &shuffleBtn, static_cast<juce::TextButton*> (&repeatBtn), static_cast<juce::TextButton*> (&metronomeBtn), &muteBtn, &normalizeBtn, &playbackOptionsBtn })
+    RememberUI::iconButton (normalizeBtn, "normalize", RememberUI::tr ("Normalize preview loudness to -14 LUFS"));
+    for (auto* button : std::initializer_list<RememberUI::TextButton*> { &previousBtn, &nextBtn, &shuffleBtn, static_cast<RememberUI::TextButton*> (&repeatBtn), static_cast<RememberUI::TextButton*> (&metronomeBtn), &muteBtn, &normalizeBtn, &playbackOptionsBtn })
     {
         button->setWantsKeyboardFocus (false);
-        RememberUI::bindColour (*button, juce::TextButton::buttonColourId, Pal::Elevated);
-        RememberUI::bindColour (*button, juce::TextButton::textColourOffId, Pal::Text);
+        RememberUI::bindColour (*button, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+        RememberUI::bindColour (*button, RememberUI::TextButton::textColourOffId, Pal::Text);
         addAndMakeVisible (*button);
     }
     shuffleBtn.setClickingTogglesState (true); muteBtn.setClickingTogglesState (true); normalizeBtn.setClickingTogglesState (true);
@@ -128,10 +128,10 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     repeatBtn.onContextMenu = [this] { showRepeatOptions(); };
     muteBtn.onClick = [this] { setMuted (getVolume() == 0 ? false : muteBtn.getToggleState()); };
     normalizeBtn.onClick = [this] { setNormalized (normalizeBtn.getToggleState()); };
-    playbackOptionsBtn.setTooltip ("Playback preferences"); playbackOptionsBtn.onClick = [this] { showPlaybackOptions(); };
+    playbackOptionsBtn.setTooltip (RememberUI::tr ("Playback preferences")); playbackOptionsBtn.onClick = [this] { showPlaybackOptions(); };
     volumeSlider.setSliderStyle (juce::Slider::LinearHorizontal); volumeSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    volumeSlider.setRange (0, 1, 0.01); volumeSlider.setValue (1, juce::dontSendNotification); volumeSlider.setTitle ("Volume");
-    volumeSlider.setTooltip ("Playback volume");
+    volumeSlider.setRange (0, 1, 0.01); volumeSlider.setValue (1, juce::dontSendNotification); volumeSlider.setTitle (RememberUI::tr ("Volume"));
+    volumeSlider.setTooltip (RememberUI::tr ("Playback volume"));
     RememberUI::bindColour (volumeSlider, juce::Slider::thumbColourId, Pal::Text);
     RememberUI::bindColour (volumeSlider, juce::Slider::trackColourId, Pal::Accent);
     RememberUI::bindColour (volumeSlider, juce::Slider::backgroundColourId, Pal::Border);
@@ -149,14 +149,14 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     volumeSlider.onDragEnd = [this] { savePlaybackPreferences(); };
     addAndMakeVisible (volumeSlider);
 
-    auto btnSetup = [&] (juce::TextButton& b, uint32_t bg, uint32_t fg)
+    auto btnSetup = [&] (RememberUI::TextButton& b, uint32_t bg, uint32_t fg)
     {
-        RememberUI::bindColour (b, juce::TextButton::buttonColourId, bg);
-        RememberUI::bindColour (b, juce::TextButton::textColourOffId, fg);
+        RememberUI::bindColour (b, RememberUI::TextButton::buttonColourId, bg);
+        RememberUI::bindColour (b, RememberUI::TextButton::textColourOffId, fg);
     };
 
-    RememberUI::iconButton (playBtn, "play", "Play or pause preview");
-    playBtn.setTooltip (RememberUI::shortcutTooltip (playBtn.getTitle(), "Space"));
+    RememberUI::iconButton (playBtn, "play", RememberUI::tr ("Play or pause preview"));
+    playBtn.setTooltip (RememberUI::shortcutTooltip (playBtn.getTitle(), RememberUI::tr ("Space")));
     playBtn.getProperties().set ("rememberTransportPrimary", true);
     btnSetup (playBtn, Pal::Action,   Pal::OnAction);
     btnSetup (openBtn,   Pal::Elevated, Pal::Text);
@@ -164,15 +164,15 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     btnSetup (assignBtn, Pal::Elevated, Pal::Subtext);
     assignBtn.setEnabled (false);
     btnSetup (dragBtn, Pal::Elevated, Pal::Text);
-    dragBtn.setTitle ("Drag preview audio");
-    dragBtn.setDescription ("Drag a copy of the complete preview as a WAV file to a DAW or folder.");
-    dragBtn.setTooltip ("Select a recording to prepare its WAV copy");
+    dragBtn.setTitle (RememberUI::tr ("Drag preview audio"));
+    dragBtn.setDescription (RememberUI::tr ("Drag a copy of the complete preview as a WAV file to a DAW or folder."));
+    dragBtn.setTooltip (RememberUI::tr ("Select a recording to prepare its WAV copy"));
     dragBtn.setEnabled (false);
     dragBtn.begin = [this]
     {
         if (exportedPreview == juce::File{}) return;
         if (! startPreviewDrag ({ exportedPreview.getFullPathName() }, false, &dragBtn))
-            dragBtn.setTooltip ("Cannot start drag. Release the mouse and try again.");
+            dragBtn.setTooltip (RememberUI::tr ("Cannot start drag. Release the mouse and try again."));
     };
     btnSetup (audioBtn, Pal::Elevated, Pal::Subtext);
     audioBtn.onClick = [this] { showAudioSettings(); };
@@ -186,7 +186,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
             [safePlayer] (juce::Result result)
             {
                 if (safePlayer != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-                    juce::AlertWindow::WarningIcon, "Cannot open project", result.getErrorMessage());
+                    juce::AlertWindow::WarningIcon, RememberUI::tr ("Cannot open project"), RememberUI::diagnostic (result.getErrorMessage()));
             });
     };
 
@@ -197,11 +197,11 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
         if (! target)
         {
             juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon,
-                "Assign project path", "Select one available recording in the library first.");
+                RememberUI::tr ("Assign project path"), RememberUI::tr ("Select one available recording in the library first."));
             return;
         }
         fileChooser = std::make_unique<juce::FileChooser> (
-            "Select project file",
+            RememberUI::tr ("Select project file"),
             juce::File::getSpecialLocation (juce::File::userMusicDirectory),
             "*.als;*.flp;*.ptx;*.song;*.npr;*.rpp;*.cpr;*.bwproject");
 
@@ -220,7 +220,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
                     if (result.failed()) return result;
                     const auto latest = LibraryStore::readJson (association->metadataFile);
                     if (latest.getDynamicObject() == nullptr || latest.getProperty ("projectId", "").toString() != association->projectId)
-                        return juce::Result::fail ("The entry changed; refresh the library");
+                        return juce::Result::fail (RememberUI::tr ("The entry changed; refresh the library"));
                     association->projectPath = latest.getProperty ("projectPath", "").toString();
                     association->projectFileId = latest.getProperty ("projectFileId", "").toString();
                     association->projectFingerprint = latest.getProperty ("projectFingerprint", "").toString();
@@ -236,7 +236,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
                     if (result.failed())
                     {
                         juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon,
-                            "Cannot assign project", result.getErrorMessage());
+                            RememberUI::tr ("Cannot assign project"), RememberUI::diagnostic (result.getErrorMessage()));
                         return;
                     }
                     if (safe->currentEntry.metadataFile == association->metadataFile && safe->currentEntry.projectId == association->projectId)
@@ -245,7 +245,7 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
                         safe->currentEntry.projectFileId = association->projectFileId;
                         safe->currentEntry.projectFingerprint = association->projectFingerprint;
                         safe->currentEntry.projectAvailable = association->projectAvailable;
-                        safe->currentEntry.projectProblem = association->projectAvailable ? juce::String{} : "Selected project could not be verified";
+                        safe->currentEntry.projectProblem = association->projectAvailable ? juce::String{} : RememberUI::tr ("Selected project could not be verified");
                         safe->currentEntry.name = association->name;
                         safe->nameLabel.setText (association->name, juce::dontSendNotification);
                         safe->updatePathLabel();
@@ -256,13 +256,13 @@ WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* exte
     };
 
     nameLabel.setFont (RememberUI::font (14.0f, true));
-    RememberUI::bindColour (nameLabel, juce::Label::textColourId, Pal::Text);
+    RememberUI::bindColour (nameLabel, RememberUI::Label::textColourId, Pal::Text);
 
     pathLabel.setFont (RememberUI::font (12.0f));
-    RememberUI::bindColour (pathLabel, juce::Label::textColourId, Pal::Subtext);
+    RememberUI::bindColour (pathLabel, RememberUI::Label::textColourId, Pal::Subtext);
 
     timeLabel.setFont (RememberUI::font (12.0f));
-    RememberUI::bindColour (timeLabel, juce::Label::textColourId, Pal::Subtext);
+    RememberUI::bindColour (timeLabel, RememberUI::Label::textColourId, Pal::Subtext);
     timeLabel.setJustificationType (juce::Justification::centredRight);
 
     addAndMakeVisible (playBtn);
@@ -325,7 +325,7 @@ void WaveformPlayerComponent::releaseEntry (const juce::File& metadataFile)
     loadGeneration->fetch_add (1);
     stop(); detachSource();
     currentEntry = {}; waveform.reset(); exportedPreview = {}; dragBtn.setEnabled (false);
-    dragBtn.setTooltip ("Select a recording to prepare its WAV copy");
+    dragBtn.setTooltip (RememberUI::tr ("Select a recording to prepare its WAV copy"));
     metronome.setTempo (0); metronomeBtn.setEnabled (false);
     isLoaded = false; isLoading = false; playWhenLoaded = false;
     playbackError.clear(); previewError.clear(); playbackErrorFromDevice = false;
@@ -343,8 +343,8 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     const auto request = loadGeneration->fetch_add (1) + 1;
     currentEntry = entry;
     exportedPreview = {}; dragBtn.setEnabled (false);
-    dragBtn.setTooltip (entry.pending ? "Recording is not ready for export" : entry.auditionReader
-        ? "Use the MIDI row's Drag action" : "Preparing complete preview WAV...");
+    dragBtn.setTooltip (entry.pending ? RememberUI::tr ("Recording is not ready for export") : entry.auditionReader
+        ? RememberUI::tr ("Use the MIDI row's Drag action") : RememberUI::tr ("Preparing complete preview WAV..."));
     queue.select (entry);
     const auto tempo = entry.bpmOverride > 0 ? entry.bpmOverride : entry.bpm;
     metronome.setTempo (tempo);
@@ -374,7 +374,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     if (entry.storageError.isNotEmpty())
     {
         isLoading = false; playbackError = previewError = entry.storageError;
-        dragBtn.setTooltip ("Cannot prepare WAV: " + entry.storageError);
+        dragBtn.setTooltip (RememberUI::tr ("Cannot prepare WAV: ") + entry.storageError);
         pathLabel.setText (playbackError, juce::dontSendNotification);
         return;
     }
@@ -393,8 +393,8 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
             if (! safe || generation->load() != request) return;
             safe->exportedPreview = *exported;
             safe->dragBtn.setEnabled (result.wasOk() && *exported != juce::File{});
-            safe->dragBtn.setTooltip (result.wasOk() ? "Drag the complete preview as WAV to a DAW or folder. Copies remain in Exports."
-                                                    : "Cannot prepare WAV: " + result.getErrorMessage());
+            safe->dragBtn.setTooltip (result.wasOk() ? RememberUI::tr ("Drag the complete preview as WAV to a DAW or folder. Copies remain in Exports.")
+                                                    : RememberUI::tr ("Cannot prepare WAV: ") + RememberUI::diagnostic (result.getErrorMessage()));
         });
     }
 
@@ -421,7 +421,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
             safe->isLoading = false;
             if (! ticket->source || ! ticket->source->valid())
             {
-                safe->playbackError = "Cannot read preview: " + entry.previewOgg.getFullPathName()
+                safe->playbackError = RememberUI::tr ("Cannot read preview: ") + entry.previewOgg.getFullPathName()
                     + (ticket->source ? " (" + ticket->source->error() + ")" : juce::String{});
                 safe->playbackErrorFromDevice = false;
                 safe->previewError = safe->playbackError;
@@ -451,7 +451,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
                     safe->waveform = ticket->envelope; safe->applyOutputGain();
                     if (safe->playWhenLoaded) safe->play();
                 }
-                else safe->pathLabel.setDescription (result.getErrorMessage());
+                else safe->pathLabel.setDescription (RememberUI::diagnostic (result.getErrorMessage()));
                 safe->repaint();
             });
     });
@@ -470,13 +470,13 @@ bool WaveformPlayerComponent::ensureAudioDevice()
     if (! deviceSettingsLoaded) return false;
     auto xml = juce::parseXML (savedAudioState);
     if (savedAudioState.isNotEmpty() && ! xml)
-    { playbackErrorFromDevice = true; playbackError = "Saved audio output is invalid. Use Audio to choose an output."; pathLabel.setText (playbackError, juce::dontSendNotification); return false; }
+    { playbackErrorFromDevice = true; playbackError = RememberUI::tr ("Saved audio output is invalid. Use Audio to choose an output."); pathLabel.setText (playbackError, juce::dontSendNotification); return false; }
     const auto outputError = outputManager.initialise (0, 2, xml.get(), false);
     if (outputError.isNotEmpty())
     {
         playbackErrorFromDevice = true;
         playbackError = outputError;
-        pathLabel.setText ("Audio output unavailable: " + playbackError, juce::dontSendNotification);
+        pathLabel.setText (RememberUI::tr ("Audio output unavailable: ") + playbackError, juce::dontSendNotification);
         return false;
     }
     sourcePlayer.setSource (&metronome);
@@ -575,7 +575,7 @@ void WaveformPlayerComponent::handleDeviceFailure (const juce::String& reason)
 {
     if (! audioDeviceOpen) return;
     stop(); releaseAudioDevice(); stopTimer();
-    playbackError = "Audio output stopped: " + reason + ". Use Audio to choose an output, then Play to retry.";
+    playbackError = RememberUI::tr ("Audio output stopped: ") + reason + RememberUI::tr (". Use Audio to choose an output, then Play to retry.");
     playbackErrorFromDevice = true;
     pathLabel.setText (playbackError, juce::dontSendNotification);
     juce::Logger::writeToLog (playbackError);
@@ -599,12 +599,12 @@ void WaveformPlayerComponent::showAudioSettings()
     selector->setLookAndFeel (&getLookAndFeel());
     selector->setSize (500, 340);
     options.content.setOwned (selector);
-    options.dialogTitle = "Audio output";
+    options.dialogTitle = RememberUI::tr ("Audio output");
     options.dialogBackgroundColour = RememberUI::colour (Pal::Surface);
     options.componentToCentreAround = this;
     options.useNativeTitleBar = true;
     options.escapeKeyTriggersCloseButton = true;
-    audioDialog = RememberUI::launchDialog (options);
+    audioDialog = RememberUI::launchDialog (options, true);
     armIdleRelease();
 }
 
@@ -699,10 +699,10 @@ void WaveformPlayerComponent::updateTimeLabel()
 
 void WaveformPlayerComponent::updatePathLabel()
 {
-    pathLabel.setText (currentEntry.pending ? "Unsaved project - save in the DAW to keep this audio"
+    pathLabel.setText (currentEntry.pending ? RememberUI::tr ("Unsaved project - save in the DAW to keep this audio")
                        : currentEntry.projectProblem.isNotEmpty() ? currentEntry.projectProblem
                        : currentEntry.projectPath.isEmpty()
-                           ? "(no project file - press Assign path)" : currentEntry.projectPath,
+                           ? RememberUI::tr ("(no project file - press Assign path)") : currentEntry.projectPath,
                        juce::dontSendNotification);
     pathLabel.setDescription (currentEntry.projectProblem + "\n" + currentEntry.projectPath);
 }
@@ -710,7 +710,7 @@ void WaveformPlayerComponent::updatePathLabel()
 void WaveformPlayerComponent::setOpenProjectAvailable (bool available)
 {
     openBtn.setEnabled (available);
-    openBtn.setTooltip (available ? RememberUI::shortcutTooltip ("Open selected project in DAW", "Ctrl+O") : juce::String{});
+    openBtn.setTooltip (available ? RememberUI::shortcutTooltip (RememberUI::tr ("Open selected project in DAW"), "Ctrl+O") : juce::String{});
 }
 
 // ── Callbacks ─────────────────────────────────────────────────────────────────
@@ -729,7 +729,7 @@ void WaveformPlayerComponent::changeListenerCallback (juce::ChangeBroadcaster* b
     if (! device || ! device->isOpen())
     {
         const auto reason = device ? device->getLastError() : juce::String{};
-        handleDeviceFailure (reason.isNotEmpty() ? reason : "Output device disconnected"); return;
+        handleDeviceFailure (reason.isNotEmpty() ? reason : RememberUI::tr ("Output device disconnected")); return;
     }
     clearDeviceError();
     if (auto xml = outputManager.createStateXml())
@@ -745,7 +745,7 @@ void WaveformPlayerComponent::changeListenerCallback (juce::ChangeBroadcaster* b
                 juce::var patch (new juce::DynamicObject()); patch.getDynamicObject()->setProperty ("audioDeviceState", state);
                 return LibraryStore::patchJson (LibraryStore::configFile(), patch, true);
             }, [safe] (juce::Result result)
-            { if (safe != nullptr && result.failed()) { safe->playbackErrorFromDevice = false; safe->playbackError = "Cannot save audio output: " + result.getErrorMessage(); safe->pathLabel.setText (safe->playbackError, juce::dontSendNotification); } });
+            { if (safe != nullptr && result.failed()) { safe->playbackErrorFromDevice = false; safe->playbackError = RememberUI::tr ("Cannot save audio output: ") + RememberUI::diagnostic (result.getErrorMessage()); safe->pathLabel.setText (safe->playbackError, juce::dontSendNotification); } });
         }
     }
 }
@@ -757,12 +757,12 @@ void WaveformPlayerComponent::timerCallback()
     {
         auto* device = outputManager.getCurrentAudioDevice();
         if (! device || ! device->isOpen() || ! device->isPlaying())
-        { handleDeviceFailure (device ? device->getLastError() : "Output device disconnected"); return; }
+        { handleDeviceFailure (device ? device->getLastError() : RememberUI::tr ("Output device disconnected")); return; }
     }
     if (readerSource && readerSource->readFailed())
     {
         stop(); releaseAudioDevice(); stopTimer(); isLoaded = false; playBtn.setEnabled (false);
-        playbackError = "Preview read failed: " + currentEntry.previewOgg.getFullPathName() + " (" + readerSource->error() + ")";
+        playbackError = RememberUI::tr ("Preview read failed: ") + currentEntry.previewOgg.getFullPathName() + " (" + readerSource->error() + ")";
         playbackErrorFromDevice = false;
         previewError = playbackError;
         pathLabel.setText (playbackError, juce::dontSendNotification); return;
@@ -787,8 +787,8 @@ void WaveformPlayerComponent::timerCallback()
         {
             reportedUnderruns = underruns;
             juce::Logger::writeToLog ("Playback underruns=" + juce::String ((juce::int64) underruns)
-                + " cacheBytes=" + juce::String ((juce::int64) readerSource->bufferBytes()));
-            pathLabel.setDescription ("Storage could not supply audio in time. Underruns: " + juce::String ((juce::int64) underruns));
+                + RememberUI::tr (" cacheBytes=") + juce::String ((juce::int64) readerSource->bufferBytes()));
+            pathLabel.setDescription (RememberUI::tr ("Storage could not supply audio in time. Underruns: ") + juce::String ((juce::int64) underruns));
         }
     }
 
@@ -838,7 +838,7 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
     {
         g.setColour (RememberUI::colour (Pal::Subtext));
         g.setFont (RememberUI::font (13));
-        g.drawText (isLoading ? "Loading preview..." : "Select a recording to listen to its preview",
+        g.drawText (isLoading ? RememberUI::tr ("Loading preview...") : RememberUI::tr ("Select a recording to listen to its preview"),
                     waveArea, juce::Justification::centred);
         return;
     }
@@ -950,15 +950,15 @@ void WaveformPlayerComponent::resized()
 void WaveformPlayerComponent::updateRepeatButton()
 {
     const char* names[] = { "off", "all", "one", "single" };
-    const char* descriptions[] = { "Play the queue once", "Repeat the queue", "Repeat the selected preview",
-                                   "Play the selected preview once, then stop" };
+    const juce::String descriptions[] = { RememberUI::tr ("Play the queue once"), RememberUI::tr ("Repeat the queue"), RememberUI::tr ("Repeat the selected preview"),
+                                   RememberUI::tr ("Play the selected preview once, then stop") };
     const auto mode = (int) queue.repeat;
     repeatBtn.setToggleState (queue.repeat != PlaybackQueue::Off, juce::dontSendNotification);
     repeatBtn.getProperties().set ("rememberRepeatOne", queue.repeat == PlaybackQueue::One);
     RememberUI::iconButton (repeatBtn, queue.repeat == PlaybackQueue::Single ? "repeat-single" : "repeat",
-                            "Repeat: " + juce::String (names[mode]));
+                            RememberUI::tr ("Repeat: ") + juce::String (names[mode]));
     repeatBtn.setDescription (descriptions[mode]);
-    repeatBtn.setTooltip (RememberUI::shortcutTooltip (repeatBtn.getTitle(), "L", juce::String (descriptions[mode]) + ". Left-click cycles modes; right-click chooses a mode."));
+    repeatBtn.setTooltip (RememberUI::shortcutTooltip (repeatBtn.getTitle(), "L", juce::String (descriptions[mode]) + RememberUI::tr (". Left-click cycles modes; right-click chooses a mode.")));
     repeatBtn.repaint();
 }
 
@@ -986,12 +986,12 @@ class MetronomeVolume final : public juce::Component
 public:
     MetronomeVolume (double value, std::function<void(double, bool)> update)
     {
-        label.setText ("Metronome volume", juce::dontSendNotification);
+        label.setText (RememberUI::tr ("Metronome volume"), juce::dontSendNotification);
         label.setFont (RememberUI::font (13, true));
-        RememberUI::bindColour (label, juce::Label::textColourId, Pal::Text); addAndMakeVisible (label);
+        RememberUI::bindColour (label, RememberUI::Label::textColourId, Pal::Text); addAndMakeVisible (label);
         slider.setSliderStyle (juce::Slider::LinearHorizontal); slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 24);
         slider.setRange (0, 100, 1); slider.setValue (value * 100, juce::dontSendNotification); slider.setTextValueSuffix ("%");
-        slider.setTitle ("Metronome volume");
+        slider.setTitle (RememberUI::tr ("Metronome volume"));
         RememberUI::bindColour (slider, juce::Slider::textBoxTextColourId, Pal::Text);
         RememberUI::bindColour (slider, juce::Slider::textBoxBackgroundColourId, Pal::Content);
         RememberUI::bindColour (slider, juce::Slider::textBoxOutlineColourId, Pal::Border);
@@ -1005,7 +1005,7 @@ public:
     void resized() override { auto area = getLocalBounds().reduced (12); label.setBounds (area.removeFromTop (22)); slider.setBounds (area); }
 private:
     RememberUI::Style style { *this };
-    juce::Label label;
+    RememberUI::Label label;
     juce::Slider slider;
 };
 }
@@ -1024,8 +1024,8 @@ void WaveformPlayerComponent::showMetronomeVolume()
 void WaveformPlayerComponent::showRepeatOptions()
 {
     juce::PopupMenu menu;
-    const char* labels[] = { "Off (play queue once)", "All (repeat queue)", "One (repeat selected preview)",
-                            "Single (play once, then stop)" };
+    const juce::String labels[] = { RememberUI::tr ("Off (play queue once)"), RememberUI::tr ("All (repeat queue)"), RememberUI::tr ("One (repeat selected preview)"),
+                            RememberUI::tr ("Single (play once, then stop)") };
     for (int mode = 0; mode < 4; ++mode) menu.addItem (mode + 1, labels[mode], true, (int) queue.repeat == mode);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&repeatBtn),
         [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this)] (int choice)
@@ -1075,7 +1075,7 @@ void WaveformPlayerComponent::setMuted (bool value)
     muteBtn.setToggleState (value, juce::dontSendNotification);
     if (! value && getVolume() == 0)
         volumeSlider.setValue ((double) volumeSlider.getProperties().getWithDefault ("rememberAudibleVolume", 1.0), juce::dontSendNotification);
-    RememberUI::iconButton (muteBtn, value ? "mute" : "volume", value ? "Unmute volume" : "Mute volume");
+    RememberUI::iconButton (muteBtn, value ? "mute" : "volume", value ? RememberUI::tr ("Unmute volume") : RememberUI::tr ("Mute volume"));
     muteBtn.setTooltip (RememberUI::shortcutTooltip (muteBtn.getTitle(), "M"));
     applyOutputGain(); savePlaybackPreferences();
 }
@@ -1089,12 +1089,12 @@ void WaveformPlayerComponent::applyOutputGain()
 {
     const auto volume = volumeSlider.getValue();
     if (volume > 0) volumeSlider.getProperties().set ("rememberAudibleVolume", volume);
-    RememberUI::iconButton (muteBtn, isMuted() || volume == 0 ? "mute" : "volume", isMuted() || volume == 0 ? "Unmute volume" : "Mute volume");
+    RememberUI::iconButton (muteBtn, isMuted() || volume == 0 ? "mute" : "volume", isMuted() || volume == 0 ? RememberUI::tr ("Unmute volume") : RememberUI::tr ("Mute volume"));
     muteBtn.setTooltip (RememberUI::shortcutTooltip (muteBtn.getTitle(), "M"));
     const auto gain = normalize && waveform ? waveform->normalizationGain : 1.0f;
     metronome.setMasterGain (isMuted() ? 0.0f : (float) (volume * volume));
     transport.setGain (isMuted() ? 0.0f : (float) (volume * volume) * gain);
-    normalizeBtn.setTooltip (currentEntry.auditionReader ? "Live MIDI uses its instrument level" : normalize && ! currentEntry.auditionReader && ! waveform ? "Measuring preview loudness..." : "Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)");
+    normalizeBtn.setTooltip (currentEntry.auditionReader ? RememberUI::tr ("Live MIDI uses its instrument level") : normalize && ! currentEntry.auditionReader && ! waveform ? RememberUI::tr ("Measuring preview loudness...") : RememberUI::tr ("Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)"));
 }
 void WaveformPlayerComponent::savePlaybackPreferences()
 {
@@ -1106,13 +1106,13 @@ void WaveformPlayerComponent::savePlaybackPreferences()
     o.setProperty ("shufflePlayback", queue.shuffle); o.setProperty ("repeatPlayback", (int) queue.repeat); o.setProperty ("autoplaySelection", autoplay);
     auto safe = juce::Component::SafePointer<WaveformPlayerComponent> (this);
     ProjectScanner::editAsync ([patch] { return LibraryStore::patchJson (LibraryStore::configFile(), patch, true); }, [safe] (juce::Result result)
-    { if (safe != nullptr && result.failed()) { safe->pathLabel.setText ("Cannot save playback preferences", juce::dontSendNotification); safe->pathLabel.setDescription (result.getErrorMessage()); } });
+    { if (safe != nullptr && result.failed()) { safe->pathLabel.setText (RememberUI::tr ("Cannot save playback preferences"), juce::dontSendNotification); safe->pathLabel.setDescription (RememberUI::diagnostic (result.getErrorMessage())); } });
 }
 void WaveformPlayerComponent::showPlaybackOptions()
 {
     juce::PopupMenu menu;
-    menu.addItem (1, "Play when selecting a recording", true, autoplay);
-    menu.addItem (2, "Normalize preview volume", true, normalize);
+    menu.addItem (1, RememberUI::tr ("Play when selecting a recording"), true, autoplay);
+    menu.addItem (2, RememberUI::tr ("Normalize preview volume"), true, normalize);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&playbackOptionsBtn), [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this)] (int r)
     {
         if (safe == nullptr) return;
@@ -1136,8 +1136,8 @@ void WaveformPlayerComponent::setSeparateWaveformChannels (bool value)
 void WaveformPlayerComponent::showWaveformOptions()
 {
     juce::PopupMenu menu;
-    menu.addItem (1, "Colorful waveforms", true, hasColorfulWaveforms());
-    menu.addItem (2, "Separate L/R channels", true, hasSeparateWaveformChannels());
+    menu.addItem (1, RememberUI::tr ("Colorful waveforms"), true, hasColorfulWaveforms());
+    menu.addItem (2, RememberUI::tr ("Separate L/R channels"), true, hasSeparateWaveformChannels());
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(),
         [safe = juce::Component::SafePointer<WaveformPlayerComponent> (this)] (int choice)
         {

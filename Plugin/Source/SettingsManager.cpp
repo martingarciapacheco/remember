@@ -3,6 +3,7 @@
 #include "../../Shared/BackgroundRetirement.h"
 #include "../../Shared/AppearanceSettings.h"
 #include "../../Shared/ZoomSettings.h"
+#include "../../Shared/LanguageSettings.h"
 
 namespace
 {
@@ -78,6 +79,16 @@ std::shared_ptr<SettingsManager::Request> launchSettingsTask (SettingsTask::Work
     if (task->start()) BackgroundRetirement::retire (task);
     return request;
 }
+}
+
+std::shared_ptr<SettingsManager::Request> SettingsManager::setLanguageAsync (RememberUI::Language value) const
+{
+    const auto config = configFile;
+    return launchSettingsTask ([config, value] (Request& request)
+    {
+        request.result = LanguageSettings::save (value);
+        if (request.result.wasOk()) populateSettingsRequest (request, config);
+    });
 }
 
 SettingsManager& SettingsManager::getInstance()

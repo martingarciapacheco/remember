@@ -26,12 +26,12 @@ public:
         g.fillAll (RememberUI::colour (Pal::BgDeep));
         g.setColour (RememberUI::colour (Pal::Text));
         g.setFont (RememberUI::font (22, true));
-        g.drawText ("Create smart folder", 20, 12, getWidth() - 40, 32, juce::Justification::centredLeft);
+        g.drawText (RememberUI::tr ("Create smart folder"), 20, 12, getWidth() - 40, 32, juce::Justification::centredLeft);
         g.setFont (RememberUI::font (13));
-        g.drawText ("Conditions", 20, 54, getWidth() - 40, 20, juce::Justification::centredLeft);
+        g.drawText (RememberUI::tr ("Conditions"), 20, 54, getWidth() - 40, 20, juce::Justification::centredLeft);
         g.setColour (RememberUI::colour (Pal::Subtext));
         g.setFont (RememberUI::font (12));
-        g.drawText ("Review and name the folder on the next screen.", 20, 122, getWidth() - 40, 20,
+        g.drawText (RememberUI::tr ("Review and name the folder on the next screen."), 20, 122, getWidth() - 40, 20,
             juce::Justification::centredLeft);
     }
     void resized() override
@@ -50,7 +50,7 @@ private:
         choose (useActive);
     }
     RememberUI::Style style { *this };
-    juce::TextButton active { "Use active filters" }, fresh { "Create a new filter" }, cancel { "Cancel" };
+    RememberUI::TextButton active { RememberUI::tr ("Use active filters") }, fresh { RememberUI::tr ("Create a new filter") }, cancel { RememberUI::tr ("Cancel") };
     std::function<void (bool)> onChoose;
 };
 
@@ -61,7 +61,7 @@ public:
         : CustomComponent (true), name (std::move (label)), onContext (std::move (context))
     {
         setTitle (name);
-        setDescription ("Saved filter. Right-click to delete.");
+        setDescription (RememberUI::tr ("Saved filter. Right-click to delete."));
     }
     void getIdealSize (int& width, int& height) override
     {
@@ -113,7 +113,7 @@ bool validDate (const juce::String& text)
 void report (juce::Component::SafePointer<ProjectListComponent> safe, juce::Result result)
 {
     if (safe != nullptr && result.failed()) juce::AlertWindow::showMessageBoxAsync (
-        juce::AlertWindow::WarningIcon, "Library action failed", result.getErrorMessage());
+        juce::AlertWindow::WarningIcon, RememberUI::tr ("Library action failed"), RememberUI::diagnostic (result.getErrorMessage()));
 }
 }
 
@@ -121,21 +121,21 @@ void ProjectListComponent::configureWorkflow()
 {
     for (auto* button : { &filtersBtn, &collectionBtn, &clearFiltersBtn }) addAndMakeVisible (*button);
     for (auto* combo : { &collectionCombo, &sortCombo, &viewCombo }) addAndMakeVisible (*combo);
-    filtersBtn.setTitle ("Filter projects"); filtersBtn.onClick = [this] { showFilters(); };
-    collectionBtn.setTitle ("Save or remove smart collection"); collectionBtn.setTooltip ("Save the current filters as a smart collection");
+    filtersBtn.setTitle (RememberUI::tr ("Filter projects")); filtersBtn.onClick = [this] { showFilters(); };
+    collectionBtn.setTitle (RememberUI::tr ("Save or remove smart collection")); collectionBtn.setTooltip (RememberUI::tr ("Save the current filters as a smart collection"));
     collectionBtn.onClick = [this] { saveCollection(); };
-    clearFiltersBtn.setTitle ("Clear filters");
-    clearFiltersBtn.setTooltip ("Reset search, favorites, folder and project filters");
+    clearFiltersBtn.setTitle (RememberUI::tr ("Clear filters"));
+    clearFiltersBtn.setTooltip (RememberUI::tr ("Reset search, favorites, folder and project filters"));
     clearFiltersBtn.onClick = [this] { clearFilters(); };
-    sortCombo.setTitle ("Sort projects");
-    sortCombo.addItemList ({ "Latest capture", "Oldest capture", "Name", "BPM ascending", "BPM descending" }, 1);
+    sortCombo.setTitle (RememberUI::tr ("Sort projects"));
+    sortCombo.addItemList ({ RememberUI::tr ("Latest capture"), RememberUI::tr ("Oldest capture"), RememberUI::tr ("Name"), RememberUI::tr ("BPM ascending"), RememberUI::tr ("BPM descending") }, 1);
     sortCombo.setSelectedId (1, juce::dontSendNotification);
     sortCombo.onChange = [this] { filter.sort = sortCombo.getSelectedId(); applyFilter(); };
-    viewCombo.setTitle ("Library view");
-    viewCombo.addItemList ({ "All recordings", "Missing projects", "Trash (30 days)" }, 1);
+    viewCombo.setTitle (RememberUI::tr ("Library view"));
+    viewCombo.addItemList ({ RememberUI::tr ("All recordings"), RememberUI::tr ("Missing projects"), RememberUI::tr ("Trash (30 days)") }, 1);
     viewCombo.setSelectedId (1, juce::dontSendNotification);
     viewCombo.onChange = [this] { view = viewCombo.getSelectedId(); publishLibrary(); };
-    collectionCombo.setTitle ("Smart collections");
+    collectionCombo.setTitle (RememberUI::tr ("Smart collections"));
     collectionCombo.onChange = [this]
     {
         const auto at = collectionCombo.getSelectedId() - 2;
@@ -163,32 +163,32 @@ void ProjectListComponent::clearFilters()
 
 void ProjectListComponent::showFilters()
 {
-    auto form = std::make_unique<WorkflowForm> ("Filter projects");
-    form->text ("bpmFrom", "Minimum BPM", filter.bpmFrom > 0 ? juce::String (filter.bpmFrom) : "");
-    form->text ("bpmTo", "Maximum BPM", filter.bpmTo > 0 ? juce::String (filter.bpmTo) : "");
-    form->choice ("key", "Key", keys(), filter.key.isEmpty() ? "Any key" : filter.key);
+    auto form = std::make_unique<WorkflowForm> (RememberUI::tr ("Filter projects"));
+    form->text ("bpmFrom", RememberUI::tr ("Minimum BPM"), filter.bpmFrom > 0 ? juce::String (filter.bpmFrom) : "");
+    form->text ("bpmTo", RememberUI::tr ("Maximum BPM"), filter.bpmTo > 0 ? juce::String (filter.bpmTo) : "");
+    form->choice ("key", RememberUI::tr ("Key"), keys(), filter.key.isEmpty() ? "Any key" : filter.key);
     juce::StringArray daws { "Any DAW" };
     for (const auto& e : allEntries) if (e.daw.isNotEmpty()) daws.addIfNotAlreadyThere (e.daw);
     form->choice ("daw", "DAW", daws, filter.daw.isEmpty() ? "Any DAW" : filter.daw);
-    form->tagText ("tags", "All these tags", filter.tags, ProjectScanner::getAllUniqueTags()).setTooltip ("Comma-separated tags; every tag must match");
+    form->tagText ("tags", RememberUI::tr ("All these tags"), filter.tags, ProjectScanner::getAllUniqueTags()).setTooltip (RememberUI::tr ("Comma-separated tags; every tag must match"));
     auto states = statuses(); states.insert (0, "Any status");
-    form->choice ("status", "Project status", states, filter.status.isEmpty() ? "Any status" : filter.status);
-    auto& fromDate = form->text ("from", "Captured from", filter.dateFrom); fromDate.setTooltip ("YYYY-MM-DD; leave empty for any date");
+    form->choice ("status", RememberUI::tr ("Project status"), states, filter.status.isEmpty() ? "Any status" : filter.status);
+    auto& fromDate = form->text ("from", RememberUI::tr ("Captured from"), filter.dateFrom); fromDate.setTooltip (RememberUI::tr ("YYYY-MM-DD; leave empty for any date"));
     RememberUI::placeholder (fromDate, "YYYY-MM-DD", Pal::Subtext);
-    auto& toDate = form->text ("to", "Captured until", filter.dateTo); toDate.setTooltip ("YYYY-MM-DD; inclusive");
+    auto& toDate = form->text ("to", RememberUI::tr ("Captured until"), filter.dateTo); toDate.setTooltip (RememberUI::tr ("YYYY-MM-DD; inclusive"));
     RememberUI::placeholder (toDate, "YYYY-MM-DD", Pal::Subtext);
-    form->toggle ("missing", "Project file not located", filter.missing);
-    form->toggle ("untagged", "No tags yet", filter.untagged);
-    form->information ("Search words, favorites and the selected folder combine with these filters. Save with + to create a smart collection.");
+    form->toggle ("missing", RememberUI::tr ("Project file not located"), filter.missing);
+    form->toggle ("untagged", RememberUI::tr ("No tags yet"), filter.untagged);
+    form->information (RememberUI::tr ("Search words, favorites and the selected folder combine with these filters. Save with + to create a smart collection."));
     form->onAccept = [safe = juce::Component::SafePointer<ProjectListComponent> (this)] (WorkflowForm& f)
     {
-        if (safe == nullptr) return juce::Result::fail ("Library was closed");
+        if (safe == nullptr) return juce::Result::fail (RememberUI::tr ("Library was closed"));
         const auto lo = f.textValue ("bpmFrom"), hi = f.textValue ("bpmTo");
         const auto from = f.textValue ("from"), to = f.textValue ("to");
         if (! validNumber (lo, 1, 999) || ! validNumber (hi, 1, 999) || (lo.isNotEmpty() && hi.isNotEmpty() && lo.getDoubleValue() > hi.getDoubleValue()))
-            return juce::Result::fail ("Enter a valid BPM range between 1 and 999");
+            return juce::Result::fail (RememberUI::tr ("Enter a valid BPM range between 1 and 999"));
         if (! validDate (from) || ! validDate (to) || (from.isNotEmpty() && to.isNotEmpty() && from > to))
-            return juce::Result::fail ("Use valid dates in YYYY-MM-DD order");
+            return juce::Result::fail (RememberUI::tr ("Use valid dates in YYYY-MM-DD order"));
         auto& filter = safe->filter;
         filter.bpmFrom = lo.getDoubleValue(); filter.bpmTo = hi.getDoubleValue();
         filter.key = f.choiceValue ("key") == "Any key" ? "" : f.choiceValue ("key");
@@ -203,8 +203,8 @@ void ProjectListComponent::showFilters()
 
 void ProjectListComponent::showSmartFolderEditor (LibraryFilter filter, juce::String id, juce::String name)
 {
-    auto form = std::make_unique<WorkflowForm> (id.isEmpty() ? "Create smart folder" : "Edit smart folder conditions");
-    form->text ("name", "Folder name", name);
+    auto form = std::make_unique<WorkflowForm> (id.isEmpty() ? RememberUI::tr ("Create smart folder") : RememberUI::tr ("Edit smart folder conditions"));
+    form->text ("name", RememberUI::tr ("Folder name"), name);
     std::vector<LibraryFilter> groups;
     std::function<void (const LibraryFilter&)> flatten = [&] (const LibraryFilter& condition)
     {
@@ -217,35 +217,35 @@ void ProjectListComponent::showSmartFolderEditor (LibraryFilter filter, juce::St
         const auto& filter = groups[i];
         const auto prefix = i == 0 ? juce::String{} : "g" + juce::String ((int) i) + ".";
         auto label = [i] (const juce::String& text) { return i == 0 ? text : text + " (" + juce::String ((int) i + 1) + ")"; };
-        if (i > 0) form->information ("Additional conditions — previews must also match this group.");
-    form->text (prefix + "query", label ("Search"), filter.query);
-    form->toggle (prefix + "favorites", label ("Favorites only"), filter.favorites);
+        if (i > 0) form->information (RememberUI::tr ("Additional conditions — previews must also match this group."));
+    form->text (prefix + "query", label (RememberUI::tr ("Search")), filter.query);
+    form->toggle (prefix + "favorites", label (RememberUI::tr ("Favorites only")), filter.favorites);
     auto paths = filter.folders;
     if (paths.isEmpty() && filter.folder.isNotEmpty()) paths.add (filter.folder);
-    form->text (prefix + "folders", label ("Folders (semicolon separated)"), paths.joinIntoString ("; "));
-    form->text (prefix + "bpmFrom", label ("Minimum BPM"), filter.bpmFrom > 0 ? juce::String (filter.bpmFrom) : "");
-    form->text (prefix + "bpmTo", label ("Maximum BPM"), filter.bpmTo > 0 ? juce::String (filter.bpmTo) : "");
-    form->choice (prefix + "key", label ("Key"), keys(), filter.key.isEmpty() ? "Any key" : filter.key);
+    form->text (prefix + "folders", label (RememberUI::tr ("Folders (semicolon separated)")), paths.joinIntoString ("; "));
+    form->text (prefix + "bpmFrom", label (RememberUI::tr ("Minimum BPM")), filter.bpmFrom > 0 ? juce::String (filter.bpmFrom) : "");
+    form->text (prefix + "bpmTo", label (RememberUI::tr ("Maximum BPM")), filter.bpmTo > 0 ? juce::String (filter.bpmTo) : "");
+    form->choice (prefix + "key", label (RememberUI::tr ("Key")), keys(), filter.key.isEmpty() ? "Any key" : filter.key);
     juce::StringArray daws { "Any DAW" };
     for (const auto& e : allEntries) if (e.daw.isNotEmpty()) daws.addIfNotAlreadyThere (e.daw);
     form->choice (prefix + "daw", label ("DAW"), daws, filter.daw.isEmpty() ? "Any DAW" : filter.daw);
-    form->tagText (prefix + "tags", label ("All these tags"), filter.tags, ProjectScanner::getAllUniqueTags()).setTooltip ("Comma-separated tags; every tag must match");
+    form->tagText (prefix + "tags", label (RememberUI::tr ("All these tags")), filter.tags, ProjectScanner::getAllUniqueTags()).setTooltip (RememberUI::tr ("Comma-separated tags; every tag must match"));
     auto states = statuses(); states.insert (0, "Any status");
-    form->choice (prefix + "status", label ("Project status"), states, filter.status.isEmpty() ? "Any status" : filter.status);
-    auto& fromDate = form->text (prefix + "from", label ("Captured from"), filter.dateFrom); fromDate.setTooltip ("YYYY-MM-DD; leave empty for any date");
+    form->choice (prefix + "status", label (RememberUI::tr ("Project status")), states, filter.status.isEmpty() ? "Any status" : filter.status);
+    auto& fromDate = form->text (prefix + "from", label (RememberUI::tr ("Captured from")), filter.dateFrom); fromDate.setTooltip (RememberUI::tr ("YYYY-MM-DD; leave empty for any date"));
     RememberUI::placeholder (fromDate, "YYYY-MM-DD", Pal::Subtext);
-    auto& toDate = form->text (prefix + "to", label ("Captured until"), filter.dateTo); toDate.setTooltip ("YYYY-MM-DD; inclusive");
+    auto& toDate = form->text (prefix + "to", label (RememberUI::tr ("Captured until")), filter.dateTo); toDate.setTooltip (RememberUI::tr ("YYYY-MM-DD; inclusive"));
     RememberUI::placeholder (toDate, "YYYY-MM-DD", Pal::Subtext);
-    form->toggle (prefix + "missing", label ("Project file not located"), filter.missing);
-    form->toggle (prefix + "untagged", label ("No tags yet"), filter.untagged);
+    form->toggle (prefix + "missing", label (RememberUI::tr ("Project file not located")), filter.missing);
+    form->toggle (prefix + "untagged", label (RememberUI::tr ("No tags yet")), filter.untagged);
     }
-    form->information ("Matching previews appear automatically as the library changes. Folder conditions include their subfolders; leave empty for all folders.");
+    form->information (RememberUI::tr ("Matching previews appear automatically as the library changes. Folder conditions include their subfolders; leave empty for all folders."));
     form->onAccept = [safe = juce::Component::SafePointer<ProjectListComponent> (this), groups, id] (WorkflowForm& f) mutable
     {
-        if (safe == nullptr) return juce::Result::fail ("Library was closed");
+        if (safe == nullptr) return juce::Result::fail (RememberUI::tr ("Library was closed"));
         const auto name = f.textValue ("name");
-        if (name.isEmpty()) return juce::Result::fail ("Enter a folder name");
-        if (groups.size() > 64) return juce::Result::fail ("Use no more than 64 condition groups");
+        if (name.isEmpty()) return juce::Result::fail (RememberUI::tr ("Enter a folder name"));
+        if (groups.size() > 64) return juce::Result::fail (RememberUI::tr ("Use no more than 64 condition groups"));
         for (size_t i = 0; i < groups.size(); ++i)
         {
             auto& filter = groups[i];
@@ -253,9 +253,9 @@ void ProjectListComponent::showSmartFolderEditor (LibraryFilter filter, juce::St
         const auto lo = f.textValue (prefix + "bpmFrom"), hi = f.textValue (prefix + "bpmTo");
         const auto from = f.textValue (prefix + "from"), to = f.textValue (prefix + "to");
         if (! validNumber (lo, 1, 999) || ! validNumber (hi, 1, 999) || (lo.isNotEmpty() && hi.isNotEmpty() && lo.getDoubleValue() > hi.getDoubleValue()))
-            return juce::Result::fail ("Enter a valid BPM range between 1 and 999");
+            return juce::Result::fail (RememberUI::tr ("Enter a valid BPM range between 1 and 999"));
         if (! validDate (from) || ! validDate (to) || (from.isNotEmpty() && to.isNotEmpty() && from > to))
-            return juce::Result::fail ("Use valid dates in YYYY-MM-DD order");
+            return juce::Result::fail (RememberUI::tr ("Use valid dates in YYYY-MM-DD order"));
         filter.query = f.textValue (prefix + "query"); filter.favorites = f.toggleValue (prefix + "favorites");
         filter.folder.clear(); filter.folders = juce::StringArray::fromTokens (f.textValue (prefix + "folders"), ";", "");
         filter.folders.trim(); filter.folders.removeEmptyStrings(); filter.folders.removeDuplicates (false);
@@ -285,7 +285,7 @@ void ProjectListComponent::showSmartFolderEditor (LibraryFilter filter, juce::St
                     {
                         bool found = false;
                         for (auto& old : items) if (old.getProperty ("id", "").toString() == id) { old = item; found = true; break; }
-                        if (! found) return juce::Result::fail ("This smart folder no longer exists");
+                        if (! found) return juce::Result::fail (RememberUI::tr ("This smart folder no longer exists"));
                     }
                     config.setProperty ("smartCollections", items); return juce::Result::ok();
                 }, true);
@@ -294,9 +294,9 @@ void ProjectListComponent::showSmartFolderEditor (LibraryFilter filter, juce::St
         if (id.isEmpty()) persist();
         else RememberUI::showMessageBox (
             juce::MessageBoxOptions().withAssociatedComponent (safe.getComponent()).withIconType (juce::MessageBoxIconType::QuestionIcon)
-                .withTitle ("Change smart folder conditions?")
-                .withMessage ("Save the new conditions for \"" + name + "\"? Matching previews will update automatically.")
-                .withButton ("Change conditions").withButton ("Cancel"),
+                .withTitle (RememberUI::tr ("Change smart folder conditions?"))
+                .withMessage (RememberUI::format ("Save the new conditions for \"{name}\"? Matching previews will update automatically.", { { "{name}", name } }))
+                .withButton (RememberUI::tr ("Change conditions")).withButton (RememberUI::tr ("Cancel")),
             [safe, persist] (int result) { if (safe != nullptr && result == 1) persist(); });
         return juce::Result::ok();
     };
@@ -321,7 +321,7 @@ void ProjectListComponent::createSmartFolder()
         juce::MessageManager::callAsync ([safe, initial] { if (safe != nullptr) safe->showSmartFolderEditor (initial); });
     });
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Create smart folder";
+    options.dialogTitle = RememberUI::tr ("Create smart folder");
     options.content.setOwned (form.release()); options.componentToCentreAround = this;
     options.dialogBackgroundColour = RememberUI::colour (Pal::BgDeep);
     options.escapeKeyTriggersCloseButton = true;
@@ -368,13 +368,13 @@ void ProjectListComponent::refreshSmartFolderScope()
             if (item.getProperty ("id", "").toString() == activeSmartFolder)
             {
                 smartFolderScope = LibraryFilter::fromJson (item.getProperty ("filter", {}));
-                RememberUI::placeholder (searchBox, "Search within " + item.getProperty ("name", "smart folder").toString(), Pal::Subtext);
-                clearFiltersBtn.setTooltip ("Reset search, favorites and project filters within this smart folder");
+                RememberUI::placeholder (searchBox, RememberUI::tr ("Search within ") + item.getProperty ("name", juce::String (RememberUI::tr ("smart folder"))).toString(), Pal::Subtext);
+                clearFiltersBtn.setTooltip (RememberUI::tr ("Reset search, favorites and project filters within this smart folder"));
                 return;
             }
     activeSmartFolder.clear(); smartFolderScope = {};
-    RememberUI::placeholder (searchBox, "Search projects, tags, key...", Pal::Subtext);
-    clearFiltersBtn.setTooltip ("Reset search, favorites, folder and project filters");
+    RememberUI::placeholder (searchBox, RememberUI::tr ("Search projects, tags, key..."), Pal::Subtext);
+    clearFiltersBtn.setTooltip (RememberUI::tr ("Reset search, favorites, folder and project filters"));
 }
 
 void ProjectListComponent::configureCollectionMenu()
@@ -399,7 +399,7 @@ void ProjectListComponent::configureCollectionMenu()
                     juce::SharedResourcePointer<RememberUI::LookAndFeel> theme;
                     juce::PopupMenu menu;
                     menu.setLookAndFeel (&theme.get());
-                    menu.addItem (1, "Delete saved filter");
+                    menu.addItem (1, RememberUI::tr ("Delete saved filter"));
                     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&safe->collectionCombo)
                         .withTargetScreenArea ({ position.x, position.y, 1, 1 }), [safe, id, theme] (int result)
                         {
@@ -427,11 +427,11 @@ void ProjectListComponent::removeCollection (const juce::String& id)
 
 void ProjectListComponent::saveCollection()
 {
-    juce::PopupMenu menu; menu.addItem (1, "Save current filters...");
+    juce::PopupMenu menu; menu.addItem (1, RememberUI::tr ("Save current filters..."));
     const auto at = collectionCombo.getSelectedId() - 2;
     const auto* values = collections.getArray();
     const auto selectedId = values && at >= 0 && at < values->size() ? (*values)[at].getProperty ("id", "").toString() : juce::String{};
-    menu.addItem (2, "Remove selected collection", selectedId.isNotEmpty());
+    menu.addItem (2, RememberUI::tr ("Remove selected collection"), selectedId.isNotEmpty());
     auto safe = juce::Component::SafePointer<ProjectListComponent> (this);
     auto selectedFilter = filter; selectedFilter.query = searchBox.getText(); selectedFilter.folder = folderFilter;
     selectedFilter.folders = folderFilters; selectedFilter.favorites = showFavOnly;
@@ -442,12 +442,12 @@ void ProjectListComponent::saveCollection()
         {
             safe->removeCollection (selectedId); return;
         }
-        auto form = std::make_unique<WorkflowForm> ("Save smart collection"); form->setSize (500, 300);
-        form->text ("name", "Collection name", "");
-        form->information ("This saves your filters. Matching recordings update automatically as your library changes.");
+        auto form = std::make_unique<WorkflowForm> (RememberUI::tr ("Save smart collection")); form->setSize (500, 300);
+        form->text ("name", RememberUI::tr ("Collection name"), "");
+        form->information (RememberUI::tr ("This saves your filters. Matching recordings update automatically as your library changes."));
         form->onAccept = [safe, selectedFilter] (WorkflowForm& f)
         {
-            const auto name = f.textValue ("name"); if (name.isEmpty()) return juce::Result::fail ("Enter a collection name");
+            const auto name = f.textValue ("name"); if (name.isEmpty()) return juce::Result::fail (RememberUI::tr ("Enter a collection name"));
             ProjectScanner::editAsync ([name, selectedFilter]
             {
                 return LibraryStore::updateJson (LibraryStore::configFile(), [name, selectedFilter] (juce::DynamicObject& config)
@@ -468,19 +468,19 @@ void ProjectListComponent::saveCollection()
 void ProjectListComponent::editDetails (ProjectEntry entry)
 {
     if (entry.trashed || entry.storageError.isNotEmpty()) return;
-    auto form = std::make_unique<WorkflowForm> ("Project details");
+    auto form = std::make_unique<WorkflowForm> (RememberUI::tr ("Project details"));
     form->information (entry.name);
-    form->choice ("status", "Status", statuses(), entry.status);
-    form->text ("notes", "Notes", entry.notes, true);
-    form->text ("bpm", "Manual BPM", entry.bpmOverride > 0 ? juce::String (entry.bpmOverride) : "").setTooltip ("Leave empty to use DAW/analyzed tempo");
+    form->choice ("status", RememberUI::tr ("Status"), statuses(), entry.status);
+    form->text ("notes", RememberUI::tr ("Notes"), entry.notes, true);
+    form->text ("bpm", RememberUI::tr ("Manual BPM"), entry.bpmOverride > 0 ? juce::String (entry.bpmOverride) : "").setTooltip (RememberUI::tr ("Leave empty to use DAW/analyzed tempo"));
     form->musicalKey (entry.keyOverride);
-    form->information ("Current BPM: " + juce::String (entry.bpm, 1) + " (" + entry.bpmSource + ") | Key: " + entry.key
-        + (entry.keyOverride.isEmpty() ? " | analysis score " + juce::String (entry.keyConfidence, 2) + " (heuristic)" : " | manual"));
-    form->toggle ("locked", "Lock this project's preview", entry.previewLocked);
-    form->information ("Manual BPM/key, notes and status survive new recordings. Clear manual fields to return to automatic analysis.");
+    form->information (RememberUI::tr ("Current BPM: ") + juce::String (entry.bpm, 1) + " (" + entry.bpmSource + RememberUI::tr (") | Key: ") + entry.key
+        + (entry.keyOverride.isEmpty() ? RememberUI::tr (" | analysis score ") + juce::String (entry.keyConfidence, 2) + RememberUI::tr (" (heuristic)") : RememberUI::tr (" | manual")));
+    form->toggle ("locked", RememberUI::tr ("Lock this project's preview"), entry.previewLocked);
+    form->information (RememberUI::tr ("Manual BPM/key, notes and status survive new recordings. Clear manual fields to return to automatic analysis."));
     form->onAccept = [safe = juce::Component::SafePointer<ProjectListComponent> (this), entry] (WorkflowForm& f) mutable
     {
-        const auto bpm = f.textValue ("bpm"); if (! validNumber (bpm, 1, 999)) return juce::Result::fail ("Enter BPM between 1 and 999, or leave empty");
+        const auto bpm = f.textValue ("bpm"); if (! validNumber (bpm, 1, 999)) return juce::Result::fail (RememberUI::tr ("Enter BPM between 1 and 999, or leave empty"));
         entry.status = f.choiceValue ("status"); entry.notes = f.textValue ("notes"); entry.bpmOverride = bpm.getDoubleValue();
         entry.keyOverride = f.manualKeyValue(); entry.previewLocked = f.toggleValue ("locked");
         ProjectScanner::editAsync ([entry] { return entry.save ({ "status", "notes", "bpmOverride", "keyOverride", "previewLocked" }); },
@@ -509,24 +509,24 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
     for (const auto& item : selection) if (item.metadataFile == clicked.metadataFile) containsClicked = true;
     if (! containsClicked) selection = { clicked };
     juce::PopupMenu menu;
-    menu.addItem (12, "Play preview", ! clicked.trashed && clicked.storageError.isEmpty());
-    menu.addItem (13, "Rename recording (R)", ! clicked.trashed && clicked.storageError.isEmpty() && (clicked.pending || clicked.projectPath.isEmpty()));
-    menu.addItem (14, "Open in DAW", clicked.projectAvailable && ! clicked.trashed);
-    menu.addItem (15, "Show project file in Explorer", clicked.projectAvailable && ! clicked.pending && ! clicked.trashed);
+    menu.addItem (12, RememberUI::tr ("Play preview"), ! clicked.trashed && clicked.storageError.isEmpty());
+    menu.addItem (13, RememberUI::tr ("Rename recording (R)"), ! clicked.trashed && clicked.storageError.isEmpty() && (clicked.pending || clicked.projectPath.isEmpty()));
+    menu.addItem (14, RememberUI::tr ("Open in DAW"), clicked.projectAvailable && ! clicked.trashed);
+    menu.addItem (15, RememberUI::tr ("Show project file in Explorer"), clicked.projectAvailable && ! clicked.pending && ! clicked.trashed);
     const bool canRecover = ! clicked.trashed && (! clicked.pending || clicked.pendingOwner != LibraryStore::OwnerState::Active);
-    menu.addItem (16, "Check and repair recording", canRecover);
-    if (clicked.pending) menu.addItem (17, "Keep recording", canRecover && clicked.storageError.isEmpty());
-    menu.addItem (18, "Compact preview audio...", PreviewCompactionActions::eligible (clicked));
+    menu.addItem (16, RememberUI::tr ("Check and repair recording"), canRecover);
+    if (clicked.pending) menu.addItem (17, RememberUI::tr ("Keep recording"), canRecover && clicked.storageError.isEmpty());
+    menu.addItem (18, RememberUI::tr ("Compact preview audio..."), PreviewCompactionActions::eligible (clicked));
     menu.addSeparator();
     const bool selected = ! selection.isEmpty(), trash = view == 3;
-    menu.addItem (1, "Project details", ! trash && clicked.storageError.isEmpty());
-    menu.addItem (2, "Add tags...", selected && ! trash); menu.addItem (3, "Remove tags...", selected && ! trash);
-    menu.addItem (4, "Add to folder...", selected && ! trash); menu.addItem (5, "Remove from folder...", selected && ! trash);
-    menu.addItem (6, "Mark as favorite", selected && ! trash); menu.addItem (7, "Remove favorite", selected && ! trash);
-    menu.addItem (8, "Set project status...", selected && ! trash); menu.addSeparator();
-    menu.addItem (9, trash ? "Restore selected" : "Move to trash (30 days)", selected);
-    menu.addSeparator(); menu.addItem (10, "Clear filters");
-    menu.addItem (11, "Undo preview change (Ctrl+Z)", ProjectScanner::canUndoOrganization (ProjectScanner::UndoContext::Previews));
+    menu.addItem (1, RememberUI::tr ("Project details"), ! trash && clicked.storageError.isEmpty());
+    menu.addItem (2, RememberUI::tr ("Add tags..."), selected && ! trash); menu.addItem (3, RememberUI::tr ("Remove tags..."), selected && ! trash);
+    menu.addItem (4, RememberUI::tr ("Add to folder..."), selected && ! trash); menu.addItem (5, RememberUI::tr ("Remove from folder..."), selected && ! trash);
+    menu.addItem (6, RememberUI::tr ("Mark as favorite"), selected && ! trash); menu.addItem (7, RememberUI::tr ("Remove favorite"), selected && ! trash);
+    menu.addItem (8, RememberUI::tr ("Set project status..."), selected && ! trash); menu.addSeparator();
+    menu.addItem (9, trash ? RememberUI::tr ("Restore selected") : RememberUI::tr ("Move to trash (30 days)"), selected);
+    menu.addSeparator(); menu.addItem (10, RememberUI::tr ("Clear filters"));
+    menu.addItem (11, RememberUI::tr ("Undo preview change (Ctrl+Z)"), ProjectScanner::canUndoOrganization (ProjectScanner::UndoContext::Previews));
     auto safe = juce::Component::SafePointer<ProjectListComponent> (this);
     const auto play = row->onPlay, rename = row->onRenameRequested, open = row->onOpenInDaw;
     const auto recover = row->onRecover;
@@ -572,9 +572,9 @@ void ProjectListComponent::compactRecording (ProjectEntry entry)
             }, [safe, summary] (juce::Result result)
             {
                 if (safe == nullptr) return;
-                PreviewCompactionActions::show (juce::MessageBoxOptions().withTitle ("Preview compaction")
-                    .withAssociatedComponent (safe.getComponent()).withButton ("OK").withMessage (
-                    result.failed() ? result.getErrorMessage() : summary->text() + "\n" + summary->errors.joinIntoString ("\n")));
+                PreviewCompactionActions::show (juce::MessageBoxOptions().withTitle (RememberUI::tr ("Preview compaction"))
+                    .withAssociatedComponent (safe.getComponent()).withButton (RememberUI::tr ("OK")).withMessage (
+                    result.failed() ? RememberUI::diagnostic (result.getErrorMessage()) : summary->text() + "\n" + summary->errors.joinIntoString ("\n")));
             });
         });
 }
@@ -610,21 +610,21 @@ void ProjectListComponent::bulkEdit (juce::Array<ProjectEntry> entries, juce::St
                     }
                     result = entry.save (intents);
                 }
-                if (result.failed()) failures.add (entry.name + ": " + result.getErrorMessage());
+                if (result.failed()) failures.add (entry.name + ": " + RememberUI::diagnostic (result.getErrorMessage()));
             }
             return failures.isEmpty() ? juce::Result::ok() : juce::Result::fail (failures.joinIntoString ("\n"));
         }, [safe] (juce::Result r) { report (safe, r); });
     };
     if (operation == "favorite" || operation == "unfavorite" || operation == "trash") { commit ({}); return; }
-    auto form = std::make_unique<WorkflowForm> ("Edit " + juce::String (entries.size()) + " selected projects"); form->setSize (560, 320);
-    if (operation == "status") form->choice ("value", "Status", statuses(), "Idea");
-    else form->text ("value", operation.contains ("Folder") ? "Folder path" : "Tags (comma-separated)", "");
+    auto form = std::make_unique<WorkflowForm> (RememberUI::tr ("Edit ") + juce::String (entries.size()) + RememberUI::tr (" selected projects")); form->setSize (560, 320);
+    if (operation == "status") form->choice ("value", RememberUI::tr ("Status"), statuses(), "Idea");
+    else form->text ("value", operation.contains ("Folder") ? RememberUI::tr ("Folder path") : RememberUI::tr ("Tags (comma-separated)"), "");
     form->onAccept = [commit, operation] (WorkflowForm& f)
     {
         const auto value = operation == "status" ? f.choiceValue ("value") : f.textValue ("value");
-        if (value.isEmpty()) return juce::Result::fail ("Enter a value");
+        if (value.isEmpty()) return juce::Result::fail (RememberUI::tr ("Enter a value"));
         if (operation.contains ("Folder") && (value.contains ("..") || value.startsWithChar ('/') || value.endsWithChar ('/')))
-            return juce::Result::fail ("Use a folder path such as Ideas/Ambient");
+            return juce::Result::fail (RememberUI::tr ("Use a folder path such as Ideas/Ambient"));
         commit (value); return juce::Result::ok();
     };
     WorkflowForm::launch (std::move (form), this);

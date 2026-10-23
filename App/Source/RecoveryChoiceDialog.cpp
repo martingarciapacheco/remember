@@ -8,23 +8,23 @@ std::unique_ptr<RecoveryChoiceDialog> RecoveryChoiceDialog::create (juce::Array<
 RecoveryChoiceDialog::RecoveryChoiceDialog (juce::Array<LibraryStore::RecoveryChoice> options, Action previewCallback,
                                               Action restoreCallback, bool keep)
     : choices (std::move (options)), previewAction (std::move (previewCallback)), restoreAction (std::move (restoreCallback)),
-      restore (keep ? "Restore and keep" : "Restore selected")
+      restore (keep ? RememberUI::tr ("Restore and keep") : RememberUI::tr ("Restore selected"))
 {
     setSize (620, 330);
     explanation.setFont (RememberUI::font (14.0f));
     details.setFont (RememberUI::font (13.0f));
-    explanation.setText ("Several complete revisions survived. Choose one and listen before restoring it. Cancel keeps every file."
-                          "\nRestoring rechecks the files and the DAW owner; a changed recording requires a new review.", juce::dontSendNotification);
-    RememberUI::bindColour (explanation, juce::Label::textColourId, Pal::Text);
-    RememberUI::bindColour (details, juce::Label::textColourId, Pal::Subtext);
+    explanation.setText (RememberUI::tr ("Several complete revisions survived. Choose one and listen before restoring it. Cancel keeps every file.") +
+        RememberUI::tr ("\nRestoring rechecks the files and the DAW owner; a changed recording requires a new review."), juce::dontSendNotification);
+    RememberUI::bindColour (explanation, RememberUI::Label::textColourId, Pal::Text);
+    RememberUI::bindColour (details, RememberUI::Label::textColourId, Pal::Subtext);
     for (int i = 0; i < choices.size(); ++i)
     {
         const auto& choice = choices.getReference (i);
-        revisions.addItem ((choice.recordedAt.isEmpty() ? "Date unavailable" : choice.recordedAt)
+        revisions.addItem ((choice.recordedAt.isEmpty() ? RememberUI::tr ("Date unavailable") : choice.recordedAt)
             + "  |  " + juce::String (choice.durationSeconds, 2) + " s  |  " + choice.revision.substring (0, 12), i + 1);
     }
-    revisions.setTextWhenNothingSelected ("Choose a complete revision...");
-    revisions.setName ("Recovery revision");
+    revisions.setTextWhenNothingSelected (RememberUI::tr ("Choose a complete revision..."));
+    revisions.setName (RememberUI::tr ("Recovery revision"));
     revisions.onChange = [this] { updateSelection(); };
     preview.onClick = [this]
     {
@@ -41,10 +41,10 @@ RecoveryChoiceDialog::RecoveryChoiceDialog (juce::Array<LibraryStore::RecoveryCh
         if (action) action (choice);
     };
     cancel.onClick = [this] { close(); };
-    RememberUI::bindColour (restore, juce::TextButton::buttonColourId, Pal::Action);
+    RememberUI::bindColour (restore, RememberUI::TextButton::buttonColourId, Pal::Action);
     for (auto* component : std::initializer_list<juce::Component*> { &explanation, &details, &revisions, &preview, &restore, &cancel })
         addAndMakeVisible (*component);
-    restore.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    restore.setColour (RememberUI::TextButton::textColourOffId, juce::Colours::white);
     updateSelection();
     resized();
 }
@@ -54,12 +54,12 @@ void RecoveryChoiceDialog::updateSelection()
     const bool selected = juce::isPositiveAndBelow (index, choices.size());
     restore.setEnabled (selected && (bool) restoreAction);
     preview.setEnabled (selected && (bool) previewAction);
-    if (! selected) { details.setText ("No revision selected. Files have not been changed.", juce::dontSendNotification); return; }
+    if (! selected) { details.setText (RememberUI::tr ("No revision selected. Files have not been changed."), juce::dontSendNotification); return; }
     const auto& choice = choices.getReference (index);
-    const auto text = "Revision: " + choice.revision + "\nRecorded: " + choice.recordedAt
-        + "\nAudio: " + juce::String (choice.durationSeconds, 2) + " s, " + juce::String (choice.channels) + " channel(s)"
-        + "\nSaved analysis: " + (choice.bpm > 0 ? juce::String (choice.bpm, 1) + " BPM" : "BPM unavailable")
-        + ", " + (choice.key.isEmpty() ? "key unavailable" : choice.key);
+    const auto text = RememberUI::tr ("Revision: ") + choice.revision + RememberUI::tr ("\nRecorded: ") + choice.recordedAt
+        + RememberUI::tr ("\nAudio: ") + juce::String (choice.durationSeconds, 2) + " s, " + juce::String (choice.channels) + RememberUI::tr (" channel(s)")
+        + RememberUI::tr ("\nSaved analysis: ") + (choice.bpm > 0 ? juce::String (choice.bpm, 1) + RememberUI::tr (" BPM") : RememberUI::tr ("BPM unavailable"))
+        + ", " + (choice.key.isEmpty() ? RememberUI::tr ("key unavailable") : choice.key);
     details.setText (text, juce::dontSendNotification);
     details.setTooltip (text + "\n" + choice.previewOgg.getFullPathName());
 }

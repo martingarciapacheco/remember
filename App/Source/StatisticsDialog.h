@@ -21,6 +21,7 @@ private:
     void load();
     void publish (std::shared_ptr<ProjectStatistics::Report>);
     void filter();
+    void updateSummary();
     juce::String entryName (size_t) const;
     bool isHidden (size_t index) const { return hiddenEntries[(size_t) category].count (items()[index].identity) != 0; }
     void setHidden (ProjectStatistics::Category, const juce::String&, bool);
@@ -50,13 +51,23 @@ private:
     ProjectStatistics::Category category = ProjectStatistics::Category::Samples;
     bool loaded = false, autoPlay = true, showHidden = false;
     juce::String lastStatus;
-    juce::Label title, summary;
-    juce::TextButton samples { "Samples" }, instruments { "Instruments" }, effects { "Effects" }, refresh { "Refresh" }, info { "Details" }, close { "Close" };
-    juce::TextEditor search;
-    juce::TextButton eye;
+    RememberUI::Label title, summary;
+    RememberUI::TextButton samples { RememberUI::tr ("Samples") }, instruments { RememberUI::tr ("Instruments") }, effects { RememberUI::tr ("Effects") }, refresh { RememberUI::tr ("Refresh") }, info { RememberUI::tr ("Details") }, close { RememberUI::tr ("Close") };
+    RememberUI::TextEditor search;
+    RememberUI::TextButton eye;
     RememberUI::RecordingListBox list;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
+    RememberUI::LanguageCallback languageUpdates { [this]
+    {
+        if (loaded)
+        {
+            const auto selected = list.getSelectedRows();
+            updateSummary(); updateEye(); filter();
+            list.setSelectedRows (selected, juce::dontSendNotification);
+        }
+        repaint();
+    } };
     std::function<void (const juce::String&)> copyLocation = juce::SystemClipboard::copyTextToClipboard;
     std::function<void (const juce::File&)> revealFile = [] (const juce::File& file) { file.revealToUser(); };
     std::function<bool (const juce::StringArray&, bool, juce::Component*, std::function<void()>)> startFileDrag

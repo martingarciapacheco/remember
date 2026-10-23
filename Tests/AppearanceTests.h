@@ -1,9 +1,11 @@
 #pragma once
 #include "../Shared/RememberLookAndFeel.h"
+#include "LanguageTests.h"
 #include <stdexcept>
 
 inline void testAutomaticAppearance()
 {
+    testLocalizedControls();
     const auto originalMode = RememberUI::appearanceMode;
     auto* hostLook = &juce::LookAndFeel::getDefaultLookAndFeel();
     juce::Component app, plugin;

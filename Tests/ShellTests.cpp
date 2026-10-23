@@ -186,8 +186,17 @@ void testShellCase (const juce::File& root, const juce::String& mode)
         } lockedConfig;
         if (mode == "read-locked")
         {
-            lockedConfig.handle = CreateFileW (LibraryStore::configFile().getFullPathName().toWideCharPointer(),
-                                              GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            // The language synchronizer briefly reads this shared file too.
+            // Acquire the fixture lock first, then keep it for the entire failed
+            // geometry read; a transient reader must not fail test preparation.
+            const auto deadline = juce::Time::getMillisecondCounter() + 1500;
+            do
+            {
+                lockedConfig.handle = CreateFileW (LibraryStore::configFile().getFullPathName().toWideCharPointer(),
+                                                  GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (lockedConfig.handle != INVALID_HANDLE_VALUE || GetLastError() != ERROR_SHARING_VIOLATION) break;
+                juce::Thread::sleep (1);
+            } while (juce::Time::getMillisecondCounter() < deadline);
             check (lockedConfig.handle != INVALID_HANDLE_VALUE, "Cannot exclusively lock native shell config");
         }
         auto readsDrained = std::make_shared<bool> (false);

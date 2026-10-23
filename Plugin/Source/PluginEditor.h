@@ -19,6 +19,7 @@ public:
     void applyAppearance (RememberAppearance mode);
     void applyAppearance (bool dark) { applyAppearance (dark ? RememberAppearance::Dark : RememberAppearance::Light); }
     void applyZoom (int percent);
+    void applyLanguage (RememberUI::Language);
 
 private:
     RememberUI::Style uiStyle { *this };
@@ -35,16 +36,16 @@ private:
 
     RememberProcessor& processor;
 
-    juce::TextEditor  nameEditor;
-    juce::Label       bpmKeyLabel;   // "128.0 BPM  •  C major"
-    juce::Label       statusLabel;
-    juce::Label       versionLabel;  // "v1.0.0-beta1 a1b2c3d" in the bottom-right
-    juce::TextButton  settingsButton { "..." };
-    juce::Label       associationLabel;
-    juce::ToggleButton manualToggle { "Capture from any position" }, lockToggle { "Lock preview updates" }, replaceToggle { "Replace the whole preview" };
-    juce::Label captureStatus;
+    RememberUI::TextEditor  nameEditor;
+    RememberUI::Label       bpmKeyLabel;   // "128.0 BPM  •  C major"
+    RememberUI::Label       statusLabel;
+    RememberUI::Label       versionLabel;  // "v1.0.0-beta1 a1b2c3d" in the bottom-right
+    RememberUI::TextButton  settingsButton { "..." };
+    RememberUI::Label       associationLabel;
+    RememberUI::ToggleButton manualToggle { RememberUI::tr ("Capture from any position") }, lockToggle { RememberUI::tr ("Lock preview updates") }, replaceToggle { RememberUI::tr ("Replace the whole preview") };
+    RememberUI::Label captureStatus;
     void saveCaptureOptions();
-    juce::TextButton  associationButton { "Associate" };
+    RememberUI::TextButton  associationButton { RememberUI::tr ("Associate") };
 
     std::unique_ptr<juce::FileChooser> fileChooser;
     std::shared_ptr<SettingsManager::Request> settingsRequest;
@@ -65,5 +66,6 @@ private:
         kText = Pal::Text, kSubtext = Pal::Subtext, kSuccess = Pal::Success, kError = Pal::Error;
 
     RememberUI::TooltipWindow tooltips { this }; // parented to the editor for host scaling/lifetime
+    RememberUI::LanguageCallback languageUpdates { [this] { resized(); lastStateInt = -1; refreshFromEngine(); repaint(); } };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RememberEditor)
 };
