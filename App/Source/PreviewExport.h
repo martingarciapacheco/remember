@@ -15,10 +15,9 @@ inline juce::Result prepare (const ProjectEntry& entry, const juce::File& librar
     juce::File audioFile;
     auto reader = PreviewSelection::open (entry, audioFile);
     if (! reader) return juce::Result::fail ("Cannot read preview for export");
-    juce::FileInputStream input (audioFile);
-    if (! input.openedOk()) return juce::Result::fail ("Preview is unavailable");
-    const auto digest = juce::SHA256 (input).toHexString();
+    const auto digest = ProjectIdentity::fingerprint (audioFile, cancelled);
     if (cancelled()) return juce::Result::fail ("Export cancelled");
+    if (digest.isEmpty()) return juce::Result::fail ("Preview is unavailable");
     const auto directory = library.getChildFile ("Exports");
     auto result = LibraryStore::ensureDirectory (directory);
     if (result.failed()) return result;
@@ -61,8 +60,9 @@ inline juce::Result prepare (const ProjectEntry& entry, const juce::File& librar
     if (! writer->flush()) return juce::Result::fail ("Cannot flush exported WAV");
     writer.reset();
     if (cancelled()) return juce::Result::fail ("Export cancelled");
-    juce::FileInputStream latest (audioFile);
-    if (! latest.openedOk() || juce::SHA256 (latest).toHexString() != digest)
+    const auto latest = ProjectIdentity::fingerprint (audioFile, cancelled);
+    if (cancelled()) return juce::Result::fail ("Export cancelled");
+    if (latest.isEmpty() || latest != digest)
         return juce::Result::fail ("Preview changed while exporting. Select it again to retry.");
     if (! temporary.overwriteTargetFileWithTemporary()) return juce::Result::fail ("Cannot publish exported WAV");
     exported = destination; return juce::Result::ok();

@@ -1,5 +1,6 @@
 #include "LibraryTests.h"
 #include "../App/Source/ProjectScanner.h"
+#include "../App/Source/OfflineRendering.h"
 #include "../App/Source/SettingsDialog.h"
 #include "../App/Source/ProjectListComponent.h"
 #include "../Shared/LibraryStore.h"
@@ -212,6 +213,19 @@ void testLibraryCache (const juce::File& fixtureRoot)
         check (byMetadata (current, pending.getChildFile ("metadata.json")).storageError.isEmpty(),
                "One bad manifest made a healthy entry unavailable");
     };
+    {
+        juce::FileOutputStream large (meta);
+        check (large.openedOk() && large.setPosition ((juce::int64) LibraryStore::maximumJsonBytes)
+               && large.writeByte (' '), "Cannot create oversized manifest");
+        large.flush();
+    }
+    requireUnavailable (ProjectScanner::scan (root, { projects }, &index), "Oversized metadata removed its known row");
+    check (meta.getSize() == (juce::int64) LibraryStore::maximumJsonBytes + 1
+           && LibraryStore::readJson (meta).isVoid()
+           && LibraryStore::recoverEntry (entry).result.failed()
+           && meta.getSize() == (juce::int64) LibraryStore::maximumJsonBytes + 1,
+           "Oversized metadata was loaded or replaced during recovery");
+    check (meta.replaceWithText (savedManifest), "Cannot restore oversized manifest");
     check (meta.replaceWithText ("{"), "Cannot corrupt cached manifest");
     requireUnavailable (ProjectScanner::scan (root, { projects }, &index), "Corrupt confirmed metadata silently removed its cached row");
     check (meta.loadFileAsString() == "{", "Failed repair overwrote malformed metadata without recoverable audio");
@@ -333,6 +347,10 @@ void testLibraryCache (const juce::File& fixtureRoot)
                && lookup.resolve ("Unique", "FL Studio").isEmpty(), "Cannot seed denied-subtree homonyms");
         {
             DirectoryAccessGate gate (denied);
+            const auto offline = OfflineRendering::collectProjects (lookupRoot, true);
+            check (offline.result.failed() && offline.projects.isEmpty()
+                   && offline.result.getErrorMessage().contains (denied.getFullPathName()),
+                   "Offline rendering accepted a partial inventory after denied enumeration");
             check (! lookup.rebuild ({ lookupRoot }) && lookup.getLastError().contains (denied.getFullPathName())
                    && lookup.getCandidateCount() == 2 && lookup.resolve ("Unique", "FL Studio").isEmpty(),
                    "Denied nested enumeration silently turned homonyms into a unique candidate");

@@ -21,9 +21,10 @@ ProjectTiming readProjectTiming (const juce::File& project, const Cancel& cancel
 {
     ProjectTiming out;
     auto fail = [&] (const char* reason) { out.result = juce::Result::fail (reason); out.seconds = 0; return out; };
-    juce::FileInputStream in (project);
+    juce::FileInputStream source (project);
+    juce::BufferedInputStream in (source, 64 * 1024);
     const auto size = in.getTotalLength();
-    if (! in.openedOk() || size < 22 || size > 256 * 1024 * 1024) return fail ("Cannot read FL Studio project duration.");
+    if (! source.openedOk() || size < 22 || size > 256 * 1024 * 1024) return fail ("Cannot read FL Studio project duration.");
     if (in.readInt() != 0x64684c46 || in.readInt() != 6) return fail ("Invalid FL Studio project header.");
     in.readShort(); in.readShort(); const auto ppq = (unsigned short) in.readShort();
     if (ppq == 0 || in.readInt() != 0x74644c46) return fail ("Invalid FL Studio project timing header.");
@@ -33,9 +34,11 @@ ProjectTiming readProjectTiming (const juce::File& project, const Cancel& cancel
     int version = 0, arrangement = 0, current = 0, numerator = 4, denominator = 4;
     bool haveArrangement = false;
     std::map<int, std::pair<juce::uint32, juce::uint32>> selections;
+    int events = 0;
     while (in.getPosition() < size)
     {
         if (cancel && cancel()) return fail ("Offline rendering scan cancelled.");
+        if (++events > 2000000) return fail ("Too many FL Studio timing events.");
         const auto id = (unsigned char) in.readByte();
         juce::uint64 count = id < 64 ? 1 : id < 128 ? 2 : id < 192 ? 4 : 0;
         if (id == 172 && version >= 25) count = 3;
@@ -76,6 +79,7 @@ ProjectTiming readProjectTiming (const juce::File& project, const Cancel& cancel
             if (count % stride != 0) return fail ("Unsupported FL Studio playlist timing layout.");
             for (juce::uint64 offset = 0; offset < count; offset += stride)
             {
+                if ((offset / stride) % 256 == 0 && cancel && cancel()) return fail ("Offline rendering scan cancelled.");
                 const auto start = (juce::uint32) in.readInt();
                 if ((unsigned short) in.readShort() != 20480) return fail ("Unsupported FL Studio playlist timing layout.");
                 in.readShort(); const auto length = (juce::uint32) in.readInt();
@@ -85,6 +89,7 @@ ProjectTiming readProjectTiming (const juce::File& project, const Cancel& cancel
         }
         if (! in.setPosition (next)) return fail ("Cannot read FL Studio project duration.");
     }
+    if (source.getStatus().failed() || (cancel && cancel())) return fail ("Cannot read FL Studio project duration.");
     if (out.bpm < 10 || out.bpm > 999 || numerator < 1 || denominator < 1) return fail ("Saved project tempo or meter is unavailable.");
     const auto bar = (double) ppq * numerator * 4.0 / denominator;
     double ticks = juce::jmax (bar, std::ceil ((double) ends[current] / bar) * bar);
@@ -157,13 +162,16 @@ juce::File bestPreview (const juce::Array<juce::File>& files)
     return best;
 }
 
-juce::Result recordCompletedRender (const Command& command, const RenderResult& rendered, double audioSeconds, bool use)
+juce::Result recordCompletedRender (const Command& command, const RenderResult& rendered, double audioSeconds, bool use, const Cancel& cancel)
 {
     if (rendered.result.failed() || rendered.published.isEmpty()) return rendered.result;
+    if (cancel && cancel()) return juce::Result::fail ("Offline rendering cancelled.");
+    if (command.projectFileId.isEmpty() || ProjectIdentity::fileId (command.project) != command.projectFileId)
+        return juce::Result::fail ("The associated project changed; refresh the library.");
     const auto selected = bestPreview (rendered.published);
     juce::var record (new juce::DynamicObject()); auto& value = *record.getDynamicObject();
     value.setProperty ("projectPath", command.project.getFullPathName());
-    value.setProperty ("projectFileId", ProjectIdentity::fileId (command.project));
+    value.setProperty ("projectFileId", command.projectFileId);
     value.setProperty ("seconds", rendered.seconds); value.setProperty ("audioSeconds", audioSeconds);
     value.setProperty ("renderedAt", juce::Time::getCurrentTime().toISO8601 (true));
     value.setProperty ("previewPath", selected.getFullPathName()); value.setProperty ("useAsPreview", use);
@@ -171,6 +179,7 @@ juce::Result recordCompletedRender (const Command& command, const RenderResult& 
     value.setProperty ("outputs", outputs);
     const auto saved = LibraryStore::updateJson (LibraryStore::configFile(), [&] (juce::DynamicObject& config)
     {
+        if (cancel && cancel()) return juce::Result::fail ("Offline rendering cancelled.");
         auto history = config.getProperty ("offlineRenderHistory").clone();
         if (! history.isObject()) history = juce::var (new juce::DynamicObject());
         history.getDynamicObject()->setProperty (historyKey (command.project), record);
@@ -178,11 +187,14 @@ juce::Result recordCompletedRender (const Command& command, const RenderResult& 
     }, true);
     if (saved.failed() || ! use || selected == juce::File{}) return saved;
     for (const auto& entry : ProjectScanner::scan())
+    {
+        if (cancel && cancel()) return juce::Result::fail ("Offline rendering cancelled.");
         if (! entry.pending && juce::File::isAbsolutePath (entry.projectPath) && juce::File (entry.projectPath) == command.project)
         {
             const auto result = PreviewSelection::select (entry, selected, false);
             if (result.failed() && result.getErrorMessage() != "Manual preview selection is protected.") return result;
         }
+    }
     return saved;
 }
 }

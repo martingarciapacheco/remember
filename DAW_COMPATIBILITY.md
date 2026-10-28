@@ -24,10 +24,29 @@ La validación se registra por separado; no se deduce del estado.
 | Statistics: top 50 instrumentos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: top 50 efectos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: búsqueda, drag de copias y reproductor de samples independiente | Genérico sobre el inventario | Genérico sobre el inventario | Requiere lector de inventario |
-| Offline rendering desde la app | Parcial, en implementación: ejecutor CLI y ventana; ver límites | Pendiente | Pendiente |
-| Select preview: audio externo por grabación, desactivación y fallback a la captura | Genérico; implementado, validación en curso | Genérico; implementado, validación en curso | Formatos que pueda decodificar la app; no añade lectores de proyectos |
+| Offline rendering desde la app | Parcial: ejecutor CLI y ventana; publicación con rollback por proyecto, ver límites | Pendiente | Pendiente |
+| Select preview: audio externo por grabación, desactivación y fallback a la captura | Genérico; decisiones manuales protegidas y asociación revalidada | Genérico; decisiones manuales protegidas y asociación revalidada | Formatos que pueda decodificar la app; no añade lectores de proyectos |
 
 ## Offline rendering (en investigación)
+
+Auditoría del 28 de octubre: la confirmación de sobrescritura incluye el contenido
+del archivo, además de identidad, tamaño y fecha. Los formatos de un proyecto
+conservan originales y staging hasta terminar la publicación; ante fallo o
+cancelación se restauran los ya sustituidos. Si otra aplicación modifica un
+archivo publicado o Windows impide restaurarlo, se conserva el staging con
+originales y renders y se indica su ruta para recuperación. Esto no es una
+transacción atómica del sistema de archivos frente a un apagado del equipo;
+la recuperación automática tras caída durante esa publicación queda pendiente.
+El escaneo rechaza inventarios parciales ante errores de lectura. Las lecturas de
+duración usan búfer, límite de eventos y cancelación dentro de playlists grandes.
+Cancelar una ventana invalida también las confirmaciones/finalizaciones antiguas.
+
+Desactivar una preview heredada es una decisión manual protegida incluso ante
+renders posteriores (también se respetan selecciones desactivadas por versiones
+anteriores). La asignación automática revalida la asociación dentro de la
+transacción y no acepta identidad desconocida. No cambia el soporte de lectores
+de Used Sounds, Statistics ni la captura VST3. Evidencia y cierre de regresiones:
+`AUDITORIA_2026-10-28.md`; validación final de esta revisión en curso.
 
 La ventana nativa ya está conectada al ejecutor secuencial, las estimaciones y la
 confirmación de cada colisión. Persiste las opciones de Remember y las asociaciones

@@ -69,6 +69,7 @@ struct OfflineRenderingTestAccess
     static bool idle (const OfflineRenderingDialog& view) { return ! view.work; }
     static void previewSettings (OfflineRenderingDialog& view)
     {
+        view.plan = {}; view.rowStates.clear(); view.setStatus ({}); view.setBusy (false);
         view.flSettings = OfflineRendering::readFlStudioSettings ("26", [] (const juce::String& key)
         { return key == "SampleRate" ? "48000" : key == "IPBox" ? "8" : key == "WFBox" ? "1" : key == "MP3BitrateSlider" || key == "OggBitrateSlider" ? "13" : "0"; });
         view.updateText();
@@ -78,6 +79,67 @@ struct OfflineRenderingTestAccess
     static bool localized (const OfflineRenderingDialog& view)
     { return view.renderButton.getButtonText() == RememberUI::localize ("Start rendering") && view.previews.getButtonText() == RememberUI::localize ("Use full renders as previews")
         && view.status.getText() == RememberUI::diagnostic (view.statusSource); }
+    static void cancellation (OfflineRenderingDialog& view)
+    {
+        struct Gate { std::atomic<bool> entered { false }, released { false }; };
+        auto gate = std::make_shared<Gate>();
+        bool delivered = false;
+        view.setBusy (true);
+        view.begin ([gate] (auto&)
+        { gate->entered.store (true); while (! gate->released.load()) juce::Thread::sleep (1); },
+            [&delivered] (auto&) { delivered = true; });
+        awaitUi ([&] { return gate->entered.load(); });
+        view.stop(); gate->released.store (true);
+        awaitUi ([&] { return idle (view); });
+        check (! delivered && ! view.batch && view.plan.jobs.empty() && ! view.renderButton.isEnabled(),
+               "Stopped worker delivered an obsolete completion/plan");
+        view.plan.jobs.push_back ({}); view.options.useRendersAsPreviews = true;
+        view.start();
+        awaitUi ([] { return juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0; });
+        auto* confirmation = juce::ModalComponentManager::getInstance()->getModalComponent (0);
+        check (view.confirmingStart && confirmation, "Cannot open render assignment confirmation");
+        view.stop(); confirmation->exitModalState (1);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (! view.batch && idle (view), "Late confirmation restarted a stopped batch");
+        view.options.useRendersAsPreviews = false;
+    }
+    static void failedRefresh (OfflineRenderingDialog& view)
+    {
+        const auto file = LibraryStore::configFile(); const auto text = file.loadFileAsString();
+        check (file.replaceWithText ("invalid configuration"), "Cannot prepare failed refresh");
+        view.plan.jobs.push_back ({}); view.refresh();
+        awaitUi ([&] { return idle (view); });
+        check (view.plan.jobs.empty() && ! view.renderButton.isEnabled() && view.statusSource.isNotEmpty(),
+               "Failed refresh left the previous plan executable");
+        check (file.replaceWithText (text), "Cannot restore config after failed refresh");
+    }
+    static void historyFailure (OfflineRenderingDialog& view, const juce::File& root)
+    {
+        const auto directory = root.getChildFile ("offline-ui-history");
+        check (directory.createDirectory().wasOk(), "Cannot create render UI fixture");
+        const auto project = directory.getChildFile ("History.flp"), exe = directory.getChildFile ("FL64.exe");
+        check (project.replaceWithText ("fixture") && exe.replaceWithText ("not launched"), "Cannot write render UI fixture");
+        const auto config = LibraryStore::configFile(); const auto original = config.loadFileAsString();
+        check (config.replaceWithText ("invalid configuration"), "Cannot simulate history save failure");
+        const auto command = OfflineRendering::flStudioCommand (exe, project, directory, { "wav" });
+        view.plan.jobs = { command }; view.rowStates = { "Pending" }; view.current = 0; view.batch = true;
+        view.execute (command, false, [project] (const juce::StringArray& args, const auto&)
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::OutputStream> stream (juce::File (args[4].substring (2))
+                .getChildFile (project.getFileNameWithoutExtension() + ".wav").createOutputStream());
+            auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
+                .withSampleRate (48000).withNumChannels (2).withBitsPerSample (24));
+            juce::AudioBuffer<float> audio (2, 2400); audio.clear();
+            return writer && writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples())
+                ? juce::Result::ok() : juce::Result::fail ("Cannot create test render");
+        });
+        awaitUi ([&] { return idle (view); });
+        check (! view.batch && view.rowStates[0] == "Failed" && view.statusSource.isNotEmpty()
+               && directory.getChildFile ("History.wav").existsAsFile(),
+               "History failure left Rendering/Completed or discarded the successfully rendered audio");
+        check (config.replaceWithText (original), "Cannot restore history configuration");
+    }
 };
 
 void testFrontendDesign (const juce::File& root)
@@ -89,6 +151,9 @@ void testFrontendDesign (const juce::File& root)
     {
         OfflineRenderingDialog offline;
         awaitUi ([&] { return OfflineRenderingTestAccess::idle (offline); }, 20000, "Offline dialog blocked during discovery");
+        OfflineRenderingTestAccess::cancellation (offline);
+        OfflineRenderingTestAccess::failedRefresh (offline);
+        OfflineRenderingTestAccess::historyFailure (offline, root);
         OfflineRenderingTestAccess::previewSettings (offline);
         const auto oldLanguage = RememberUI::language.load();
         for (const auto language : { RememberUI::Language::English, RememberUI::Language::SpanishSpain })
@@ -1387,6 +1452,33 @@ void testSidebarUi (const juce::File& root)
                    == juce::JSON::toString (originalMetadata.getProperty ("folders", {}))
                && restoredMetadata.getProperty ("projectId", {}) == originalMetadata.getProperty ("projectId", {}),
                "Undo did not restore folder memberships in one step");
+        sidebar->refresh();
+    }
+    {
+        struct Gate { juce::WaitableEvent entered, release; };
+        auto gate = std::make_shared<Gate>();
+        struct Release { std::shared_ptr<Gate> gate; ~Release() { gate->release.signal(); } } release { gate };
+        auto result = std::make_shared<juce::Result> (juce::Result::ok());
+        auto done = std::make_shared<std::atomic<bool>> (false);
+        ProjectScanner::editAsync ([gate]
+        {
+            return ProjectScanner::positionFolder ("A/B", {}, "A", [gate]
+            { gate->entered.signal(); gate->release.wait (2000); });
+        }, [result, done] (juce::Result value) { *result = value; done->store (true); });
+        check (gate->entered.wait (2000), "Folder publication fixture did not reach the held rename boundary");
+        ProjectScanner::refreshAsync();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (300);
+        const auto held = ProjectScanner::librarySnapshot();
+        check (held->folders.contains ("A/B") && ! held->folders.contains ("B"),
+               "Index published a renamed folder before its order/membership operation completed");
+        gate->release.signal();
+        awaitUi ([&] { return done->load() && ProjectScanner::librarySnapshot()->sort == ProjectScanner::SidebarSort::Manual
+            && ProjectScanner::getAllFolderPaths()[0] == "B"; });
+        check (result->wasOk(), "Held folder operation failed");
+        ProjectScanner::editAsync ([] { return ProjectScanner::positionFolder ("B", "A"); });
+        awaitUi ([] { const auto paths = ProjectScanner::getAllFolderPaths(); return paths.contains ("A/B") && ! paths.contains ("B"); });
+        ProjectScanner::editAsync ([] { ProjectScanner::setSidebarSort (ProjectScanner::SidebarSort::NameAsc); return juce::Result::ok(); });
+        awaitUi ([] { return ProjectScanner::getSidebarSort() == ProjectScanner::SidebarSort::NameAsc; });
         sidebar->refresh();
     }
     sidebar->selectFolder ("A/B");

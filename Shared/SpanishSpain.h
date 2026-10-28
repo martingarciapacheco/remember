@@ -484,6 +484,7 @@ const std::map<juce::String, juce::String>& spanishSpain()
         { juce::String::fromUTF8 ("Project sounds"), juce::String::fromUTF8 ("Sonidos del proyecto") },
         { juce::String::fromUTF8 ("Reading saved project..."), juce::String::fromUTF8 ("Leyendo el archivo del proyecto guardado...") },
         { juce::String::fromUTF8 ("Cancelled"), juce::String::fromUTF8 ("Cancelado") },
+        { juce::String::fromUTF8 ("Loudness measurement failed. Turn off normalization to play, or select the preview again."), juce::String::fromUTF8 ("No se ha podido medir el volumen. Desactiva la normalización para reproducir o vuelve a seleccionar la preview.") },
         { juce::String::fromUTF8 ("Some preset exports are unavailable: "), juce::String::fromUTF8 ("Algunas exportaciones predefinidas no están disponibles: ") },
         { juce::String::fromUTF8 ("Some MIDI exports are unavailable: "), juce::String::fromUTF8 ("Algunas exportaciones MIDI no están disponibles: ") },
         { juce::String::fromUTF8 ("Drag copies the saved plugin state as an FL Studio preset (.fst)."), juce::String::fromUTF8 ("Al arrastrar, se copia el estado guardado del plugin como un preset de FL Studio (.fst).") },

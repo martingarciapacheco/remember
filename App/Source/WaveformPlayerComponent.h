@@ -60,7 +60,7 @@ public:
     void togglePlay();   // public wrapper for keyboard shortcut
     bool hasLoadedEntry() const noexcept { return isLoaded; }
     bool canTogglePlayback() const noexcept { return isLoaded || isLoading; }
-    juce::String getPlaybackError() const { return playbackError; }
+    juce::String getPlaybackError() const;
     bool isAudioDeviceOpen() const noexcept { return audioDeviceOpen; }
     uint64_t getUnderruns() const noexcept { return readerSource ? readerSource->underruns() : 0; }
     static int pendingLoads();
@@ -142,6 +142,7 @@ private:
     juce::String savedAudioState, lastSavedAudioState;
     juce::Component::SafePointer<juce::DialogWindow> audioDialog;
     juce::String playbackError, previewError;
+    juce::String waveformError;
     bool playbackErrorFromDevice = false;
     std::shared_ptr<std::atomic<uint64_t>> loadGeneration { std::make_shared<std::atomic<uint64_t>> (0) };
 
@@ -180,6 +181,6 @@ private:
     PlaybackFramePacer cursorPacer;
     double cursorSeconds = 0, lastVBlankTime = 0;
 
-    RememberUI::LanguageCallback languageUpdates { [this] { updatePathLabel(); updateRepeatButton(); repaint(); } };
+    RememberUI::LanguageCallback languageUpdates { [this] { updatePathLabel(); updateRepeatButton(); applyOutputGain(); repaint(); } };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformPlayerComponent)
 };

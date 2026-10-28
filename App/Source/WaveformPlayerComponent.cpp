@@ -325,7 +325,7 @@ void WaveformPlayerComponent::releaseEntry (const juce::File& metadataFile)
     if (currentEntry.metadataFile != metadataFile) return;
     loadGeneration->fetch_add (1);
     stop(); detachSource();
-    currentEntry = {}; waveform.reset(); exportedPreview = {}; dragBtn.setEnabled (false);
+    currentEntry = {}; waveform.reset(); waveformError.clear(); exportedPreview = {}; dragBtn.setEnabled (false);
     dragBtn.setTooltip (RememberUI::tr ("Select a recording to prepare its WAV copy"));
     metronome.setTempo (0); metronomeBtn.setEnabled (false);
     isLoaded = false; isLoading = false; playWhenLoaded = false;
@@ -360,6 +360,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     reportedUnderruns = 0;
     pathLabel.setTooltip ({});
     waveform.reset();
+    waveformError.clear();
     normalizeBtn.setEnabled (! entry.auditionReader);
     applyOutputGain();
     playBtn.setEnabled (false);
@@ -452,7 +453,14 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
                     safe->waveform = ticket->envelope; safe->applyOutputGain();
                     if (safe->playWhenLoaded) safe->play();
                 }
-                else safe->pathLabel.setDescription (RememberUI::diagnostic (result.getErrorMessage()));
+                else
+                {
+                    safe->waveformError = result.getErrorMessage();
+                    safe->playWhenLoaded = false;
+                    if (! safe->transport.isPlaying()) safe->playBtn.setButtonText (">");
+                    safe->pathLabel.setDescription (RememberUI::diagnostic (safe->waveformError));
+                    safe->updatePathLabel(); safe->applyOutputGain();
+                }
                 safe->repaint();
             });
     });
@@ -629,6 +637,7 @@ void WaveformPlayerComponent::stop()
 void WaveformPlayerComponent::togglePlay()
 {
     if (! isLoaded) return;
+    if (normalize && waveformError.isNotEmpty() && ! transport.isPlaying()) return;
     if (normalize && ! currentEntry.auditionReader && ! waveform && ! transport.isPlaying())
     { playWhenLoaded = ! playWhenLoaded; playBtn.setButtonText (playWhenLoaded ? "..." : ">"); return; }
     if (waitingForBuffer) { waitingForBuffer = false; playBtn.setButtonText (">"); armIdleRelease(); return; }
@@ -660,6 +669,7 @@ void WaveformPlayerComponent::togglePlay()
 
 void WaveformPlayerComponent::play()
 {
+    if (normalize && waveformError.isNotEmpty()) return;
     if (isLoading) { playWhenLoaded = true; return; }
     if (normalize && ! currentEntry.auditionReader && ! waveform && isLoaded) { playWhenLoaded = true; return; }
     if (! isLoaded || transport.isPlaying() || waitingForBuffer) return;
@@ -698,8 +708,21 @@ void WaveformPlayerComponent::updateTimeLabel()
                        juce::dontSendNotification);
 }
 
+juce::String WaveformPlayerComponent::getPlaybackError() const
+{
+    if (playbackError.isNotEmpty()) return playbackError;
+    return normalize && waveformError.isNotEmpty()
+        ? juce::String (RememberUI::tr ("Loudness measurement failed. Turn off normalization to play, or select the preview again.")) : juce::String{};
+}
 void WaveformPlayerComponent::updatePathLabel()
 {
+    const auto error = getPlaybackError();
+    if (error.isNotEmpty())
+    {
+        pathLabel.setText (error, juce::dontSendNotification);
+        pathLabel.setDescription (error + "\n" + RememberUI::diagnostic (waveformError));
+        return;
+    }
     pathLabel.setText (currentEntry.pending ? RememberUI::tr ("Unsaved project - save in the DAW to keep this audio")
                        : currentEntry.projectProblem.isNotEmpty() ? currentEntry.projectProblem
                        : currentEntry.projectPath.isEmpty()
@@ -912,6 +935,11 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
                 juce::jmax (2.0f, (float) (note.length / beats) * bounds.getWidth()), juce::jmax (2.0f, bounds.getHeight() / range), 1.0f);
         }
     }
+    if (normalize && waveformError.isNotEmpty())
+    {
+        g.setColour (RememberUI::colour (Pal::Subtext)); g.setFont (RememberUI::font (13));
+        g.drawFittedText (getPlaybackError(), waveArea.reduced (12, 8), juce::Justification::centred, 3);
+    }
     // The cursor is usable while the background waveform is still loading.
     float posX = waveArea.getX() + (float) getPositionNormalized() * waveArea.getWidth();
     g.setColour (RememberUI::colour (Pal::Text).withAlpha (0.8f));
@@ -1083,6 +1111,7 @@ void WaveformPlayerComponent::setMuted (bool value)
 void WaveformPlayerComponent::setNormalized (bool value)
 {
     normalize = value; normalizeBtn.setToggleState (value, juce::dontSendNotification);
+    if (waveformError.isNotEmpty()) updatePathLabel();
     applyOutputGain(); savePlaybackPreferences();
     if (! value && playWhenLoaded && isLoaded) play();
 }
@@ -1095,7 +1124,10 @@ void WaveformPlayerComponent::applyOutputGain()
     const auto gain = normalize && waveform ? waveform->normalizationGain : 1.0f;
     metronome.setMasterGain (isMuted() ? 0.0f : (float) (volume * volume));
     transport.setGain (isMuted() ? 0.0f : (float) (volume * volume) * gain);
-    normalizeBtn.setTooltip (currentEntry.auditionReader ? RememberUI::tr ("Live MIDI uses its instrument level") : normalize && ! currentEntry.auditionReader && ! waveform ? RememberUI::tr ("Measuring preview loudness...") : RememberUI::tr ("Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)"));
+    normalizeBtn.setTooltip (currentEntry.auditionReader ? juce::String (RememberUI::tr ("Live MIDI uses its instrument level"))
+        : waveformError.isNotEmpty() ? RememberUI::diagnostic (waveformError)
+        : normalize && ! waveform ? juce::String (RememberUI::tr ("Measuring preview loudness..."))
+        : juce::String (RememberUI::tr ("Normalize preview loudness to -14 LUFS (1 dB decoded peak headroom)")));
 }
 void WaveformPlayerComponent::savePlaybackPreferences()
 {

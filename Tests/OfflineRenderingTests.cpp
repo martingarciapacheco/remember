@@ -5,6 +5,9 @@
 #include "../App/Source/ProjectScanner.h"
 #include <stdexcept>
 #include <iostream>
+#if JUCE_WINDOWS
+ #include <windows.h>
+#endif
 
 void testOfflineRendering (const juce::File& root)
 {
@@ -115,6 +118,96 @@ void testOfflineRendering (const juce::File& root)
            && retained[0].getChildFile ("Extra mixer stem.wav").existsAsFile()
            && previous.loadFileAsString() == "a newer external edit", "Additional outputs were silently lost or published without review");
 
+    check (previous.replaceWithText ("old-A"), "Cannot reset overwrite stamp fixture");
+    const auto sameSizePlan = OfflineRendering::flStudioCommand (exe, first, folder, { "wav" });
+    const auto savedTime = previous.getLastModificationTime();
+    {
+        juce::FileOutputStream edit (previous);
+        check (edit.openedOk() && edit.setPosition (0) && edit.write ("new-B", 5), "Cannot edit output in place");
+        edit.flush();
+    }
+    check (previous.setLastModificationTime (savedTime), "Cannot restore output timestamp");
+    const auto beforeSameSize = launches;
+    rendered = OfflineRendering::render (sameSizePlan, true, {}, fake);
+    check (rendered.result.failed() && launches == beforeSameSize && previous.loadFileAsString() == "new-B",
+           "Equal-size timestamp-preserving edit bypassed overwrite confirmation");
+
+    const auto secondOutput = previous.withFileExtension ("flac");
+    check (secondOutput.replaceWithText ("original FLAC"), "Cannot create second format target");
+    auto twoFormats = [&] (const juce::StringArray& args, const OfflineRendering::Cancel&)
+    {
+        const juce::File stage (args[4].substring (2));
+        juce::AudioBuffer<float> samples (2, 2400); samples.clear();
+        juce::WavAudioFormat wav; juce::FlacAudioFormat flac;
+        for (auto* format : std::initializer_list<juce::AudioFormat*> { &wav, &flac })
+        {
+            const auto file = stage.getChildFile (first.getFileNameWithoutExtension() + (format == &wav ? ".wav" : ".flac"));
+            std::unique_ptr<juce::OutputStream> stream (file.createOutputStream());
+            auto writer = format->createWriterFor (stream, juce::AudioFormatWriterOptions{}
+                .withSampleRate (48000).withNumChannels (2).withBitsPerSample (24));
+            check (writer && writer->writeFromAudioSampleBuffer (samples, 0, samples.getNumSamples()), "Cannot create multi-format output");
+        }
+        return juce::Result::ok();
+    };
+#if JUCE_WINDOWS
+    {
+        // Permit reading/hashing but deny replacement of only the second file.
+        const auto held = CreateFileW (secondOutput.getFullPathName().toWideCharPointer(), GENERIC_READ,
+            FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        check (held != INVALID_HANDLE_VALUE, "Cannot hold second output against replacement");
+        struct Close { HANDLE value; ~Close() { CloseHandle (value); } } close { held };
+        rendered = OfflineRendering::render (OfflineRendering::flStudioCommand (exe, first, folder, { "wav", "flac" }), true, {}, twoFormats);
+        check (rendered.result.failed() && rendered.published.isEmpty() && previous.loadFileAsString() == "new-B"
+               && secondOutput.loadFileAsString() == "original FLAC", "Failed second publication left first output replaced");
+    }
+#endif
+    rendered = OfflineRendering::render (OfflineRendering::flStudioCommand (exe, first, folder, { "wav", "flac" }), true,
+        [&] { return previous.getSize() != 5; }, twoFormats);
+    check (rendered.cancelled && rendered.result.failed() && rendered.published.isEmpty()
+           && previous.loadFileAsString() == "new-B" && secondOutput.loadFileAsString() == "original FLAC",
+           "Cancellation between formats left a partial publication");
+#if JUCE_WINDOWS
+    {
+        HANDLE held = INVALID_HANDLE_VALUE;
+        struct Close { HANDLE& value; ~Close() { if (value != INVALID_HANDLE_VALUE) CloseHandle (value); } } close { held };
+        rendered = OfflineRendering::render (OfflineRendering::flStudioCommand (exe, first, folder, { "wav", "flac" }), true,
+            [&]
+            {
+                if (previous.getSize() == 5) return false;
+                if (held == INVALID_HANDLE_VALUE)
+                    held = CreateFileW (previous.getFullPathName().toWideCharPointer(), GENERIC_READ,
+                        FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                return true;
+            }, twoFormats);
+        check (held != INVALID_HANDLE_VALUE && rendered.result.failed() && rendered.published.size() == 1,
+               "Cannot reproduce a native rollback replacement failure");
+        bool originalsRetained = false;
+        for (const auto& stage : folder.findChildFiles (juce::File::findDirectories, false, ".remember-render-*"))
+            if (stage.getChildFile ("original-0").loadFileAsString() == "new-B"
+                && stage.getChildFile ("original-1").loadFileAsString() == "original FLAC")
+                originalsRetained = rendered.result.getErrorMessage().contains (stage.getFullPathName())
+                    && stage.getChildFile (previous.getFileName()).existsAsFile();
+        check (originalsRetained, "Failed rollback discarded originals/new audio or hid their recovery location");
+    }
+#endif
+    rendered = OfflineRendering::render (OfflineRendering::flStudioCommand (exe, first, folder, { "wav", "flac" }), true, {}, twoFormats);
+    check (rendered.result.wasOk() && rendered.published.size() == 2
+           && PreviewAudio::open (previous) && PreviewAudio::open (secondOutput), "Successful multi-format publication lost a format");
+    const auto identityPlan = OfflineRendering::flStudioCommand (exe, first, folder, { "wav" });
+    const auto sourceSaved = first.getSiblingFile ("retained-source.flp");
+    rendered = OfflineRendering::render (identityPlan, true, {}, [&] (const auto& args, const auto& cancel)
+    {
+        const auto result = fake (args, cancel);
+        check (first.moveFileTo (sourceSaved) && first.replaceWithText ("a different project at the same path"),
+               "Cannot replace project during render");
+        return result;
+    });
+    check (rendered.result.failed() && rendered.published.isEmpty(), "Render published audio after the source project was replaced");
+    OfflineRendering::RenderResult staleHistory; staleHistory.published.add (previous);
+    check (OfflineRendering::recordCompletedRender (identityPlan, staleHistory, 1, true).failed(),
+           "Render history associated stale audio with a replaced project");
+    check (first.deleteFile() && sourceSaved.moveFileTo (first), "Cannot restore original render project");
+
     const auto configFile = LibraryStore::configFile();
     const auto configText = configFile.loadFileAsString(); const bool existed = configFile.existsAsFile();
     struct RestoreConfig { juce::File file; juce::String text; bool existed;
@@ -203,5 +296,43 @@ void testOfflineRendering (const juce::File& root)
     check (estimate.historicalProjects == 1 && estimate.timeSeconds == 12, "Measured render history did not replace the initial 1x reference");
     auto invalidChannels = sizeSettings; invalidChannels.values.set ("ChannelsBox", 99);
     check (OfflineRendering::estimateBatch (timedPlan, invalidChannels, {}).unknownSize, "Invalid channel mode became a known size");
+    events.reset(); events.writeByte ((char) 156); events.writeInt (120000);
+    for (int i = 0; i < 250000; ++i) { events.writeByte (0); events.writeByte (0); }
+    const auto eventProject = writeTiming ("many-events.flp", false);
+    auto started = juce::Time::getMillisecondCounterHiRes();
+    timing = OfflineRendering::readProjectTiming (eventProject);
+    std::cout << "AUDIT timing 250001 events ms=" << juce::Time::getMillisecondCounterHiRes() - started << std::endl;
+    check (timing.result.wasOk() && timing.seconds == 2, "Buffered timing changed the duration estimate");
+    events.reset(); events.writeByte ((char) 199); events.writeByte (5); events.write ("26.0", 5);
+    events.writeByte ((char) 156); events.writeInt (120000);
+    events.writeByte ((char) 233);
+    const int playlistBytes = 10000 * 88;
+    for (unsigned int n = playlistBytes;; n >>= 7)
+    { events.writeByte ((char) ((n & 127) | (n > 127 ? 128 : 0))); if (n <= 127) break; }
+    for (int i = 0; i < 10000; ++i)
+    { events.writeInt (0); events.writeShort (20480); events.writeShort (1); events.writeInt (384); events.writeRepeatedByte (0, 76); }
+    int timingChecks = 0;
+    check (OfflineRendering::readProjectTiming (writeTiming ("large-playlist.flp", false), [&] { return ++timingChecks >= 5; }).result.failed(),
+           "Large playlist ignored cancellation inside its event");
+
+    OfflineRendering::Sources many;
+    const auto largeFolder = root.getChildFile ("large-batch"); check (largeFolder.createDirectory().wasOk(), "Cannot create large batch fixture");
+    for (int i = 0; i < 3000; ++i)
+    {
+        const auto file = largeFolder.getChildFile ("Project-" + juce::String (i) + ".flp");
+        check (file.replaceWithText ("fixture"), "Cannot create batch project"); many.projects.add (file);
+    }
+    many.projects.add (many.projects[0]);
+    options.saveBesideProject = true;
+    started = juce::Time::getMillisecondCounterHiRes();
+    const auto largePlan = OfflineRendering::planBatch (exe, many, options, { "wav", "flac" });
+    std::cout << "AUDIT plan 3001 projects/6002 outputs ms=" << juce::Time::getMillisecondCounterHiRes() - started << std::endl;
+    check (largePlan.result.wasOk() && largePlan.jobs.size() == 3001 && largePlan.duplicateOutputs.size() == 2,
+           "Large batch lost deterministic duplicate reporting");
+    events.reset(); events.writeByte ((char) 156); events.writeInt (120000);
+    events.writeRepeatedByte (0, 3999998);
+    check (OfflineRendering::readProjectTiming (writeTiming ("event-limit.flp", false)).result.wasOk(), "Valid timing event boundary was rejected");
+    events.writeByte (0); events.writeByte (0);
+    check (OfflineRendering::readProjectTiming (writeTiming ("too-many-events.flp", false)).result.failed(), "Timing event budget was not enforced");
     std::cout << "Offline rendering planning, staged execution, collision protection and preferences passed (no DAW launched)\n";
 }

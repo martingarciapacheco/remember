@@ -202,7 +202,7 @@ public:
     static void        setSidebarSort (SidebarSort s);
     // Worker-only: move/reorder amongst siblings; empty beforePath appends.
     static juce::Result positionFolder (const juce::String& path, const juce::String& parent,
-                                       const juce::String& beforePath = {});
+                                        const juce::String& beforePath = {}, const std::function<void()>& afterRename = {});
 
     // ── Plugin recording parameters (live in config.json, read by the plugin
     //    at prepareToPlay time). Defaults preserve the previous hard-coded

@@ -6,6 +6,10 @@
 // All operations here belong on control/background threads, never an audio callback.
 namespace LibraryStore
 {
+inline constexpr size_t maximumJsonBytes = 8 * 1024 * 1024;
+// Worker/control only. readable is true for a fully read bounded file even if
+// its JSON is damaged, false for I/O/size failures that must not trigger repair.
+juce::Result readJsonChecked (const juce::File&, juce::var&, bool* readable = nullptr);
 enum class OwnerState { Active, Orphaned, Unknown };
 // A unique session token backed by a live kernel object on Windows. No
 // filesystem, process-ID guessing or thread-affine mutex ownership is needed.

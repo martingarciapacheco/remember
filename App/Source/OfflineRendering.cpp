@@ -1,6 +1,8 @@
 #include "OfflineRendering.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/ProjectIdentity.h"
+#include <filesystem>
+#include <unordered_set>
 #if JUCE_WINDOWS
  #include <windows.h>
  #include <tlhelp32.h>
@@ -10,11 +12,16 @@ namespace OfflineRendering
 {
 namespace
 {
-juce::String outputStamp (const juce::File& file)
+juce::String outputStamp (const juce::File& file, const Cancel& cancel = {})
 {
     if (! file.exists()) return "missing";
-    return ProjectIdentity::fileId (file) + ":" + juce::String (file.getSize())
-        + ":" + juce::String (file.getLastModificationTime().toMilliseconds());
+    if (! file.existsAsFile() || file.isSymbolicLink()) return {};
+    const auto identity = ProjectIdentity::fileId (file);
+    if (identity.isEmpty()) return {};
+    const auto hash = ProjectIdentity::fingerprint (file, cancel);
+    if (hash.isEmpty()) return {};
+    return identity + ":" + juce::String (file.getSize())
+        + ":" + juce::String (file.getLastModificationTime().toMilliseconds()) + ":" + hash;
 }
 }
 RememberOptions optionsFromConfig (const juce::var& config)
@@ -104,16 +111,40 @@ Sources collectProjects (const juce::File& source, bool recursive, const Cancel&
     {
         if (abort()) return fail ("Offline rendering scan cancelled.");
         const auto folder = folders.removeAndReturn (folders.size() - 1);
-        for (const auto& item : juce::RangedDirectoryIterator (folder, false, "*", juce::File::findFilesAndDirectories))
+        const auto folderId = ProjectIdentity::fileId (folder);
+        const auto unavailable = [&]
         {
+            out.projects.clear();
+            out.result = juce::Result::fail ("Cannot list offline rendering source: " + folder.getFullPathName());
+            return out;
+        };
+        if (folderId.isEmpty()) return unavailable();
+#if JUCE_WINDOWS
+        const auto native = std::filesystem::path (folder.getFullPathName().toWideCharPointer());
+#else
+        const auto native = std::filesystem::u8path (folder.getFullPathName().toRawUTF8());
+#endif
+        std::error_code error;
+        std::filesystem::directory_iterator iterator (native, error), end;
+        if (error) return unavailable();
+        for (; iterator != end; iterator.increment (error))
+        {
+            if (error) return unavailable();
             if (abort()) return fail ("Offline rendering scan cancelled.");
-            const auto file = item.getFile();
-            if (file.isDirectory())
+#if JUCE_WINDOWS
+            const juce::File file (juce::String (iterator->path().c_str()));
+#else
+            const juce::File file (juce::String::fromUTF8 (iterator->path().u8string().c_str()));
+#endif
+            const auto status = iterator->status (error);
+            if (error) return unavailable();
+            if (std::filesystem::is_directory (status))
             {
                 if (recursive && ! file.isSymbolicLink()) folders.add (file);
             }
-            else if (file.hasFileExtension ("flp")) out.projects.add (file);
+            else if (std::filesystem::is_regular_file (status) && file.hasFileExtension ("flp")) out.projects.add (file);
         }
+        if (error || folderId != ProjectIdentity::fileId (folder)) return unavailable();
     }
     struct Order { int compareElements (const juce::File& a, const juce::File& b) const
         { return a.getFullPathName().compareNatural (b.getFullPathName()); } } order;
@@ -122,7 +153,7 @@ Sources collectProjects (const juce::File& source, bool recursive, const Cancel&
 }
 
 Command flStudioCommand (const juce::File& executable, const juce::File& project,
-                         const juce::File& destination, const juce::StringArray& formats)
+                         const juce::File& destination, const juce::StringArray& formats, const Cancel& cancel)
 {
     Command out;
     out.executable = executable; out.project = project; out.destination = destination;
@@ -131,6 +162,8 @@ Command flStudioCommand (const juce::File& executable, const juce::File& project
     if (! executable.existsAsFile()) return fail ("FL Studio executable is unavailable.");
     if (! project.existsAsFile() || ! project.hasFileExtension ("flp"))
         return fail ("Select an FL Studio project (.flp).");
+    out.projectFileId = ProjectIdentity::fileId (project);
+    if (out.projectFileId.isEmpty()) return fail ("The associated project changed; refresh the library.");
     if (! destination.isDirectory()) return fail ("Offline rendering destination is unavailable.");
     if (formats.isEmpty()) return fail ("Select an audio output format.");
     const juce::StringArray supported { "wav", "mp3", "ogg", "flac", "m4a" };
@@ -148,7 +181,9 @@ Command flStudioCommand (const juce::File& executable, const juce::File& project
     {
         const auto file = destination.getChildFile (project.getFileNameWithoutExtension() + "." + format);
         out.outputs.add (file);
-        out.outputStamps[file.getFullPathName()] = outputStamp (file);
+        const auto stamp = outputStamp (file, cancel);
+        if (stamp.isEmpty()) return fail ("Cannot verify existing render outputs. Check access and select the projects again.");
+        out.outputStamps[file.getFullPathName()] = stamp;
         if (file.exists()) out.existingOutputs.add (file);
     }
     return out;
@@ -164,22 +199,27 @@ BatchPlan planBatch (const juce::File& executable, const Sources& sources, const
     if (sources.projects.isEmpty()) return fail (juce::Result::fail ("No FL Studio projects were found in the selected source."));
     if (! options.saveBesideProject && ! juce::File::isAbsolutePath (options.customDestination))
         return fail (juce::Result::fail ("Select a destination folder for the rendered audio."));
-    juce::StringArray seen;
+    std::unordered_set<std::string> seen, existing, duplicates;
     for (const auto& project : sources.projects)
     {
         if (cancelled && cancelled()) return fail (juce::Result::fail ("Offline rendering scan cancelled."));
         const auto destination = options.saveBesideProject ? project.getParentDirectory() : juce::File (options.customDestination);
-        auto job = flStudioCommand (executable, project, destination, formats);
+        auto job = flStudioCommand (executable, project, destination, formats, cancelled);
         if (job.result.failed()) return fail (juce::Result::fail (project.getFileName() + ": " + job.result.getErrorMessage()));
-        for (const auto& file : job.existingOutputs) if (! out.existingOutputs.contains (file)) out.existingOutputs.add (file);
-        for (const auto& file : job.outputs)
+        const auto key = [] (const juce::File& file)
         {
             auto path = file.getFullPathName();
 #if JUCE_WINDOWS
             path = path.toLowerCase();
 #endif
-            if (seen.contains (path) && ! out.duplicateOutputs.contains (file)) out.duplicateOutputs.add (file);
-            seen.addIfNotAlreadyThere (path);
+            return path.toStdString();
+        };
+        for (const auto& file : job.existingOutputs)
+            if (existing.insert (key (file)).second) out.existingOutputs.add (file);
+        for (const auto& file : job.outputs)
+        {
+            const auto path = key (file);
+            if (! seen.insert (path).second && duplicates.insert (path).second) out.duplicateOutputs.add (file);
         }
         out.jobs.push_back (std::move (job));
     }
@@ -192,11 +232,12 @@ RenderResult render (const Command& command, bool approved, const Cancel& cancel
     const auto begun = juce::Time::getMillisecondCounterHiRes();
     const auto abort = [&] { return cancelled && cancelled(); };
     const auto finish = [&] (juce::Result result)
-    { out.result = result; out.seconds = (juce::Time::getMillisecondCounterHiRes() - begun) / 1000.0; return out; };
+    { out.result = result; out.cancelled = out.cancelled || abort(); out.seconds = (juce::Time::getMillisecondCounterHiRes() - begun) / 1000.0; return out; };
     if (command.result.failed()) return finish (command.result);
-    const auto validated = flStudioCommand (command.executable, command.project, command.destination, command.formats);
+    const auto validated = flStudioCommand (command.executable, command.project, command.destination, command.formats, cancelled);
     if (validated.result.failed()) return finish (validated.result);
-    if (validated.outputs != command.outputs || validated.arguments != command.arguments)
+    if (validated.outputs != command.outputs || validated.arguments != command.arguments
+        || validated.projectFileId != command.projectFileId)
         return finish (juce::Result::fail ("The planned render job changed. Select the projects again."));
     if (abort()) { out.cancelled = true; return finish (juce::Result::fail ("Offline rendering cancelled.")); }
     if (command.outputs.isEmpty() || command.arguments.isEmpty()) return finish (juce::Result::fail ("No render job is planned."));
@@ -216,7 +257,7 @@ RenderResult render (const Command& command, bool approved, const Cancel& cancel
         for (const auto& file : command.outputs)
         {
             const auto expected = command.outputStamps.find (file.getFullPathName());
-            if (expected == command.outputStamps.end() || expected->second != outputStamp (file)) return false;
+            if (expected == command.outputStamps.end() || expected->second != outputStamp (file, cancelled)) return false;
         }
         return true;
     };
@@ -255,6 +296,8 @@ RenderResult render (const Command& command, bool approved, const Cancel& cancel
     const auto result = runner (staged.arguments, cancelled);
     if (abort()) { out.cancelled = true; return finish (juce::Result::fail ("Offline rendering cancelled.")); }
     if (result.failed()) return finish (result);
+    if (ProjectIdentity::fileId (command.project) != command.projectFileId)
+        return finish (juce::Result::fail ("The associated project changed; refresh the library."));
     // Saved FL settings can request stems or other additional outputs. Never
     // silently discard those files or publish them without collision review.
     for (const auto& file : stage.findChildFiles (juce::File::findFiles, true))
@@ -274,15 +317,62 @@ RenderResult render (const Command& command, bool approved, const Cancel& cancel
             return finish (juce::Result::fail ("The rendered audio is incomplete: " + file.getFileName()));
     }
     if (! unchanged()) return finish (juce::Result::fail ("Render outputs changed. Review the overwrite confirmation again."));
+    // Keep both the generated audio and exact originals until the complete job
+    // commits. A cancelled/failed second format must not replace only the first.
+    juce::Array<juce::File> backups;
+    for (int i = 0; i < command.outputs.size(); ++i)
+    {
+        const auto target = command.outputs[i];
+        const auto backup = stage.getChildFile ("original-" + juce::String (i));
+        if (target.exists() && ! target.copyFileTo (backup))
+            return finish (juce::Result::fail ("Cannot preserve existing render before publication: " + target.getFullPathName()));
+        if (backup.existsAsFile() && ProjectIdentity::fingerprint (backup, cancelled)
+            != command.outputStamps.at (target.getFullPathName()).fromLastOccurrenceOf (":", false, false))
+            return finish (juce::Result::fail ("Cannot preserve existing render before publication: " + target.getFullPathName()));
+        backups.add (backup);
+    }
+    if (! unchanged()) return finish (juce::Result::fail ("Render outputs changed. Review the overwrite confirmation again."));
+    juce::StringArray publishedStamps;
+    const auto rollback = [&] (const juce::Result& failure)
+    {
+        juce::Array<juce::File> remaining;
+        for (int i = out.published.size(); --i >= 0;)
+        {
+            const auto target = out.published[i];
+            // An external edit after publication belongs to that editor. Never
+            // undo over it; retain the originals/new audio for explicit recovery.
+            bool restored = outputStamp (target) == publishedStamps[i];
+            if (restored && backups[i].existsAsFile())
+            {
+                juce::TemporaryFile temporary (target);
+                restored = backups[i].copyFileTo (temporary.getFile()) && temporary.overwriteTargetFileWithTemporary();
+            }
+            else if (restored) restored = target.deleteFile();
+            if (! restored) remaining.add (target);
+        }
+        out.published = std::move (remaining);
+        if (! out.published.isEmpty())
+        {
+            safeToDeleteStage = false;
+            return finish (juce::Result::fail ("Render publication could not be fully restored. Recovery files were kept in: " + stage.getFullPathName()));
+        }
+        return finish (failure);
+    };
     for (int i = 0; i < staged.outputs.size(); ++i)
     {
-        if (abort()) { out.cancelled = true; return finish (juce::Result::fail ("Offline rendering cancelled.")); }
+        if (abort()) { out.cancelled = true; return rollback (juce::Result::fail ("Offline rendering cancelled.")); }
         const auto target = command.outputs[i];
+        if (outputStamp (target, cancelled) != command.outputStamps.at (target.getFullPathName()))
+            return rollback (juce::Result::fail ("Render outputs changed. Review the overwrite confirmation again."));
         juce::TemporaryFile temporary (target);
-        if (! staged.outputs[i].moveFileTo (temporary.getFile()) || ! temporary.overwriteTargetFileWithTemporary())
-            return finish (juce::Result::fail ("Cannot publish rendered audio: " + target.getFullPathName()));
+        if (! staged.outputs[i].copyFileTo (temporary.getFile()) || ! temporary.overwriteTargetFileWithTemporary())
+            return rollback (juce::Result::fail ("Cannot publish rendered audio: " + target.getFullPathName()));
         out.published.add (target);
+        // Rollback must run even after cancellation, so its fingerprint cannot
+        // use the cancelled callback. No decoding/allocation occurs on the UI.
+        publishedStamps.add (outputStamp (target));
     }
+    if (abort()) { out.cancelled = true; return rollback (juce::Result::fail ("Offline rendering cancelled.")); }
     return finish (juce::Result::ok());
 }
 

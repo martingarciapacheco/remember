@@ -18,6 +18,7 @@ namespace
 void check (bool ok, const char* reason) { if (! ok) throw std::runtime_error (reason); }
 void audio (const juce::File& file, int frames, bool ogg)
 {
+    check (file.deleteFile(), "Cannot replace preview selection audio fixture");
     juce::WavAudioFormat wav; juce::OggVorbisAudioFormat compressed;
     juce::AudioFormat& format = ogg ? (juce::AudioFormat&) compressed : (juce::AudioFormat&) wav;
     std::unique_ptr<juce::OutputStream> stream (file.createOutputStream());
@@ -142,6 +143,9 @@ void testPreviewSelection (const juce::File& root)
     const auto futureFile = future.getChildFile ("metadata.json");
     check (LibraryStore::writeJsonAtomically (futureFile, futureMetadata).wasOk(), "Cannot write future recording");
     const auto projectFile = root.getChildFile ("future.flp"); check (projectFile.replaceWithText ("saved project"), "Cannot write future project");
+    futureMetadata.getDynamicObject()->setProperty ("projectPath", projectFile.getFullPathName());
+    futureMetadata.getDynamicObject()->setProperty ("projectFileId", ProjectIdentity::fileId (projectFile));
+    check (LibraryStore::writeJsonAtomically (futureFile, futureMetadata).wasOk(), "Cannot associate future recording");
     ProjectEntry later; later.projectId = futureMetadata["projectId"].toString(); later.projectAvailable = true;
     later.projectPath = projectFile.getFullPathName(); later.metadataFile = futureFile;
     auto path = projectFile.getFullPathName();
@@ -160,5 +164,38 @@ void testPreviewSelection (const juce::File& root)
     check (! PreviewSelection::inheritRender (staleLater, history)
            && ! (bool) LibraryStore::readJson (futureFile)["selectedPreviewEnabled"],
            "History overrode a concurrent decision to disable render preview");
+    check (PreviewSelection::select (later, external, false).failed()
+           && LibraryStore::readJson (futureFile)["selectedPreviewSource"].toString() == "manual",
+           "A new render re-enabled an explicitly disabled inherited preview");
+    // Automatic choices must revalidate the latest project association under
+    // the manifest lock, not only the recording UUID from an old UI snapshot.
+    auto fresh = futureMetadata.clone();
+    fresh.getDynamicObject()->setProperty ("projectPath", projectFile.getFullPathName());
+    fresh.getDynamicObject()->setProperty ("projectFileId", ProjectIdentity::fileId (projectFile));
+    auto legacyDisabled = fresh.clone();
+    legacyDisabled.getDynamicObject()->setProperty ("selectedPreviewSource", "render");
+    legacyDisabled.getDynamicObject()->setProperty ("selectedPreviewEnabled", false);
+    check (LibraryStore::writeJsonAtomically (futureFile, legacyDisabled).wasOk()
+           && PreviewSelection::select (later, external, false).failed(),
+           "A new render re-enabled a selection disabled by an older app version");
+    check (LibraryStore::writeJsonAtomically (futureFile, fresh).wasOk(), "Cannot reset automatic preview fixture");
+    later.projectFileId = ProjectIdentity::fileId (projectFile);
+    const auto otherProject = root.getChildFile ("reassociated.flp");
+    check (otherProject.replaceWithText ("another saved project"), "Cannot write reassociation fixture");
+    check (LibraryStore::updateJson (futureFile, [&] (juce::DynamicObject& value)
+    {
+        value.setProperty ("projectPath", otherProject.getFullPathName());
+        value.setProperty ("projectFileId", ProjectIdentity::fileId (otherProject));
+        return juce::Result::ok();
+    }).wasOk(), "Cannot reassign recording concurrently");
+    check (PreviewSelection::select (later, external, false).failed(), "Stale render attached to a different associated project");
+    later.selectedPreviewSource.clear();
+    check (! PreviewSelection::inheritRender (later, history), "History attached to a concurrently reassociated recording");
+    check (LibraryStore::writeJsonAtomically (futureFile, fresh).wasOk(), "Cannot restore automatic fixture");
+    const auto automatic = PreviewSelection::select (later, external, false);
+    if (automatic.failed()) throw std::runtime_error ("Valid automatic preview was rejected: " + automatic.getErrorMessage().toStdString()
+        + " manifest=" + juce::JSON::toString (LibraryStore::readJson (futureFile)).toStdString());
+    check (LibraryStore::writeJsonAtomically (futureFile, fresh).wasOk(), "Cannot reset history fixture");
+    check (PreviewSelection::inheritRender (later, history), "Valid render history was rejected");
     std::cout << "Selected previews passed: persistence, precedence, fallback, export and bilingual recycled rows\n";
 }
