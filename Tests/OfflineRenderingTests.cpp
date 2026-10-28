@@ -320,7 +320,10 @@ void testOfflineRendering (const juce::File& root)
     for (int i = 0; i < 3000; ++i)
     {
         const auto file = largeFolder.getChildFile ("Project-" + juce::String (i) + ".flp");
-        check (file.replaceWithText ("fixture"), "Cannot create batch project"); many.projects.add (file);
+        // Planning needs ordinary files, not durable atomic publication. Keep
+        // the same contents without thousands of temporary files/renames.
+        juce::FileOutputStream output (file);
+        check (output.openedOk() && output.write ("fixture", 7), "Cannot create batch project"); many.projects.add (file);
     }
     many.projects.add (many.projects[0]);
     options.saveBesideProject = true;

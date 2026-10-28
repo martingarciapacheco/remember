@@ -143,9 +143,7 @@ static juce::File configFilePath()
 
 static juce::var loadConfig()
 {
-    auto f = configFilePath();
-    if (! f.existsAsFile()) return {};
-    return juce::JSON::parse (f.loadFileAsString());
+    return LibraryStore::readJson (configFilePath());
 }
 
 namespace
@@ -462,7 +460,7 @@ public:
     {
         struct CloseWatches { LibraryWatch& value; ~CloseWatches() { value.clear(); } } closeWatches { watcher };
         ProjectIdentity::CandidateIndex candidates;
-        auto cancelled = [this] { return threadShouldExit(); };
+        auto cancelled = [this] { return threadShouldExit() || requested.load(); };
         juce::String previousRoots, previousConfig;
         std::vector<juce::String> previousSignature;
         juce::uint32 indexedAt = 0;
@@ -495,6 +493,7 @@ public:
                 if (! candidates.rebuild (roots, cancelled))
                 {
                     if (threadShouldExit()) return;
+                    if (requested.load()) continue;
                     publishError (candidates.getLastError()); waitForRetry(); continue;
                 }
                 previousRoots = rootsKey;
@@ -503,6 +502,7 @@ public:
             ProjectScanner::ScanMetrics scanMetrics;
             auto entries = ProjectScanner::scan (root, roots, &candidates, cancelled, &scanMetrics);
             if (threadShouldExit()) return;
+            if (requested.load()) continue;
             if (scanMetrics.error.isNotEmpty()) { publishError (scanMetrics.error); waitForRetry(); continue; }
             const auto scannedAt = juce::Time::getMillisecondCounterHiRes();
             const auto entryCount = entries.size();
@@ -542,7 +542,7 @@ public:
             if (sortFromConfig (config) != ProjectScanner::SidebarSort::Manual) paths.sort (true);
             const bool changed = configSignature != previousConfig || signature != previousSignature
                 || snapshot()->error.isNotEmpty() || snapshot()->loading;
-            if (folderMutations.load() != 0 || folderGeneration.load() != folderVersion)
+            if (requested.load() || folderMutations.load() != 0 || folderGeneration.load() != folderVersion)
             { requested.store (true); continue; }
             if (changed)
             {
@@ -852,6 +852,8 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
                 && LibraryStore::pendingOwnerState (dir, LibraryStore::readJson (metaFile)) == LibraryStore::OwnerState::Active)
                 return false;
             const auto result = LibraryStore::recoverEntry (dir, cancelled);
+            if (cancelled && cancelled())
+            { repairAttempts.erase (cacheKey); return false; }
             if (result.result.failed())
             {
                 attempt.error = result.result.getErrorMessage();

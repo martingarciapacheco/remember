@@ -38,6 +38,7 @@ las reproducciones y resultados se incorporarán al completar cada corrección.
 | A12 | P2 | Si falla `WaveformEnvelope::read`, el player sólo cambia descripción; con normalización `play` sigue esperando un waveform que nunca llegará. | Salir de espera, mostrar error accionable y permitir reproducción al desactivar normalización; probar carga/cancelación siguiente. | Pendiente |
 | A13 | P1 | Hallazgo adicional al verificar A12: el waveform acepta frecuencias de muestreo finitas sin máximo, aunque read-ahead rechaza más de 768 kHz. Una cabecera WAV dañada puede pedir miles de millones de Hz y una ventana de medición de varios GiB. | Rechazar esa cabecera antes de reservar memoria, aplicar el mismo máximo que reproducción y comprobar el caso real. | Pendiente |
 | A14 | P2 | La regresión ASan reproduce `Root drop did not preserve insertion position`: el índice puede publicar el nombre nuevo entre rename, cambio de orden y cambio a orden manual de una misma operación. | Publicar sólo observaciones completas de ediciones de carpetas; probar el índice reteniendo la fase de metadatos y revalidar el gesto/drop y undo. | Pendiente |
+| A15 | P2 | La escena ASan de 10.000 entradas reproduce un retraso de publicación después de una edición: Refresh/edits sólo despiertan al índice al terminar su escaneo obsoleto. El manifiesto ya tiene la fecha nueva, pero la vista conserva el orden anterior durante otro recorrido completo. | Cancelar y reiniciar observaciones obsoletas ante pedidos explícitos, conservar la publicación válida y aprobar la misma escena/selección dentro de sus límites originales. | Pendiente |
 
 ## Validación inicial
 
@@ -85,5 +86,31 @@ y snapshots JUCE mínimos/normales en inglés y español para las interfaces afe
 Los últimos puntos aún requieren terminar compilación y regresiones finales;
 no se consideran cerrados sólo por estar implementados.
 
-A13 se registra durante la revisión de cierre de A12, antes de corregirlo;
-amplía el inventario a 13 hallazgos y se atiende a continuación.
+A13 se registró durante la revisión de cierre de A12, antes de corregirlo.
+A14 se añadió al reproducirse una publicación intermedia bajo ASan. El inventario
+final incluye 14 hallazgos; ambos adicionales se registraron antes de corregirlos.
+
+- A13 rechaza frecuencias superiores a 768 kHz antes de crear buffers/medidores y
+  evita el desbordamiento al calcular bins. La regresión usa una cabecera PCM
+  independiente que JUCE acepta con 2.147.483.647 Hz; el waveform la rechaza sin
+  reservar la ventana. `RememberWaveforms` pasa con ASan.
+- A14 usa generación y contador de ediciones de carpetas, con scopes anidados,
+  para descartar observaciones tomadas durante crear/renombrar/mover/borrar/undo.
+  Una prueba retiene el movimiento entre rename y orden final, pide Refresh y
+  comprueba que permanece la publicación anterior. Después verifica orden, gesto
+  nativo y deshacer. `out/audit-a14-asan-sidebar.log` y las tres suites del plugin
+  `out/audit-a14-plugin-tests.log` pasan.
+
+Durante validación, Release y ASan llegaron a competir por el bloqueo global de
+renderizado de FL. La validación de aceptación se ejecuta en secuencia; no se
+elimina ese bloqueo del producto. El primer fixture de frecuencia escribía un
+offset fijo sobre un WAV con chunks adicionales: se sustituyó por una cabecera
+PCM independiente, comprobando explícitamente que el lector acepta esa frecuencia.
+
+La regresión ASan alcanzó 300 s preparando la escena de 10.000 entradas. Los logs
+mostraban recorridos de 8–9 s del índice mientras todavía se creaban archivos.
+Se conservan los mismos 100/1.000/10.000 registros, IDs, bytes, biblioteca creciente,
+aserciones y límites: los fixtures se preparan fuera de su vigilancia y se publican
+con movimientos de directorio; los marcadores/FLP de planificación usan escritura
+simple, sin temporales de sustitución innecesarios. No se modifica producción para
+acelerar un test ni se amplía su timeout. Aceptación completa posterior en curso.

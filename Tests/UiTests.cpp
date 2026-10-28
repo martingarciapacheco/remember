@@ -20,6 +20,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <set>
+#include <future>
 
 namespace
 {
@@ -1899,7 +1900,8 @@ void testLibraryScene (const juce::File& root)
     juce::Logger::setCurrentLogger (&logger);
     SavedConfig restore;
     const auto library = root.getChildFile ("scene-library"), projects = root.getChildFile ("scene-projects");
-    check (library.createDirectory().wasOk() && projects.createDirectory().wasOk(), "Cannot create full-scene library");
+    const auto staging = root.getChildFile ("scene-staging");
+    check (library.createDirectory().wasOk() && projects.createDirectory().wasOk() && staging.createDirectory().wasOk(), "Cannot create full-scene library");
     const auto project = projects.getChildFile ("Scene.flp");
     check (project.replaceWithText ("scene project"), "Cannot create full-scene project");
     const auto projectFileId = ProjectIdentity::fileId (project);
@@ -1912,26 +1914,52 @@ void testLibraryScene (const juce::File& root)
     juce::String clickedId;
     for (const auto count : { 100, 1000, 10000 })
     {
-        for (; created < count; ++created)
+        // Bounded parallel I/O only in fixture setup, with every worker joined
+        // before measuring or driving the UI. Keep all inputs/assertions intact.
+        const auto parallelSetup = [&] (const auto& action)
         {
-            const auto directory = library.getChildFile (juce::String (created).paddedLeft ('0', 5));
+            std::vector<std::future<void>> jobs;
+            for (int worker = 0; worker < 4; ++worker)
+                jobs.push_back (std::async (std::launch::async, [&, worker]
+                { for (int index = created + worker; index < count; index += 4) action (index); }));
+            for (auto& job : jobs) job.get();
+        };
+        const auto preparing = juce::Time::getMillisecondCounterHiRes();
+        parallelSetup ([&] (int index)
+        {
+            const auto directory = staging.getChildFile (juce::String (index).paddedLeft ('0', 5));
             check (directory.createDirectory().wasOk(), "Cannot create scene entry");
             juce::var metadata (new juce::DynamicObject()); auto* object = metadata.getDynamicObject();
             object->setProperty ("projectId", juce::Uuid().toString());
-            object->setProperty ("projectName", "Scene " + juce::String (created).paddedLeft ('0', 5));
+            object->setProperty ("projectName", "Scene " + juce::String (index).paddedLeft ('0', 5));
             object->setProperty ("projectPath", project.getFullPathName());
             object->setProperty ("projectFileId", projectFileId);
             object->setProperty ("daw", "FL Studio");
-            object->setProperty ("recordedAt", juce::Time (1791374400000LL + created * 1000LL).toISO8601 (true));
-            object->setProperty ("tags", juce::Array<juce::var> { "Group " + juce::String (created % 8) });
-            object->setProperty ("folders", juce::Array<juce::var> { "Groups/" + juce::String (created % 10) });
+            object->setProperty ("recordedAt", juce::Time (1791374400000LL + index * 1000LL).toISO8601 (true));
+            object->setProperty ("tags", juce::Array<juce::var> { "Group " + juce::String (index % 8) });
+            object->setProperty ("folders", juce::Array<juce::var> { "Groups/" + juce::String (index % 10) });
             const auto manifest = directory.getChildFile ("metadata.json");
             // Fixture creation is excluded from UI latency. Durability is
             // covered by the storage suites, rather than 10,000 fsyncs here.
             juce::FileOutputStream output (manifest, 0);
-            check (output.openedOk() && output.writeText (juce::JSON::toString (metadata), false, false, "\n") && output.getStatus().wasOk()
-                   && directory.getChildFile ("preview.ogg").replaceWithText ("scene index marker"), "Cannot write scene entry");
-        }
+            check (output.openedOk() && output.writeText (juce::JSON::toString (metadata), false, false, "\n") && output.getStatus().wasOk(), "Cannot write scene entry");
+            // These are the same non-audio marker bytes as before. Like the
+            // manifest fixture, they need no atomic rename or durable flush.
+            juce::FileOutputStream marker (directory.getChildFile ("preview.ogg"));
+            check (marker.openedOk() && marker.write ("scene index marker", 18), "Cannot write scene audio marker");
+        });
+        const auto preparedAt = juce::Time::getMillisecondCounterHiRes();
+        // Keep the exact same growing library, IDs and bytes. Preparing outside
+        // its native watch avoids repeated scans of half-written fixtures;
+        // atomic directory moves publish the complete prepared entries.
+        parallelSetup ([&] (int index)
+        {
+            const auto name = juce::String (index).paddedLeft ('0', 5);
+            check (staging.getChildFile (name).moveFileTo (library.getChildFile (name)), "Cannot publish prepared scene fixture");
+        });
+        created = count;
+        std::cout << "SCENE fixture entries=" << count << " prepareMs=" << preparedAt - preparing
+            << " publishMs=" << juce::Time::getMillisecondCounterHiRes() - preparedAt << std::endl;
         check (ProjectScanner::saveSettings (library, { projects }, 60, 4, false).wasOk(), "Cannot configure full scene");
         ProjectScanner::refreshAsync();
         awaitUi ([&] { return ProjectScanner::librarySnapshot()->sourceRoot == library && ProjectScanner::librarySnapshot()->entries.size() == count; }, 60000);
