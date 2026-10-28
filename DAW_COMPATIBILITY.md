@@ -24,6 +24,85 @@ La validación se registra por separado; no se deduce del estado.
 | Statistics: top 50 instrumentos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: top 50 efectos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: búsqueda, drag de copias y reproductor de samples independiente | Genérico sobre el inventario | Genérico sobre el inventario | Requiere lector de inventario |
+| Offline rendering desde la app | Parcial, en implementación: ejecutor CLI y ventana; ver límites | Pendiente | Pendiente |
+| Select preview: audio externo por grabación, desactivación y fallback a la captura | Genérico; implementado, validación en curso | Genérico; implementado, validación en curso | Formatos que pueda decodificar la app; no añade lectores de proyectos |
+
+## Offline rendering (en investigación)
+
+La ventana nativa ya está conectada al ejecutor secuencial, las estimaciones y la
+confirmación de cada colisión. Persiste las opciones de Remember y las asociaciones
+de renders, incluidas grabaciones indexadas posteriormente. Los ajustes de FL se
+leen sin escribir en el registro. El usuario aceptó expresamente el 23 de octubre
+de 2026 reutilizar los ajustes guardados y mostrarlos en modo de solo lectura en
+la primera versión; la edición desde Remember queda aplazada. MIDI, M4A, publicación
+de stems y validación de todos los controles siguen pendientes; el alcance no se
+considera terminado. Si FL genera audios adicionales, se conserva el staging y se
+detiene la publicación para revisión. La referencia inicial de tiempo es 1× audio;
+las mediciones anteriores la sustituyen por proyecto con identidad coincidente.
+
+Sonda real multiformato sobre copia de Empty: WAV/MP3/OGG/FLAC legibles, 48 kHz,
+estéreo, WAV y FLAC de 24 bits; 7,106 s por la tanda
+(`out/offline-multiformat-native-probe.log`). No valida canciones reales, todos
+los ajustes de calidad/efectos ni equivalencia del registro con cada control CLI.
+Builds finales Release de app y VST3 aprobadas (`out/offline-final-build.log`,
+`out/offline-final-vst3-build.log`). Pruebas focalizadas de offline rendering,
+previews seleccionadas y frontend bilingüe: 3/3
+(`out/offline-final-focused-tests.log`). Snapshots nativos a 640×480 y 840×720,
+incluido el panel desplazado de ajustes, inspeccionados en inglés y español.
+Regresión/workflow/shell de app: 3/3 (`out/offline-window-app-regression.log`).
+Regresión/workflow capture/config/frontend del plugin: 4/4
+(`out/offline-window-plugin-tests.log`). No se han instalado los binarios.
+
+Select preview guarda una referencia al audio externo, sin sustituir la captura
+del plugin. El menú de tres puntos permite elegirlo, cambiarlo o desmarcarlo;
+la fila muestra un indicador con instrucciones en su tooltip. Una elección manual,
+incluso desactivada, queda protegida frente a asignaciones automáticas de renders.
+Lectura/reproducción, waveform y Drag usan el audio seleccionado completo;
+si no se puede abrir, usan la captura. Used Sounds y la audición de recuperación
+mantienen su fuente explícita. Validación focalizada: `RememberSelectedPreviews`,
+`RememberOfflineRendering`, `RememberWaveforms`, `RememberUsedSounds` y
+`RememberAppFrontend`, 5/5 (`out/selected-preview-ui-tests.log`). Incluye pruebas
+de identidad, ediciones concurrentes, fallback por archivo ausente/corrupto,
+reproductor real y snapshots de filas recicladas en inglés/español a 384/768 px.
+Builds Release de app y VST3 aprobados (`out/selected-preview-app-build.log`,
+`out/selected-preview-vst3-build.log`). Regresión completa/workflow/shell de app:
+3/3 (`out/selected-preview-regression-native.log`), ejecutadas fuera del sandbox
+tras su rechazo de junctions/fixtures nativas. Regresión/captura/configuración
+del plugin: 3/3 (`out/selected-preview-plugin-regression.log`); frontend del plugin:
+1/1 (`out/selected-preview-plugin-tests.log`). No se instala ni publica la build.
+
+Primer objetivo: FL Studio en Windows. Contrato, decisiones del usuario y límites
+documentados en `OFFLINE_RENDERING.md`. Solo comandos oficiales, sin automatizar
+ventanas ni modificar ajustes de FL mediante vías no documentadas. La CLI permite
+elegir archivos, formatos y destino; no documenta controles para todos los ajustes
+del diálogo de exportación. La exploración de subcarpetas debe ser explícita en
+Remember. Sobrescribir un render existente requiere confirmación del usuario.
+La primera base de planificación de archivos/comandos precede al ejecutor y la
+ventana actuales. Prueba nativa `RememberOfflineRendering`: 1/1 aprobada el
+23 de octubre de 2026 (`out/offline-rendering-plan-tests.log`); comprueba recursión
+explícita, cancelación, rutas Unicode/con espacios, formatos y detección de colisiones
+sin sobrescritura. No certifica ningún render real ni los ajustes usados por FL.
+Prueba CLI aislada posterior: FL Studio 2026 renderizó una copia de su plantilla
+Empty mediante `/Ewav /R <flp> /O<destino>`; WAV PCM estéreo de 24 bits, 48 kHz,
+cabecera y tamaño consistentes, proceso sin elevación y salida posterior de FL.
+Artefactos en `out/offline-rendering-cli-probe/`. Esto valida ese comando/plantilla,
+no todos los ajustes, formatos ni proyectos. App y VST3 Release compilados:
+`out/offline-rendering-app-build.log`, `out/offline-rendering-vst3-build.log`.
+El lector C++ recupera los 22 valores de exportación previstos en
+`HKCU\Software\Image-Line\FL Studio 26\General\WAVRenderForm`, solo en lectura:
+`out/offline-rendering-fl-settings.log`. No escribe ajustes de FL ni demuestra
+por sí solo qué valores respeta cada modo de renderizado CLI.
+El motor C++ también ha renderizado la plantilla Empty mediante staging y
+publicación verificada: 6,61554 s, WAV PCM 24 bits/48 kHz estéreo
+(`out/offline-render-executor-native-probe.log`). Hay planificación de tandas y
+persistencia de opciones, panel de solo lectura, estimaciones y asociación de
+resultados. El destino personalizado es plano, con confirmación de
+colisiones; FL abierto bloquea el inicio hasta guardar y cerrarlo, por decisión
+del usuario. Settings incluye el DAW offline por defecto, guardado con OK;
+su validación visual en inglés y español figura arriba. No se certifica aún M4A: el validador
+actual necesita un decodificador de Remember.
+No cambia el
+soporte de Used Sounds, Statistics o captura mediante VST3.
 
 ## Apertura desde la lista de previews
 

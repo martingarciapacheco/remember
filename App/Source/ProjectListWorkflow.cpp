@@ -2,6 +2,7 @@
 #include "WorkflowForm.h"
 #include "TagsEditorDialog.h"
 #include "PreviewCompactionActions.h"
+#include "PreviewSelection.h"
 #include "../../Shared/RememberDialogs.h"
 
 namespace
@@ -510,6 +511,10 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
     if (! containsClicked) selection = { clicked };
     juce::PopupMenu menu;
     menu.addItem (12, RememberUI::tr ("Play preview"), ! clicked.trashed && clicked.storageError.isEmpty());
+    menu.addItem (19, RememberUI::tr ("Select preview"), ! clicked.trashed && ! clicked.pending,
+                  clicked.selectedPreviewEnabled);
+    if (clicked.selectedPreviewEnabled)
+        menu.addItem (20, RememberUI::tr ("Choose another preview..."), ! clicked.trashed && ! clicked.pending);
     menu.addItem (13, RememberUI::tr ("Rename recording (R)"), ! clicked.trashed && clicked.storageError.isEmpty() && (clicked.pending || clicked.projectPath.isEmpty()));
     menu.addItem (14, RememberUI::tr ("Open in DAW"), clicked.projectAvailable && ! clicked.trashed);
     menu.addItem (15, RememberUI::tr ("Show project file in Explorer"), clicked.projectAvailable && ! clicked.pending && ! clicked.trashed);
@@ -534,6 +539,7 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
     {
         if (safe == nullptr || r == 0) return;
         if (r == 12) { if (play) play(); return; }
+        if (r == 19 || r == 20) { safe->selectPreview (clicked, r == 19 && clicked.selectedPreviewEnabled); return; }
         if (r == 13) { if (rename) rename(); return; }
         if (r == 14) { if (open) open(); return; }
         if (r == 15) { ProjectScanner::openProjectAsync (clicked, true, [safe] (juce::Result result) { report (safe, result); }); return; }
@@ -552,6 +558,43 @@ void ProjectListComponent::showActions (ProjectEntry clicked, ProjectRowComponen
         const char* actions[] = { "", "", "addTags", "removeTags", "addFolder", "removeFolder", "favorite", "unfavorite", "status", "trash" };
         if (r == 9 && trash) { for (const auto& e : selection) safe->restoreRecording (e); return; }
         if (r < 10) safe->bulkEdit (selection, actions[r]);
+    });
+}
+void ProjectListComponent::selectPreview (ProjectEntry entry, bool disable)
+{
+    if (entry.trashed || entry.pending) return;
+    if (disable) { applyPreviewSelection (entry, {}, true); return; }
+    juce::AudioFormatManager formats;
+    PreviewAudio::registerFormats (formats);
+    previewChooser = std::make_unique<juce::FileChooser> (RememberUI::tr ("Select an audio file to use as preview"),
+        juce::File{}, formats.getWildcardForAllFormats());
+    previewChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safe = juce::Component::SafePointer<ProjectListComponent> (this), entry] (const juce::FileChooser& chooser)
+        {
+            if (safe == nullptr || chooser.getResult() == juce::File{}) return;
+            safe->applyPreviewSelection (entry, chooser.getResult(), false);
+        });
+}
+void ProjectListComponent::applyPreviewSelection (ProjectEntry entry, juce::File file, bool disable)
+{
+    auto changed = std::make_shared<ProjectEntry> (entry);
+    ProjectScanner::editAsync ([changed, file, disable]
+    {
+        auto result = disable ? PreviewSelection::disable (*changed) : PreviewSelection::select (*changed, file, true);
+        if (result.failed()) return result;
+        const auto json = LibraryStore::readJson (changed->metadataFile);
+        changed->selectedPreviewPath = json.getProperty ("selectedPreviewPath", "").toString();
+        changed->selectedPreviewSource = json.getProperty ("selectedPreviewSource", "").toString();
+        changed->selectedPreviewEnabled = (bool) json.getProperty ("selectedPreviewEnabled", false);
+        changed->selectedPreviewAvailable = changed->selectedPreviewEnabled
+            && juce::File::isAbsolutePath (changed->selectedPreviewPath)
+            && juce::File (changed->selectedPreviewPath).existsAsFile();
+        return juce::Result::ok();
+    }, [safe = juce::Component::SafePointer<ProjectListComponent> (this), changed] (juce::Result result)
+    {
+        if (safe == nullptr) return;
+        if (result.failed()) { report (safe, result); return; }
+        if (safe->onPreviewChanged) safe->onPreviewChanged (*changed);
     });
 }
 void ProjectListComponent::compactRecording (ProjectEntry entry)

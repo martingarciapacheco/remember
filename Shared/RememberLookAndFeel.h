@@ -290,6 +290,19 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
         g.drawEllipse (x + 5.5f, y + 5.5f, 5, 5, 1.4f);
         if (kind == "eye-off") g.drawLine (x + 1, y + 1, x + 15, y + 15, 1.6f);
     }
+    else if (kind == "selected-preview")
+    {
+        g.drawRoundedRectangle (x + 1, y + 6, 9, 8, 3, 1.4f);
+        g.drawRoundedRectangle (x + 6, y + 2, 9, 8, 3, 1.4f);
+        g.drawLine (x + 5, y + 11, x + 11, y + 5, 1.5f);
+    }
+    else if (kind == "offline-render")
+    {
+        p.startNewSubPath (x + 2, y + 12); p.lineTo (x + 2, y + 15); p.lineTo (x + 14, y + 15); p.lineTo (x + 14, y + 12);
+        p.startNewSubPath (x + 8, y + 1); p.lineTo (x + 8, y + 11);
+        p.startNewSubPath (x + 4, y + 7); p.lineTo (x + 8, y + 11); p.lineTo (x + 12, y + 7);
+        g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
     else if (kind == "statistics")
     {
         p.startNewSubPath (x + 1, y + 1); p.lineTo (x + 1, y + 15); p.lineTo (x + 15, y + 15);

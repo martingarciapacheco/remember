@@ -18,6 +18,8 @@ public:
     ~WaveformPlayerComponent() override;
 
     void loadEntry (const ProjectEntry& entry);
+    void refreshPreviewSelection (const ProjectEntry& entry)
+    { if (currentEntry.metadataFile == entry.metadataFile && currentEntry.projectId == entry.projectId) loadEntry (entry); }
     void releaseEntry (const juce::File& metadataFile);
     void clearPreview();
     void suspendOutput(); // Pause/release the device while retaining project UI and position.
@@ -80,6 +82,7 @@ private:
     friend struct UsedSoundsTestAccess;
     friend struct StatisticsTestAccess;
     friend struct WaveformTestAccess;
+    friend struct PreviewSelectionTestAccess;
     RememberUI::Style uiStyle { *this };
     PlaybackQueue queue;
     RememberUI::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
@@ -129,6 +132,7 @@ private:
     std::unique_ptr<juce::FileChooser>             fileChooser;
 
     ProjectEntry currentEntry;
+    juce::File currentAudioFile;
     bool         isLoaded { false };
     bool         isLoading { false }, playWhenLoaded { false }, audioDeviceOpen { false };
     bool         waitingForBuffer = false;

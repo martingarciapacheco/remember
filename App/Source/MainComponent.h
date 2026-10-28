@@ -50,6 +50,7 @@ private:
 
     RememberUI::TextButton settingsButton { RememberUI::tr ("Settings") };
     RememberUI::TextButton statisticsButton { RememberUI::tr ("Statistics") };
+    RememberUI::TextButton offlineButton { RememberUI::tr ("Offline rendering") };
 
     static constexpr int kPlayerHeight  = 184;
     static constexpr int kSidebarWidth  = 216;

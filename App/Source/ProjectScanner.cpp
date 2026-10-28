@@ -1,5 +1,6 @@
 #include "ProjectScanner.h"
 #include "LibraryWatch.h"
+#include "PreviewSelection.h"
 #include "../../Shared/ProjectIdentity.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/BackgroundRetirement.h"
@@ -248,7 +249,7 @@ static juce::Result saveConfigField (const juce::String& field, const juce::var&
 }
 
 static juce::var recordingSettingsPatch (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1, const juce::String& offlineDaw = {})
 {
     juce::var patch (new juce::DynamicObject());
     auto* object = patch.getDynamicObject();
@@ -260,6 +261,7 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
     object->setProperty ("oggQuality", juce::jlimit (0, 10, quality));
     object->setProperty ("recordMono", mono);
     if (midiVoice != 0) object->setProperty ("midiPreviewVoice", juce::jlimit (1, 4, midiVoice));
+    if (offlineDaw == "fl-studio") object->setProperty ("offlineDefaultDaw", offlineDaw);
     if (compactAboveMB > 0 && std::isfinite (compactAboveMB)) object->setProperty ("compactAboveMB", compactAboveMB);
     if (capture)
     {
@@ -270,19 +272,19 @@ static juce::var recordingSettingsPatch (const juce::File& previews, const juce:
 }
 
 juce::Result ProjectScanner::saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                          int seconds, int quality, bool mono, const CaptureOptions* capture, int midiVoice, double compactAboveMB)
+                                          int seconds, int quality, bool mono, const CaptureOptions* capture, int midiVoice, double compactAboveMB, const juce::String& offlineDaw)
 {
-    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice, compactAboveMB), true);
+    return LibraryStore::patchJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice, compactAboveMB, offlineDaw), true);
 }
 juce::Result ProjectScanner::rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                              int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                             juce::File& originalBackup, const CaptureOptions* capture, int midiVoice, double compactAboveMB)
+                                             juce::File& originalBackup, const CaptureOptions* capture, int midiVoice, double compactAboveMB, const juce::String& offlineDaw)
 {
     originalBackup = {};
     const auto current = readSettings();
     if (current.result.wasOk() || ! current.canRebuild)
         return juce::Result::fail ("Configuration is valid or unavailable: " + configFilePath().getFullPathName() + ". Reload Settings before saving");
-    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice, compactAboveMB),
+    return LibraryStore::rebuildSettingsJson (configFilePath(), recordingSettingsPatch (previews, roots, seconds, quality, mono, capture, midiVoice, compactAboveMB, offlineDaw),
                                             fingerprint, originalBackup);
 }
 
@@ -340,6 +342,7 @@ ProjectScanner::SettingsSnapshot ProjectScanner::readSettings()
     snapshot.appearance = appearanceFromConfig (config);
     snapshot.interfaceZoom = (int) config.getProperty ("appZoom", 100);
     snapshot.midiPreviewVoice = juce::jlimit (1, 4, (int) config.getProperty ("midiPreviewVoice", 1));
+    snapshot.offlineDefaultDaw = config.getProperty ("offlineDefaultDaw", "fl-studio").toString();
     const auto limit = (double) config.getProperty ("compactAboveMB", 10.0);
     snapshot.compactAboveMB = std::isfinite (limit) && limit > 0 ? limit : 10;
     return snapshot;
@@ -524,6 +527,7 @@ public:
                 // String and no JSON serialisation on every unchanged refresh.
                 signature.push_back (entry.metadataFile.getFullPathName() + "\n" + entry.metadataStamp
                     + "\n" + entry.previewOgg.getFullPathName() + "\n" + entry.projectPath
+                    + (entry.selectedPreviewAvailable ? "\nselected:1" : "\nselected:0")
                     + (entry.projectAvailable ? "\n1" : "\n0") + "\n" + juce::String ((int) entry.pendingOwner) + "\n" + entry.storageError + "\n" + entry.projectProblem);
                 for (const auto& path : entry.folders) addPath (path);
             }
@@ -778,6 +782,7 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
         return results;
     }
 
+    const auto renderHistory = LibraryStore::readJson (LibraryStore::configFile()).getProperty ("offlineRenderHistory", juce::var{});
     std::unordered_set<std::string> seen;
     std::unordered_set<std::string> deleted;
     struct ProjectObservation { bool exists = false, idRead = false; juce::String id; };
@@ -916,6 +921,9 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
             e.bpmSource = e.bpmOverride > 0 ? "manual" : json.getProperty ("bpmSource", "estimated").toString();
             e.keyConfidence = (double) json.getProperty ("keyConfidence", 0.0);
             e.previewLocked = (bool) json.getProperty ("previewLocked", false);
+            e.selectedPreviewPath = json.getProperty ("selectedPreviewPath", "").toString();
+            e.selectedPreviewSource = json.getProperty ("selectedPreviewSource", "").toString();
+            e.selectedPreviewEnabled = (bool) json.getProperty ("selectedPreviewEnabled", false);
             if (e.bpmOverride > 0) e.bpm = e.bpmOverride;
             if (e.keyOverride.isNotEmpty()) e.key = e.keyOverride;
             e.favorite     = (bool)   json.getProperty ("favorite", false);
@@ -953,6 +961,9 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
         else if (metrics) ++metrics->cacheHits;
 
         auto e = it->second.raw;
+        e.selectedPreviewAvailable = e.selectedPreviewEnabled
+            && juce::File::isAbsolutePath (e.selectedPreviewPath)
+            && juce::File (e.selectedPreviewPath).existsAsFile();
         if (e.pending) e.pendingOwner = LibraryStore::pendingOwnerState (dir, e.baseline);
         if (! e.previewOgg.existsAsFile()
             || ((int) e.baseline.getProperty ("audioStorageVersion", 0) == 2 && ! LibraryStore::audioFile (dir, e.baseline, true).existsAsFile()))
@@ -1015,6 +1026,7 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
                     ? "Project drive unavailable; reconnect it and Refresh" : "Project file not found; Assign path or check search folders";
             }
         }
+        if (PreviewSelection::inheritRender (e, renderHistory)) cache.erase (cacheKey);
         results.add (e);
     }
 

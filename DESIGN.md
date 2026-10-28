@@ -1,5 +1,14 @@
 # Remember interface design
 
+Offline rendering opens from a 34-pixel vector export button immediately before
+Statistics in the app header. Its native resizable window keeps batch actions and
+estimates in a fixed footer, with a scrollable settings/source area and a native
+recycled queue. Work, process checks, filesystem operations and settings reads
+stay on a cancellable worker with deferred retirement. Export controls without
+verified command support are read-only in the first version, explicitly accepted
+by the user on 23 October 2026. Show saved values or Unknown; do not invent editable
+controls or substitute undocumented FL settings writes. Editing is deferred.
+
 Settings > Appearance includes a shared language selector: English and
 Español (España). Persist `language` (`en` / `es-ES`) independently with a worker-only
 atomic config patch, and update open app/plugin interfaces on the message thread.
@@ -261,6 +270,17 @@ long names, no search results, empty library, disabled controls and focus. Keep
 audio/storage behavior and bounded list/tag component creation intact.
 
 ## Preview storage information
+
+Each recording's ellipsis menu offers Select preview. An enabled selection
+adds a compact semantic link indicator immediately before the project name;
+its tooltip explains how to untick Select preview to return to the plugin
+capture. Keep the indicator and its localized instructions scoped to the
+recording identity when recycling rows. Choose another preview opens a native
+audio picker. Store only a reference to the chosen file, retaining the capture.
+Missing/unreadable selections fall back to the capture at load time. Manual
+selections, including disabling them, retain precedence over automatic renders.
+Playback, waveform and Drag must use the same selected audio; recovery audition
+and Used Sounds continue to use their explicitly chosen revision/sample/MIDI.
 
 The tray context menu uses the shared surface and typography. On Windows its
 native window region follows the rounded surface at the current DPI, excluding

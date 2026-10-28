@@ -333,7 +333,8 @@ void UsedSoundsDialog::audition (size_t index)
     {
         if (! safe || token->load() != request) return;
         if (result.failed()) { safe->setStatus (RememberUI::diagnostic (result.getErrorMessage())); return; }
-        auto preview = safe->entry; preview.previewOgg = sound.kind == UsedSounds::Kind::Midi ? juce::File{} : sound.sample; preview.name = sound.name;
+        auto preview = safe->entry; preview.selectedPreviewEnabled = false;
+        preview.previewOgg = sound.kind == UsedSounds::Kind::Midi ? juce::File{} : sound.sample; preview.name = sound.name;
         if (sound.kind == UsedSounds::Kind::Midi)
         { preview.auditionReader = *factory; preview.auditionNotes = notes; }
         preview.bpm = bpm; preview.bpmOverride = bpm;

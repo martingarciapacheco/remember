@@ -29,6 +29,10 @@ target_sources(RememberApp PRIVATE
     Source/Main.cpp
     Source/AppShell.cpp
     Source/MainComponent.cpp
+    Source/OfflineRendering.cpp
+    Source/OfflineRenderTiming.cpp
+    Source/OfflineRenderingDialog.cpp
+    Source/PreviewSelection.cpp
     Source/ProjectScanner.cpp
     Source/LibraryWatch.cpp
     Source/WaveformPlayerComponent.cpp
@@ -107,6 +111,10 @@ if(REMEMBER_BUILD_TESTS)
     juce_add_console_app(RememberAppTests PRODUCT_NAME "Remember app regression tests")
     target_sources(RememberAppTests PRIVATE
         ../Tests/AppTests.cpp ../Tests/PlaybackTests.cpp ../Tests/DeviceTests.cpp
+        Source/OfflineRendering.cpp ../Tests/OfflineRenderingTests.cpp
+        Source/OfflineRenderTiming.cpp Source/OfflineRenderingDialog.cpp
+        Source/PreviewSelection.cpp
+        ../Tests/PreviewSelectionTests.cpp
         ../Tests/WaveformTests.cpp
         ../Tests/LibraryTests.cpp ../Tests/RecoveryTests.cpp ../Tests/AtomicJsonTests.cpp
         ../Tests/LibraryWatchTests.cpp
@@ -138,6 +146,10 @@ if(REMEMBER_BUILD_TESTS)
     remember_copy_asan_runtime(RememberAppTests)
     add_test(NAME RememberAppRegression COMMAND RememberAppTests)
     add_test(NAME RememberWaveforms COMMAND RememberAppTests --waveforms)
+    add_test(NAME RememberOfflineRendering COMMAND RememberAppTests --offline-rendering)
+    add_test(NAME RememberSelectedPreviews COMMAND RememberAppTests --selected-previews)
+    set_tests_properties(RememberSelectedPreviews PROPERTIES TIMEOUT 90)
+    set_tests_properties(RememberOfflineRendering PROPERTIES TIMEOUT 90)
     set_tests_properties(RememberWaveforms PROPERTIES TIMEOUT 90)
     add_test(NAME RememberContextUndo COMMAND RememberAppTests --undo)
     set_tests_properties(RememberContextUndo PROPERTIES TIMEOUT 90)

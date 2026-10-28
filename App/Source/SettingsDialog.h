@@ -79,6 +79,9 @@ private:
     RememberUI::Label midiCaption { {}, RememberUI::tr ("MIDI audition") };
     RememberUI::Label midiHint { {}, RememberUI::tr ("Default instrument for Used sounds") };
     RememberUI::ComboBox midiVoiceCombo;
+    RememberUI::Label offlineCaption { {}, RememberUI::tr ("Default offline rendering DAW") };
+    RememberUI::Label offlineHint { {}, RememberUI::tr ("Used when opening Offline rendering. Saved with OK.") };
+    RememberUI::ComboBox offlineDawCombo;
     RememberUI::Label appearanceCaption { {}, RememberUI::tr ("Appearance") };
     RememberUI::Label appearanceHint { {}, RememberUI::tr ("System follows light and dark automatically") };
     RememberUI::ComboBox appearanceCombo;

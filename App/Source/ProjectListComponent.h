@@ -47,6 +47,7 @@ private:
     RememberUI::TextButton favBtn   { "" };
     RememberUI::TextButton actionsBtn { "..." };
     RememberUI::TextButton usedSoundsBtn;
+    RememberUI::TextButton selectedPreviewBtn;
     RememberUI::TextButton statusBtn;
     RememberUI::TextEditor renameEditor;
 };
@@ -90,6 +91,7 @@ public:
 
     std::function<void (const ProjectEntry&)> onEntrySelected;
     std::function<void (const ProjectEntry&)> onEntryPlay;
+    std::function<void (const ProjectEntry&)> onPreviewChanged;
     std::function<void (const ProjectEntry&)> onUsedSounds;
     std::function<void (const ProjectEntry&)> onBeforeStorageChange;
 
@@ -125,6 +127,9 @@ private:
     void showActions (ProjectEntry, ProjectRowComponent*);
     void editDetails (ProjectEntry);
     void compactRecording (ProjectEntry);
+    void selectPreview (ProjectEntry, bool disable);
+    void applyPreviewSelection (ProjectEntry, juce::File, bool disable);
+    std::unique_ptr<juce::FileChooser> previewChooser;
     void saveCollection();
     void configureCollectionMenu();
     void removeCollection (const juce::String& id);

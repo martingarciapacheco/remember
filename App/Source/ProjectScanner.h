@@ -36,6 +36,8 @@ struct ProjectEntry
     juce::StringArray folders;     // each item is a path like "Hip-Hop/Trap"
     juce::File        previewOgg;
     juce::File        metadataFile;
+    juce::String selectedPreviewPath, selectedPreviewSource;
+    bool selectedPreviewEnabled = false, selectedPreviewAvailable = false;
     // Transient reader factory for live MIDI audition; never written to metadata.
     std::function<std::unique_ptr<juce::AudioFormatReader>()> auditionReader;
     std::shared_ptr<const std::vector<UsedSounds::Note>> auditionNotes;
@@ -72,6 +74,7 @@ public:
         int midiPreviewVoice = 1;
         CaptureOptions capture;
         double compactAboveMB = 10;
+        juce::String offlineDefaultDaw = "fl-studio";
     };
     enum class SidebarSort { NameAsc, NameDesc, DateDesc, CountDesc, Manual };
     struct LibrarySnapshot
@@ -133,10 +136,10 @@ public:
     static juce::File getPreviewsFolder();
     static void       setPreviewsFolder (const juce::File& folder);
     static juce::Result saveSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
-                                      int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1);
+                                      int seconds, int quality, bool mono, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1, const juce::String& offlineDaw = {});
     static juce::Result rebuildSettings (const juce::File& previews, const juce::Array<juce::File>& roots,
                                          int seconds, int quality, bool mono, const juce::String& fingerprint,
-                                         juce::File& originalBackup, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1);
+                                         juce::File& originalBackup, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1, const juce::String& offlineDaw = {});
 
     // Multiple folders where the user keeps DAW projects. Defaults to a single
     // entry pointing at the user's Desktop if nothing has been configured.

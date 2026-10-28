@@ -160,6 +160,13 @@ SettingsDialog::SettingsDialog (bool firstRunFlag, std::function<ProjectScanner:
     midiVoiceCombo.addItem (RememberUI::tr ("Square"), 3); midiVoiceCombo.addItem (RememberUI::tr ("Sine"), 4);
     midiVoiceCombo.setSelectedId (1, juce::dontSendNotification);
     addAndMakeVisible (midiCaption); addAndMakeVisible (midiHint); addAndMakeVisible (midiVoiceCombo);
+    styleLabel (offlineCaption, 13.0f, Pal::Text, true);
+    styleLabel (offlineHint, 11.0f, Pal::Subtext);
+    offlineDawCombo.setTitle (RememberUI::tr ("Default offline rendering DAW"));
+    offlineDawCombo.addItem ("FL Studio", 1);
+    offlineDawCombo.setTextWhenNothingSelected (RememberUI::tr ("Unavailable"));
+    offlineDawCombo.setSelectedId (1, juce::dontSendNotification);
+    addAndMakeVisible (offlineCaption); addAndMakeVisible (offlineHint); addAndMakeVisible (offlineDawCombo);
 
     styleLabel (previewsCaption, 13.0f, Pal::Text, true);
     styleLabel (previewsHint,    11.0f, Pal::Subtext);
@@ -355,6 +362,7 @@ void SettingsDialog::saveZoom()
 
 void SettingsDialog::refreshLanguage()
 {
+    offlineDawCombo.setTextWhenNothingSelected (RememberUI::tr ("Unavailable"));
     sections.setTabName (0, RememberUI::tr ("Recording & storage"));
     sections.setTabName (1, RememberUI::tr ("Appearance"));
     sections.setTabName (2, RememberUI::tr ("Projects & audition"));
@@ -451,6 +459,7 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
             safe->compactLimit.setText (juce::String (settings->compactAboveMB, 2), false);
             safe->recordMono = settings->mono;
             safe->midiVoiceCombo.setSelectedId (settings->midiPreviewVoice, juce::dontSendNotification);
+            safe->offlineDawCombo.setSelectedId (settings->offlineDefaultDaw == "fl-studio" ? 1 : 0, juce::dontSendNotification);
             // JUCE Button::setToggleState ignores changes while disabled.
             for (auto* child : safe->getChildren()) child->setEnabled (true);
             if (result.wasOk()) RememberUI::setAppearanceMode (settings->appearance);
@@ -720,14 +729,15 @@ void SettingsDialog::commit()
     auto originalBackup = std::make_shared<juce::File>();
     ProjectScanner::editAsync ([previews = previewsFolder, roots = projectsFolders, fingerprint = rebuildFingerprint, originalBackup,
                                seconds = recordSeconds, quality = oggQuality, mono = recordMono, midiVoice = midiVoiceCombo.getSelectedId(), compactMB,
+                               offlineDaw = offlineDawCombo.getSelectedId() == 1 ? juce::String ("fl-studio") : juce::String{},
                                capture = CaptureOptions { manualToggle.getToggleState(), lockToggle.getToggleState(), replaceToggle.getToggleState() }]
     {
         bool validRoot = false;
         for (const auto& root : roots) if (root.isDirectory()) { validRoot = true; break; }
         if (! previews.isDirectory() || ! validRoot)
             return juce::Result::fail (RememberUI::tr ("Select an existing previews folder and at least one accessible project search folder"));
-        const auto result = fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice, compactMB)
-            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice, compactMB);
+        const auto result = fingerprint.isEmpty() ? ProjectScanner::saveSettings (previews, roots, seconds, quality, mono, &capture, midiVoice, compactMB, offlineDaw)
+            : ProjectScanner::rebuildSettings (previews, roots, seconds, quality, mono, fingerprint, *originalBackup, &capture, midiVoice, compactMB, offlineDaw);
         // Saving accepts the search roots independently of the dialog's draft
         // search, which is cancelled on close. Rebuild the live inventory even
         // if a native filesystem notification is delayed or unavailable.
@@ -792,7 +802,7 @@ void SettingsDialog::resized()
         &monoToggle, &manualToggle, &lockToggle, &replaceToggle, &sizeEstimate, &storageUsage,
         &pcmPolicy, &storageInfo, &compactBtn, &compactLimit, &compactUnits });
     show (2, { &midiCaption, &midiHint, &midiVoiceCombo, &projectsCaption, &projectsHint,
-        &foldersList, &addProjectsBtn, &refreshProjectsBtn, &searchStatus });
+        &foldersList, &addProjectsBtn, &refreshProjectsBtn, &searchStatus, &offlineCaption, &offlineHint, &offlineDawCombo });
     if (section == 1)
     {
     auto appearanceRow = area.removeFromTop (32);
@@ -869,6 +879,10 @@ void SettingsDialog::resized()
     midiCaption.setBounds (midiRow.removeFromLeft (110));
     midiVoiceCombo.setBounds (midiRow.removeFromLeft (150)); midiRow.removeFromLeft (16);
     midiHint.setBounds (midiRow); area.removeFromTop (12);
+    offlineCaption.setBounds (area.removeFromTop (20)); area.removeFromTop (6);
+    auto offlineRow = area.removeFromTop (32);
+    offlineDawCombo.setBounds (offlineRow.removeFromLeft (160)); offlineRow.removeFromLeft (12);
+    offlineHint.setBounds (offlineRow); area.removeFromTop (12);
 
     // ── Project folders block ───────────────────────────────────────────────
     projectsCaption.setBounds (area.removeFromTop (20));

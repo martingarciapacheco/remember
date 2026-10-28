@@ -20,6 +20,12 @@ ProjectRowComponent::ProjectRowComponent()
     RememberUI::bindColour (usedSoundsBtn, RememberUI::TextButton::textColourOffId, Pal::Text);
     usedSoundsBtn.onClick = [this] { if (onUsedSounds) onUsedSounds(); };
     addAndMakeVisible (usedSoundsBtn);
+    selectedPreviewBtn.setWantsKeyboardFocus (false);
+    RememberUI::iconButton (selectedPreviewBtn, "selected-preview", RememberUI::tr ("Selected preview"));
+    RememberUI::bindColour (selectedPreviewBtn, RememberUI::TextButton::buttonColourId, Pal::Content);
+    RememberUI::bindColour (selectedPreviewBtn, RememberUI::TextButton::textColourOffId, Pal::Accent);
+    selectedPreviewBtn.onClick = [this] { if (onActions) onActions (this); };
+    addChildComponent (selectedPreviewBtn);
 
     RememberUI::iconButton (favBtn, "star", RememberUI::tr ("Toggle favorite"));
     RememberUI::iconButton (actionsBtn, "more", RememberUI::tr ("Preview actions"));
@@ -100,6 +106,10 @@ void ProjectRowComponent::setEntry (const ProjectEntry& e, bool isSelected)
     }
 
     entry    = e;
+    selectedPreviewBtn.setVisible (e.selectedPreviewEnabled);
+    selectedPreviewBtn.setTooltip (RememberUI::tr (e.selectedPreviewAvailable
+        ? "Selected preview. Untick Select preview in the three-dot menu to use the audio captured by the Remember plugin."
+        : "Selected preview unavailable. Playing the audio captured by the Remember plugin. Untick Select preview in the three-dot menu to disable this selection."));
     selected = isSelected;
     setTitle (e.name);
     setDescription (RememberUI::diagnostic (e.storageError.isNotEmpty() ? e.storageError : e.projectProblem)
@@ -237,6 +247,7 @@ void ProjectRowComponent::paint (juce::Graphics& g)
 
     // ── Top row: project name + inline tag chips ─────────────────────────────
     auto nameRow = area.removeFromTop (20);
+    if (entry.selectedPreviewEnabled) nameRow.removeFromLeft (24);
 
     if (! renaming)
     {
@@ -325,6 +336,7 @@ void ProjectRowComponent::resized()
 
     usedSoundsBtn.setBounds (getWidth() - 82, (getHeight() - 32) / 2, 32, 32);
     statusBtn.setBounds (getWidth() - 188, (getHeight() - 32) / 2, 100, 32);
+    selectedPreviewBtn.setBounds (44, RememberUI::recordingRowPadding - 2, 22, 24);
 
     if (renaming)
     {
@@ -799,6 +811,7 @@ void ProjectListComponent::recoverRecording (ProjectEntry entry, bool keep, bool
             {
                 if (safe == nullptr || ! safe->onEntryPlay) return;
                 auto preview = entry;
+                preview.selectedPreviewEnabled = false;
                 preview.previewOgg = choice.previewOgg; preview.storageError.clear();
                 preview.name = RememberUI::tr ("Recovery preview ") + choice.revision.substring (0, 12);
                 preview.projectPath.clear(); preview.projectAvailable = false;

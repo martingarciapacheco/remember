@@ -102,7 +102,7 @@ if(REMEMBER_BUILD_TESTS)
     juce_add_console_app(RememberTests PRODUCT_NAME "Remember regression tests")
     target_compile_definitions(RememberTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_sources(RememberTests PRIVATE ../Tests/SegmentedPreviewTests.cpp)
-    target_sources(RememberTests PRIVATE ../Tests/RememberTests.cpp ../Tests/StorageTests.cpp ../Tests/RecoveryTests.cpp ../Tests/StressTests.cpp ../Tests/LifecycleTests.cpp ../Tests/ConfigurationTests.cpp ../Tests/AnalysisTests.cpp ../Tests/CaptureMatrixTests.cpp ../App/Source/ProjectScanner.cpp ../App/Source/LibraryWatch.cpp)
+    target_sources(RememberTests PRIVATE ../Tests/RememberTests.cpp ../Tests/StorageTests.cpp ../Tests/RecoveryTests.cpp ../Tests/StressTests.cpp ../Tests/LifecycleTests.cpp ../Tests/ConfigurationTests.cpp ../Tests/AnalysisTests.cpp ../Tests/CaptureMatrixTests.cpp ../App/Source/ProjectScanner.cpp ../App/Source/LibraryWatch.cpp ../App/Source/PreviewSelection.cpp)
     target_link_libraries(RememberTests PRIVATE RememberPlugin
         juce::juce_audio_processors juce::juce_audio_formats juce::juce_dsp
         juce::juce_cryptography juce::juce_recommended_config_flags)

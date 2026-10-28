@@ -5,6 +5,7 @@
 #include "../App/Source/TagsEditorDialog.h"
 #include "../App/Source/MainComponent.h"
 #include "../App/Source/SettingsDialog.h"
+#include "../App/Source/OfflineRenderingDialog.h"
 #include "../App/Source/PreviewCompactionActions.h"
 #include "../App/Source/PreviewFolderSetup.h"
 #include "../App/Source/RecoveryChoiceDialog.h"
@@ -63,12 +64,49 @@ void saveImage (juce::Component& component, const char* name, bool software = fa
 }
 }
 
+struct OfflineRenderingTestAccess
+{
+    static bool idle (const OfflineRenderingDialog& view) { return ! view.work; }
+    static void previewSettings (OfflineRenderingDialog& view)
+    {
+        view.flSettings = OfflineRendering::readFlStudioSettings ("26", [] (const juce::String& key)
+        { return key == "SampleRate" ? "48000" : key == "IPBox" ? "8" : key == "WFBox" ? "1" : key == "MP3BitrateSlider" || key == "OggBitrateSlider" ? "13" : "0"; });
+        view.updateText();
+    }
+    static void scrollSettings (OfflineRenderingDialog& view) { view.viewport.setViewPosition (0, 360); }
+    static void top (OfflineRenderingDialog& view) { view.viewport.setViewPosition (0, 0); }
+    static bool localized (const OfflineRenderingDialog& view)
+    { return view.renderButton.getButtonText() == RememberUI::localize ("Start rendering") && view.previews.getButtonText() == RememberUI::localize ("Use full renders as previews")
+        && view.status.getText() == RememberUI::diagnostic (view.statusSource); }
+};
+
 void testFrontendDesign (const juce::File& root)
 {
     testFrontendTypography();
     testAppearanceContrast();
     testAutomaticAppearance();
     SavedConfig restoreConfig;
+    {
+        OfflineRenderingDialog offline;
+        awaitUi ([&] { return OfflineRenderingTestAccess::idle (offline); }, 20000, "Offline dialog blocked during discovery");
+        OfflineRenderingTestAccess::previewSettings (offline);
+        const auto oldLanguage = RememberUI::language.load();
+        for (const auto language : { RememberUI::Language::English, RememberUI::Language::SpanishSpain })
+        {
+            RememberUI::setLanguage (language);
+            check (OfflineRenderingTestAccess::localized (offline), "Offline controls did not follow live language changes");
+            for (const auto width : { 640, 840 })
+            {
+                offline.setSize (width, width == 640 ? 480 : 720);
+                OfflineRenderingTestAccess::top (offline);
+                const auto name = "offline-rendering-" + juce::String (language == RememberUI::Language::English ? "en-" : "es-") + juce::String (width) + ".png";
+                saveImage (offline, name.toRawUTF8(), true);
+                OfflineRenderingTestAccess::scrollSettings (offline);
+                saveImage (offline, ("settings-" + name).toRawUTF8(), true);
+            }
+        }
+        RememberUI::setLanguage (oldLanguage);
+    }
     const auto library = root.getChildFile ("design-library");
     const auto projects = root.getChildFile ("projects");
     check (projects.createDirectory().wasOk(), "Cannot create design project folder");
@@ -940,6 +978,12 @@ void testFrontendDesign (const juce::File& root)
         check (estimate->getText() == originalEstimate && LibraryStore::configFile().loadFileAsString() == configBeforeEstimate,
             "Draft storage estimates changed saved settings or failed to restore");
         sections->setCurrentTabIndex (2);
+        juce::ComboBox* offlineDaw = nullptr;
+        for (auto* child : settings.getChildren())
+            if (auto* combo = dynamic_cast<juce::ComboBox*> (child); combo && combo->getTitle() == "Default offline rendering DAW") offlineDaw = combo;
+        check (offlineDaw && offlineDaw->isVisible() && offlineDaw->isEnabled() && offlineDaw->getSelectedId() == 1
+               && offlineDaw->getText() == "FL Studio" && settings.getLocalBounds().contains (offlineDaw->getBounds()),
+               "Settings lacks its visible default offline DAW selector");
         saveImage (settings, "apple-settings-projects.png", true);
         const auto foldersImage = folders->createComponentSnapshot (folders->getLocalBounds(), true, 1, juce::SoftwareImageType{});
         check (foldersImage.getPixelAt (0, 0) == RememberUI::colour (Pal::BgDeep), "Settings folder list retained square corners");

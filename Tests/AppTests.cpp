@@ -15,6 +15,9 @@
 #include "WaveformTests.h"
 #include "StatisticsTests.h"
 #include "UndoTests.h"
+#include "OfflineRenderingTests.h"
+#include "PreviewSelectionTests.h"
+#include "../App/Source/OfflineRendering.h"
 #include "../App/Source/UsedSounds.h"
 #include "../App/Source/UsedSoundsDialog.h"
 #include "../App/Source/ProjectStatistics.h"
@@ -67,6 +70,38 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+        if ((argc == 4 || argc == 5) && juce::String (argv[1]) == "--probe-fl-render")
+        {
+            const juce::File executable (argv[2]), source (argv[3]);
+            const auto copied = root.getChildFile ("Remember CLI probe.flp");
+            check (source.copyFileTo (copied), "Cannot copy the isolated render probe project");
+            const auto formats = argc == 5 ? juce::StringArray::fromTokens (argv[4], ",", "") : juce::StringArray { "wav" };
+            const auto command = OfflineRendering::flStudioCommand (executable, copied, root, formats);
+            const auto rendered = OfflineRendering::render (command, false);
+            if (rendered.result.failed()) throw std::runtime_error (rendered.result.getErrorMessage().toStdString());
+            check (rendered.published.size() == formats.size(), "Render probe did not publish every requested format");
+            for (const auto& file : rendered.published)
+            {
+                auto audio = PreviewAudio::open (file); check (audio != nullptr, "Cannot open published render probe");
+                std::cout << "FL_STUDIO_NATIVE_RENDER format=" << file.getFileExtension() << " seconds=" << rendered.seconds << " rate=" << audio->sampleRate
+                    << " bits=" << audio->bitsPerSample << " channels=" << audio->numChannels
+                    << " frames=" << audio->lengthInSamples << " bytes=" << file.getSize() << "\n";
+            }
+            return 0;
+        }
+        if (argc == 3 && juce::String (argv[1]) == "--inspect-fl-render-settings")
+        {
+            const auto settings = OfflineRendering::readFlStudioSettings (argv[2]);
+            if (settings.result.failed()) throw std::runtime_error (settings.result.getErrorMessage().toStdString());
+            for (int i = 0; i < settings.values.size(); ++i)
+                std::cout << settings.values.getName (i).toString() << "=" << settings.values.getValueAt (i).toString() << "\n";
+            std::cout << "Missing: " << settings.missing.joinIntoString (",") << "\n";
+            return 0;
+        }
+        if (argc == 2 && juce::String (argv[1]) == "--selected-previews")
+        { testPreviewSelection (root); return 0; }
+        if (argc == 2 && juce::String (argv[1]) == "--offline-rendering")
+        { testOfflineRendering (root); return 0; }
         if (argc == 2 && juce::String (argv[1]) == "--waveforms")
         { testWaveformFeatures (root); root.deleteRecursively(); return 0; }
         if (argc == 2 && juce::String (argv[1]) == "--undo")
@@ -281,6 +316,8 @@ int main (int argc, char** argv)
         testRecoveryUi (root);
         testUsedSounds (root);
         testStatistics (root);
+        testOfflineRendering (root);
+        testPreviewSelection (root);
         testSidebarUi (root);
         testContextUndo (root);
         testLibraryScene (root);

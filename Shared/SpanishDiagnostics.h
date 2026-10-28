@@ -377,6 +377,10 @@ const std::map<juce::String, juce::String>& spanishDiagnostics()
         { juce::String::fromUTF8 ("Interface zoom"), juce::String::fromUTF8 ("Zoom de la interfaz") },
         { juce::String::fromUTF8 ("Scale text and controls. 100% restores the default size."), juce::String::fromUTF8 ("Ajusta el tamaño del texto y los controles. El 100 % restaura el tamaño predeterminado.") },
         { juce::String::fromUTF8 ("Maximise or restore"), juce::String::fromUTF8 ("Agrandar o restablecer") },
+        { juce::String::fromUTF8 ("Additional render outputs need review and were kept in: "), juce::String::fromUTF8 ("Las salidas de renderizado de audio adicionales deben revisarse y se han mantenido en: ") },
+        { juce::String::fromUTF8 ("FL Studio did not produce a readable audio file: "), juce::String::fromUTF8 ("FL Studio no ha generado un archivo de audio legible: ") },
+        { juce::String::fromUTF8 ("The rendered audio is incomplete: "), juce::String::fromUTF8 ("El audio reproducido está incompleto: ") },
+        { juce::String::fromUTF8 ("Cannot publish rendered audio: "), juce::String::fromUTF8 ("No se puede publicar el audio procesado: ") },
     };
     return strings;
 }

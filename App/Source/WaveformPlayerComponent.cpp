@@ -31,6 +31,7 @@ struct LoadTicket
     LoadTicket() { activeLoads.fetch_add (1); }
     ~LoadTicket() { source.reset(); activeLoads.fetch_sub (1); }
     std::unique_ptr<ReadAheadSource> source;
+    juce::File audioFile;
     std::shared_ptr<WaveformEnvelope> envelope;
     int low = 127, high = 0;
 };
@@ -409,9 +410,8 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
         if (generation->load() != request) return;
         if (entry.auditionNotes) for (const auto& note : *entry.auditionNotes)
         { ticket->low = juce::jmin (ticket->low, note.key); ticket->high = juce::jmax (ticket->high, note.key); }
-        juce::AudioFormatManager formats;
-        PreviewAudio::registerFormats (formats);
-        std::unique_ptr<juce::AudioFormatReader> reader (entry.auditionReader ? entry.auditionReader() : std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (entry.previewOgg)));
+        std::unique_ptr<juce::AudioFormatReader> reader (entry.auditionReader ? entry.auditionReader()
+            : PreviewSelection::open (entry, ticket->audioFile));
         if (generation->load() != request) return;
         if (reader) ticket->source = std::make_unique<ReadAheadSource> (std::move (reader), entry.auditionReader ? 8192 : 0);
         if (generation->load() != request) return;
@@ -421,7 +421,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
             safe->isLoading = false;
             if (! ticket->source || ! ticket->source->valid())
             {
-                safe->playbackError = RememberUI::tr ("Cannot read preview: ") + entry.previewOgg.getFullPathName()
+                safe->playbackError = RememberUI::tr ("Cannot read preview: ") + ticket->audioFile.getFullPathName()
                     + (ticket->source ? " (" + ticket->source->error() + ")" : juce::String{});
                 safe->playbackErrorFromDevice = false;
                 safe->previewError = safe->playbackError;
@@ -430,6 +430,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
                 return;
             }
             safe->midiLow = ticket->low; safe->midiHigh = ticket->high;
+            safe->currentAudioFile = ticket->audioFile;
             safe->readerSource = std::move (ticket->source);
             safe->transport.setSource (safe->readerSource.get(), 0, nullptr, safe->readerSource->sampleRate());
             safe->isLoaded = true;
@@ -442,7 +443,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
         if (entry.auditionReader) return; // No audio file or precomputed waveform for MIDI.
         ticket->envelope = std::make_shared<WaveformEnvelope>();
         ProjectScanner::queryAsync ([ticket, entry, generation, request]
-        { return ticket->envelope->read (entry.previewOgg, [generation, request] { return generation->load() != request; }); },
+        { return ticket->envelope->read (ticket->audioFile, [generation, request] { return generation->load() != request; }); },
             [safe, generation, request, ticket] (juce::Result result)
             {
                 if (safe == nullptr || generation->load() != request) return;
@@ -762,7 +763,7 @@ void WaveformPlayerComponent::timerCallback()
     if (readerSource && readerSource->readFailed())
     {
         stop(); releaseAudioDevice(); stopTimer(); isLoaded = false; playBtn.setEnabled (false);
-        playbackError = RememberUI::tr ("Preview read failed: ") + currentEntry.previewOgg.getFullPathName() + " (" + readerSource->error() + ")";
+        playbackError = RememberUI::tr ("Preview read failed: ") + currentAudioFile.getFullPathName() + " (" + readerSource->error() + ")";
         playbackErrorFromDevice = false;
         previewError = playbackError;
         pathLabel.setText (playbackError, juce::dontSendNotification); return;

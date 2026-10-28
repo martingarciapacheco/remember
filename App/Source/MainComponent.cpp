@@ -4,6 +4,7 @@
 #include "PreviewFolderSetup.h"
 #include "UsedSoundsDialog.h"
 #include "StatisticsDialog.h"
+#include "OfflineRenderingDialog.h"
 #include "BuildInfo.h"
 
 // Pal:: colours are defined in ProjectListComponent.h
@@ -30,10 +31,17 @@ MainComponent::MainComponent()
     RememberUI::bindColour (statisticsButton, RememberUI::TextButton::textColourOffId, Pal::Subtext);
     statisticsButton.onClick = [this] { StatisticsDialog::launch (&player); };
     addAndMakeVisible (statisticsButton);
+    RememberUI::iconButton (offlineButton, "offline-render", RememberUI::tr ("Offline rendering"));
+    offlineButton.setTooltip (RememberUI::tr ("Offline rendering"));
+    RememberUI::bindColour (offlineButton, RememberUI::TextButton::buttonColourId, Pal::Elevated);
+    RememberUI::bindColour (offlineButton, RememberUI::TextButton::textColourOffId, Pal::Subtext);
+    offlineButton.onClick = [] { OfflineRenderingDialog::launch(); };
+    addAndMakeVisible (offlineButton);
 
     // Clicking a row loads AND auto-plays the preview
     list.onEntrySelected = [this] (const ProjectEntry& e) { player.loadEntry (e); if (player.autoplaySelection()) player.play(); };
     list.onEntryPlay     = [this] (const ProjectEntry& e) { player.loadEntry (e); player.play(); };
+    list.onPreviewChanged = [this] (const ProjectEntry& e) { player.refreshPreviewSelection (e); };
     list.onUsedSounds = [this] (const ProjectEntry& e)
     {
         UsedSoundsDialog::launch (e, {}, {}, {}, &player);
@@ -97,6 +105,7 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    OfflineRenderingDialog::shutdown();
     juce::Desktop::getInstance().removeFocusChangeListener (this);
     sidebar.removeMouseListener (this);
     list.removeMouseListener (this);
@@ -263,6 +272,8 @@ void MainComponent::resized()
     settingsButton.setBounds (header.removeFromRight (34).withSizeKeepingCentre (34, 34));
     header.removeFromRight (8);
     statisticsButton.setBounds (header.removeFromRight (34).withSizeKeepingCentre (34, 34));
+    header.removeFromRight (8);
+    offlineButton.setBounds (header.removeFromRight (34).withSizeKeepingCentre (34, 34));
     player.setBounds (area.removeFromBottom (kPlayerHeight));
     auto sidebarArea = area.removeFromLeft (kSidebarWidth + margin).withTrimmedLeft (margin);
     constexpr int padding = RememberUI::appSidebarPadding;
