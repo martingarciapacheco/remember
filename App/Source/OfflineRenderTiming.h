@@ -19,6 +19,6 @@ struct Estimate
     bool unknownSize = false;
 };
 Estimate estimateBatch (const BatchPlan&, const FlStudioSettings&, const juce::var& config, const Cancel& = {});
-juce::Result recordCompletedRender (const Command&, const RenderResult&, double audioSeconds, bool useAsPreview);
+juce::Result recordCompletedRender (const Command&, const RenderResult&, double audioSeconds, bool useAsPreview, const Cancel& = {});
 juce::File bestPreview (const juce::Array<juce::File>&);
 }

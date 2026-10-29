@@ -34,6 +34,7 @@ struct Command
     juce::Array<juce::File> outputs;
     juce::Array<juce::File> existingOutputs;
     juce::File executable, project, destination;
+    juce::String projectFileId;
     juce::StringArray formats;
     std::map<juce::String, juce::String> outputStamps;
 };
@@ -41,7 +42,7 @@ struct Command
 // implicit overwrite approval are inferred from them.
 Command flStudioCommand (const juce::File& executable, const juce::File& project,
                          const juce::File& destination,
-                         const juce::StringArray& formats);
+                         const juce::StringArray& formats, const Cancel& = {});
 
 struct RememberOptions
 {

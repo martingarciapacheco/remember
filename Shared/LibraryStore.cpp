@@ -161,7 +161,29 @@ juce::Result updateUnlocked (const juce::File& file, const Mutation& mutate, boo
 
 juce::var readJson (const juce::File& file)
 {
-    return juce::JSON::parse (file.loadFileAsString());
+    juce::var value;
+    readJsonChecked (file, value);
+    return value;
+}
+juce::Result readJsonChecked (const juce::File& file, juce::var& value, bool* readable)
+{
+    value = juce::var{};
+    if (readable) *readable = false;
+    juce::FileInputStream input (file);
+    if (! input.openedOk()) return input.getStatus();
+    const auto length = input.getTotalLength();
+    const auto tooLarge = [&] { return juce::Result::fail ("JSON file is unexpectedly large; restore a valid file: " + file.getFullPathName()); };
+    if (length < 0 || length > (juce::int64) maximumJsonBytes) return tooLarge();
+    juce::MemoryBlock bytes;
+    input.readIntoMemoryBlock (bytes, maximumJsonBytes + 1);
+    if (bytes.getSize() > maximumJsonBytes) return tooLarge();
+    if (input.getStatus().failed()) return input.getStatus();
+    if ((juce::int64) bytes.getSize() != length || input.getTotalLength() != length)
+        return juce::Result::fail ("JSON file changed while reading: " + file.getFullPathName());
+    if (readable) *readable = true;
+    const auto parsed = juce::JSON::parse (juce::String::createStringFromData (bytes.getData(), (int) bytes.getSize()), value);
+    if (parsed.failed()) value = juce::var{};
+    return parsed;
 }
 
 juce::Result ensureDirectory (const juce::File& folder)
@@ -298,7 +320,10 @@ juce::Result detail::writeJsonWithTemporaryWriter (const juce::File& file, const
                                    + " for " + file.getFullPathName() + ". " + created.getErrorMessage()
                                    + ". Check permissions or use a shorter path, then retry.");
     JsonTemporary temporary { file.getSiblingFile (shortTemporaryName (".rm-")) };
-    const auto written = writer (temporary.file, juce::JSON::toString (value), temporary.created);
+    const auto text = juce::JSON::toString (value);
+    if ((size_t) text.getNumBytesAsUTF8() > maximumJsonBytes)
+        return juce::Result::fail ("JSON file is unexpectedly large; restore a valid file: " + file.getFullPathName());
+    const auto written = writer (temporary.file, text, temporary.created);
     if (written.failed()) return juce::Result::fail ("JSON save failed for " + file.getFullPathName() + ". " + written.getErrorMessage());
     if (! temporary.created)
         return juce::Result::fail ("JSON temporary was not created for " + file.getFullPathName());

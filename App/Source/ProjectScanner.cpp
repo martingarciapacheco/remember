@@ -8,6 +8,17 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
+namespace
+{
+std::atomic<unsigned> folderMutations { 0 };
+std::atomic<uint64_t> folderGeneration { 0 };
+struct FolderPublicationGuard
+{
+    FolderPublicationGuard() { if (depth++ == 0) { folderMutations.fetch_add (1); folderGeneration.fetch_add (1); } }
+    ~FolderPublicationGuard() { if (--depth == 0) { folderGeneration.fetch_add (1); folderMutations.fetch_sub (1); } }
+    inline static thread_local unsigned depth = 0;
+};
+}
 #if JUCE_WINDOWS
  #include <objbase.h>
 #endif
@@ -132,9 +143,7 @@ static juce::File configFilePath()
 
 static juce::var loadConfig()
 {
-    auto f = configFilePath();
-    if (! f.existsAsFile()) return {};
-    return juce::JSON::parse (f.loadFileAsString());
+    return LibraryStore::readJson (configFilePath());
 }
 
 namespace
@@ -185,13 +194,8 @@ juce::Result directoryContents (const juce::File& directory, bool files, bool op
 
 juce::Result readEntryMetadata (const juce::File& file, juce::var& metadata, bool& readable)
 {
-    readable = false;
-    juce::FileInputStream stream (file);
-    if (! stream.openedOk()) return juce::Result::fail (stream.getStatus().getErrorMessage());
-    const auto text = stream.readEntireStreamAsString();
-    if (stream.getStatus().failed()) return stream.getStatus();
-    readable = true;
-    const auto parsed = juce::JSON::parse (text, metadata);
+    const auto parsed = LibraryStore::readJsonChecked (file, metadata, &readable);
+    if (parsed.failed()) return readable ? juce::Result::fail ("Invalid or incomplete JSON object") : parsed;
     return parsed.wasOk() && metadata.getDynamicObject() != nullptr ? juce::Result::ok()
         : juce::Result::fail ("Invalid or incomplete JSON object");
 }
@@ -456,13 +460,15 @@ public:
     {
         struct CloseWatches { LibraryWatch& value; ~CloseWatches() { value.clear(); } } closeWatches { watcher };
         ProjectIdentity::CandidateIndex candidates;
-        auto cancelled = [this] { return threadShouldExit(); };
+        auto cancelled = [this] { return threadShouldExit() || requested.load(); };
         juce::String previousRoots, previousConfig;
         std::vector<juce::String> previousSignature;
         juce::uint32 indexedAt = 0;
         for (;;)
         {
             if (threadShouldExit()) return;
+            if (folderMutations.load() != 0) { wait (10); continue; }
+            const auto folderVersion = folderGeneration.load();
             const auto begun = juce::Time::getMillisecondCounterHiRes();
             requested.store (false);
             if (previousConfig.isEmpty()) watcher.configure (configFilePath(), {}, {});
@@ -487,6 +493,7 @@ public:
                 if (! candidates.rebuild (roots, cancelled))
                 {
                     if (threadShouldExit()) return;
+                    if (requested.load()) continue;
                     publishError (candidates.getLastError()); waitForRetry(); continue;
                 }
                 previousRoots = rootsKey;
@@ -495,6 +502,7 @@ public:
             ProjectScanner::ScanMetrics scanMetrics;
             auto entries = ProjectScanner::scan (root, roots, &candidates, cancelled, &scanMetrics);
             if (threadShouldExit()) return;
+            if (requested.load()) continue;
             if (scanMetrics.error.isNotEmpty()) { publishError (scanMetrics.error); waitForRetry(); continue; }
             const auto scannedAt = juce::Time::getMillisecondCounterHiRes();
             const auto entryCount = entries.size();
@@ -534,6 +542,8 @@ public:
             if (sortFromConfig (config) != ProjectScanner::SidebarSort::Manual) paths.sort (true);
             const bool changed = configSignature != previousConfig || signature != previousSignature
                 || snapshot()->error.isNotEmpty() || snapshot()->loading;
+            if (requested.load() || folderMutations.load() != 0 || folderGeneration.load() != folderVersion)
+            { requested.store (true); continue; }
             if (changed)
             {
                 auto next = std::make_shared<Publication>();
@@ -842,6 +852,8 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
                 && LibraryStore::pendingOwnerState (dir, LibraryStore::readJson (metaFile)) == LibraryStore::OwnerState::Active)
                 return false;
             const auto result = LibraryStore::recoverEntry (dir, cancelled);
+            if (cancelled && cancelled())
+            { repairAttempts.erase (cacheKey); return false; }
             if (result.result.failed())
             {
                 attempt.error = result.result.getErrorMessage();
@@ -1129,12 +1141,14 @@ juce::StringArray ProjectScanner::getAllFolderPaths()
 
 juce::Result ProjectScanner::createFolder (const juce::String& path)
 {
+    FolderPublicationGuard publicationGuard;
     OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     if (path.trim().isEmpty()) return juce::Result::fail ("Folder name is empty");
     return editExplicitFolders ([&] (juce::StringArray& list) { list.addIfNotAlreadyThere (path); });
 }
 juce::Result ProjectScanner::deleteFolder (const juce::String& path)
 {
+    FolderPublicationGuard publicationGuard;
     OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     if (path.isEmpty()) return juce::Result::fail ("Cannot delete the All collection");
     auto remove = [&] (const juce::String& value)
@@ -1148,6 +1162,7 @@ juce::Result ProjectScanner::deleteFolder (const juce::String& path)
 }
 juce::Result ProjectScanner::renameFolder (const juce::String& oldPath, const juce::String& newPath)
 {
+    FolderPublicationGuard publicationGuard;
     OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     if (oldPath.isEmpty() || newPath.isEmpty()) return juce::Result::fail ("Folder path is empty");
     if (oldPath == newPath) return juce::Result::ok();
@@ -1200,8 +1215,9 @@ void ProjectScanner::setSidebarSort (SidebarSort s)
 }
 
 juce::Result ProjectScanner::positionFolder (const juce::String& path, const juce::String& parent,
-                                            const juce::String& beforePath)
+                                            const juce::String& beforePath, const std::function<void()>& afterRename)
 {
+    FolderPublicationGuard publicationGuard;
     OrganizationUndo::Batch undoBatch (UndoContext::Folders);
     auto paths = getAllFolderPaths();
     // Include edits accepted since the last index publication.
@@ -1221,6 +1237,7 @@ juce::Result ProjectScanner::positionFolder (const juce::String& path, const juc
         return juce::Result::fail ("Destination order changed; retry the move");
     if (destination != path)
         if (auto result = renameFolder (path, destination); result.failed()) return result;
+    if (afterRename) afterRename();
     for (auto& value : paths)
         if (value == path || value.startsWith (path + "/")) value = destination + value.substring (path.length());
     juce::StringArray subtree { destination };
@@ -1302,4 +1319,5 @@ juce::Result ProjectScanner::restoreEntry (const ProjectEntry& entry)
     return LibraryStore::restoreEntry (getPreviewsFolder(), entry.metadataFile.getParentDirectory());
 }
 bool ProjectScanner::canUndoOrganization (UndoContext context) { return OrganizationUndo::available (context); }
-juce::Result ProjectScanner::undoOrganization (UndoContext context) { return OrganizationUndo::undo (context, getPreviewsFolder()); }
+juce::Result ProjectScanner::undoOrganization (UndoContext context)
+{ FolderPublicationGuard publicationGuard; return OrganizationUndo::undo (context, getPreviewsFolder()); }

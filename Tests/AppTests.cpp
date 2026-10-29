@@ -23,6 +23,7 @@
 #include "../App/Source/ProjectStatistics.h"
 #include <iostream>
 #include <stdexcept>
+#include <filesystem>
 
 namespace
 {
@@ -66,7 +67,26 @@ int main (int argc, char** argv)
     struct Cleanup
     {
         juce::File root;
-        ~Cleanup() { if (root.isAChildOf (juce::File::getCurrentWorkingDirectory())) root.deleteRecursively(); }
+        double started = juce::Time::getMillisecondCounterHiRes();
+        ~Cleanup()
+        {
+            const auto owner = juce::File::getCurrentWorkingDirectory();
+            if (root.getParentDirectory() != owner || ! root.isAChildOf (owner)
+                || ! root.getFileName().startsWith ("remember-") || root.isSymbolicLink()) return;
+            const auto begun = juce::Time::getMillisecondCounterHiRes();
+            std::cout << "FIXTURE cleanup begin elapsedMs=" << begun - started << std::endl;
+#if JUCE_WINDOWS
+            const auto path = std::filesystem::path (root.getFullPathName().toWideCharPointer());
+#else
+            const auto path = std::filesystem::u8path (root.getFullPathName().toRawUTF8());
+#endif
+            // The standard native traversal removes links themselves and avoids
+            // allocating a JUCE File/String array at each fixture directory.
+            std::error_code error;
+            std::filesystem::remove_all (path, error);
+            std::cout << "FIXTURE cleanup ms=" << juce::Time::getMillisecondCounterHiRes() - begun
+                << " result=" << (error ? error.message() : "ok") << std::endl;
+        }
     } cleanup { root };
     try
     {

@@ -24,10 +24,37 @@ La validación se registra por separado; no se deduce del estado.
 | Statistics: top 50 instrumentos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: top 50 efectos | Implementado; ver límites y validación | Implementado; VST2/VST3/AU, nativos y Max for Live | Pendiente |
 | Statistics: búsqueda, drag de copias y reproductor de samples independiente | Genérico sobre el inventario | Genérico sobre el inventario | Requiere lector de inventario |
-| Offline rendering desde la app | Parcial, en implementación: ejecutor CLI y ventana; ver límites | Pendiente | Pendiente |
-| Select preview: audio externo por grabación, desactivación y fallback a la captura | Genérico; implementado, validación en curso | Genérico; implementado, validación en curso | Formatos que pueda decodificar la app; no añade lectores de proyectos |
+| Offline rendering desde la app | Parcial: ejecutor CLI y ventana; publicación con rollback por proyecto, ver límites | Pendiente | Pendiente |
+| Select preview: audio externo por grabación, desactivación y fallback a la captura | Genérico; decisiones manuales protegidas y asociación revalidada | Genérico; decisiones manuales protegidas y asociación revalidada | Formatos que pueda decodificar la app; no añade lectores de proyectos |
 
 ## Offline rendering (en investigación)
+
+Auditoría del 28 de octubre: la confirmación de sobrescritura incluye el contenido
+del archivo, además de identidad, tamaño y fecha. Los formatos de un proyecto
+conservan originales y staging hasta terminar la publicación; ante fallo o
+cancelación se restauran los ya sustituidos. Si otra aplicación modifica un
+archivo publicado o Windows impide restaurarlo, se conserva el staging con
+originales y renders y se indica su ruta para recuperación. Las garantías de esta
+corrección cubren errores y cancelación durante el proceso; la publicación de
+varios archivos no es una transacción atómica frente a un corte de energía.
+El escaneo rechaza inventarios parciales ante errores de lectura. Las lecturas de
+duración usan búfer, límite de eventos y cancelación dentro de playlists grandes.
+Cancelar una ventana invalida también las confirmaciones/finalizaciones antiguas.
+
+Desactivar una preview heredada es una decisión manual protegida incluso ante
+renders posteriores (también se respetan selecciones desactivadas por versiones
+anteriores). La asignación automática revalida la asociación dentro de la
+transacción y no acepta identidad desconocida. No cambia el soporte de lectores
+de Used Sounds, Statistics ni la captura VST3. Evidencia y cierre de regresiones:
+`AUDITORIA_2026-10-28.md`. Cierre del 29 de octubre: app Release 17/17,
+plugin 16/16 más revalidación final 3/3, regresión global ASan y seis suites ASan
+específicas aprobadas; bundle VST3 aprobado con pluginval 1.0.4 nivel 5 y perfil
+aislado. Snapshots de offline/reproductor revisados en inglés y español a tamaños
+mínimo y normal. Los logs de aceptación están en `out/audit-acceptance-release*`,
+`out/audit-acceptance-asan5-regression*`, `out/audit-final-asan-focused*`,
+`out/audit-final-plugin*`, `out/audit-a15-plugin*` y `out/audit-native-vst3/`.
+Estos resultados validan las regresiones descritas; no amplían la certificación
+de proyectos, formatos o versiones reales de FL Studio de la matriz.
 
 La ventana nativa ya está conectada al ejecutor secuencial, las estimaciones y la
 confirmación de cada colisión. Persiste las opciones de Remember y las asociaciones

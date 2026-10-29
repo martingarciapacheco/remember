@@ -381,6 +381,14 @@ const std::map<juce::String, juce::String>& spanishDiagnostics()
         { juce::String::fromUTF8 ("FL Studio did not produce a readable audio file: "), juce::String::fromUTF8 ("FL Studio no ha generado un archivo de audio legible: ") },
         { juce::String::fromUTF8 ("The rendered audio is incomplete: "), juce::String::fromUTF8 ("El audio reproducido está incompleto: ") },
         { juce::String::fromUTF8 ("Cannot publish rendered audio: "), juce::String::fromUTF8 ("No se puede publicar el audio procesado: ") },
+        { juce::String::fromUTF8 ("The associated project changed; refresh the library."), juce::String::fromUTF8 ("El proyecto asociado ha cambiado; actualiza la biblioteca.") },
+        { juce::String::fromUTF8 ("Cannot list offline rendering source: "), juce::String::fromUTF8 ("No se puede leer la carpeta de proyectos para renderizar: ") },
+        { juce::String::fromUTF8 ("Too many FL Studio timing events."), juce::String::fromUTF8 ("El proyecto de FL Studio contiene demasiados eventos para estimar su duración.") },
+        { juce::String::fromUTF8 ("JSON file is unexpectedly large; restore a valid file: "), juce::String::fromUTF8 ("El archivo JSON es demasiado grande; restaura un archivo válido: ") },
+        { juce::String::fromUTF8 ("JSON file changed while reading: "), juce::String::fromUTF8 ("El archivo JSON ha cambiado durante la lectura: ") },
+        { juce::String::fromUTF8 ("Cannot verify existing render outputs. Check access and select the projects again."), juce::String::fromUTF8 ("No se pueden verificar los archivos de audio existentes. Comprueba el acceso y selecciona los proyectos de nuevo.") },
+        { juce::String::fromUTF8 ("Cannot preserve existing render before publication: "), juce::String::fromUTF8 ("No se puede conservar el audio existente antes de publicar: ") },
+        { juce::String::fromUTF8 ("Render publication could not be fully restored. Recovery files were kept in: "), juce::String::fromUTF8 ("No se han podido restaurar todos los archivos tras el fallo. Los archivos de recuperación se han conservado en: ") },
     };
     return strings;
 }

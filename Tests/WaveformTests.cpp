@@ -13,6 +13,14 @@ struct WaveformTestAccess
     static juce::Component& drag (WaveformPlayerComponent& player) { return player.dragBtn; }
     static void intercept (WaveformPlayerComponent& player, std::function<bool (const juce::StringArray&, bool, juce::Component*)> action)
     { player.startPreviewDrag = std::move (action); }
+    static bool failed (WaveformPlayerComponent& player) { return player.waveformError.isNotEmpty(); }
+    static bool pending (WaveformPlayerComponent& player) { return player.playWhenLoaded; }
+    static bool unnormalizedCanWaitForDevice (WaveformPlayerComponent& player)
+    {
+        player.deviceSettingsLoaded = false; player.play();
+        const bool waiting = player.waitingForBuffer && ! player.playWhenLoaded && ! player.isAudioDeviceOpen();
+        player.stop(); return waiting;
+    }
 };
 namespace
 {
@@ -68,6 +76,23 @@ void testWaveformFeatures (const juce::File& root)
     ProjectEntry entry; entry.name = "Frequency guide stereo preview";
     entry.previewOgg = library.getChildFile ("stereo.wav"); entry.metadataFile = library.getChildFile ("entry.json");
     writeTone (entry.previewOgg, 152, 5042);
+    const auto malformed = library.getChildFile ("invalid-rate.wav");
+    {
+        // Independent minimal PCM header: JUCE's writer can put metadata chunks
+        // before fmt, so a fixed offset into its output is not the sample rate.
+        juce::MemoryOutputStream header;
+        header.writeInt (0x46464952); header.writeInt (36 + 192000); header.writeInt (0x45564157);
+        header.writeInt (0x20746d66); header.writeInt (16); header.writeShort (1); header.writeShort (2);
+        header.writeInt (0x7fffffff); header.writeInt (192000); header.writeShort (4); header.writeShort (16);
+        header.writeInt (0x61746164); header.writeInt (192000); header.writeRepeatedByte (0, 192000);
+        check (malformed.replaceWithData (header.getData(), header.getDataSize()), "Cannot create malformed WAV sample rate");
+    }
+    auto malformedReader = PreviewAudio::open (malformed);
+    check (malformedReader && malformedReader->sampleRate > 768000, "WAV fixture did not expose its oversized sample rate");
+    WaveformEnvelope rejectedEnvelope;
+    check (rejectedEnvelope.read (malformed, [] { return false; }).failed()
+           && rejectedEnvelope.channels[0].empty() && rejectedEnvelope.channels[1].empty(),
+           "Malformed sample rate allocated a waveform/loudness window");
     WaveformEnvelope envelope;
     check (envelope.read (entry.previewOgg, [] { return false; }).wasOk() && envelope.channelCount == 2, "Stereo envelope failed");
     for (int ch = 0; ch < 2; ++ch)
@@ -90,6 +115,11 @@ void testWaveformFeatures (const juce::File& root)
             "Frequency guide landmark is inaccurate");
     }
     juce::File exported, again;
+    const auto cancelledLibrary = root.getChildFile ("cancelled-export");
+    int hashChecks = 0;
+    check (PreviewExport::prepare (entry, cancelledLibrary, exported, [&] { return ++hashChecks >= 4; }).failed()
+           && exported == juce::File{} && ! cancelledLibrary.exists(),
+           "Export did not cancel during source hashing before creating output directories");
     check (PreviewExport::prepare (entry, library, exported, [] { return false; }).wasOk(), "Cannot prepare WAV copy");
     const auto stamp = exported.getLastModificationTime();
     check (exported.getParentDirectory() == library.getChildFile ("Exports")
@@ -168,6 +198,48 @@ void testWaveformFeatures (const juce::File& root)
         player.clearPreview(); check (! WaveformTestAccess::drag (player).isEnabled(), "Cleared player exports previous audio");
     }
     awaitUi ([] { return WaveformPlayerComponent::pendingLoads() == 0 && ProjectScanner::pendingJobs() == 0; });
+    {
+        WaveformPlayerComponent player (nullptr, false); player.setCompactMode (true); player.setSize (640, 190);
+        awaitUi ([] { return ProjectScanner::pendingJobs() == 0; });
+        struct Gate { juce::WaitableEvent entered, release; ~Gate() { release.signal(); } };
+        auto gate = std::make_shared<Gate>();
+        struct Release { std::shared_ptr<Gate> gate; ~Release() { gate->release.signal(); } } release { gate };
+        ProjectScanner::queryAsync ([gate] { gate->entered.signal(); gate->release.wait (10000); return juce::Result::ok(); });
+        check (gate->entered.wait (2000), "Cannot hold waveform query queue");
+        player.setNormalized (true); player.loadEntry (entry); player.play();
+        awaitUi ([&] { return player.hasLoadedEntry(); });
+        // Decoder/read-ahead is open, while the independent waveform open is
+        // queued. Corrupt only the header to reproduce that second-open failure.
+        {
+            juce::FileOutputStream edit (entry.previewOgg);
+            check (edit.openedOk() && edit.setPosition (0) && edit.write ("invalid!", 8), "Cannot simulate second-open failure"); edit.flush();
+        }
+        gate->release.signal();
+        awaitUi ([&] { return WaveformTestAccess::failed (player); });
+        const auto previousLanguage = RememberUI::language.load();
+        for (auto language : { RememberUI::Language::English, RememberUI::Language::SpanishSpain })
+        {
+            RememberUI::setLanguage (language);
+            check (! WaveformTestAccess::pending (player) && player.getPlaybackError() == RememberUI::localize (
+                "Loudness measurement failed. Turn off normalization to play, or select the preview again."),
+                "Failed loudness analysis stayed pending or lost its translated error");
+            const auto locale = language == RememberUI::Language::English ? "en" : "es";
+            snapshot (player, "waveform-error-compact-" + juce::String (locale) + ".png");
+            player.setCompactMode (false);
+            for (const int width : { 640, 1024 })
+            {
+                player.setSize (width, 190);
+                snapshot (player, "waveform-error-" + juce::String (locale) + "-" + juce::String (width) + ".png");
+            }
+            player.setSize (640, 190); player.setCompactMode (true);
+        }
+        RememberUI::setLanguage (previousLanguage);
+        player.setNormalized (false);
+        check (player.getPlaybackError().isEmpty() && WaveformTestAccess::unnormalizedCanWaitForDevice (player),
+               "Turning off normalization did not unblock playback after analysis failure");
+        player.clearPreview();
+        check (! WaveformTestAccess::failed (player), "Clearing preview retained an old waveform error");
+    }
     RememberUI::setAppearanceMode (RememberAppearance::System);
     std::cout << "PASS: frequency analysis, mono/stereo, global saved waveform menu, copy-only WAV drag, immutable/reused Exports, RMP flattening and native snapshots\n";
 }

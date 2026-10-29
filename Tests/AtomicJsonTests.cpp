@@ -103,6 +103,29 @@ void testAtomicJson (const juce::File& fixtureRoot)
     const auto oldText = juce::JSON::toString (json (juce::String::fromUTF8 ("Anterior: canción 🎹")));
     const auto next = json (juce::String::fromUTF8 ("Nueva: grabación 🎵"));
     const auto target = root.getChildFile ("config.json");
+    {
+        const auto boundary = root.getChildFile ("size-boundary.json");
+        {
+            juce::FileOutputStream output (boundary);
+            check (output.openedOk() && output.write ("{}", 2)
+                   && output.writeRepeatedByte (' ', LibraryStore::maximumJsonBytes - 2), "Cannot write JSON size boundary");
+            output.flush();
+        }
+        juce::var parsed; bool readable = false;
+        check (LibraryStore::readJsonChecked (boundary, parsed, &readable).wasOk() && readable && parsed.isObject(),
+               "JSON size limit rejected its inclusive boundary");
+        const auto identity = ProjectIdentity::fileId (boundary);
+        check (LibraryStore::writeJsonAtomically (boundary, json (juce::String::repeatedString ("x", (int) LibraryStore::maximumJsonBytes))).failed()
+               && boundary.getSize() == (juce::int64) LibraryStore::maximumJsonBytes && ProjectIdentity::fileId (boundary) == identity,
+               "Oversized JSON write replaced the original");
+        {
+            juce::FileOutputStream output (boundary);
+            check (output.openedOk() && output.writeByte (' '), "Cannot extend JSON past limit"); output.flush();
+        }
+        check (LibraryStore::readJsonChecked (boundary, parsed, &readable).failed() && ! readable && parsed.isVoid(),
+               "Oversized JSON read was parsed or classified as safely repairable");
+        checkNoTemporaries (root);
+    }
     for (bool existing : { true, false })
         for (int stage = 0; stage < 3; ++stage)
         {

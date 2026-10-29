@@ -20,7 +20,7 @@ private:
     void choose (int);
     void start();
     void next();
-    void execute (OfflineRendering::Command, bool);
+    void execute (OfflineRendering::Command, bool, OfflineRendering::ProcessRunner = {});
     void stop();
     void setBusy (bool);
     void updateText();
@@ -50,7 +50,8 @@ private:
     std::function<void (Work&)> completed;
     std::unique_ptr<juce::FileChooser> chooser;
     int current = 0;
-    bool batch = false, batchPreviews = false, refreshPending = false;
+    bool batch = false, batchPreviews = false, refreshPending = false, confirmingStart = false;
+    uint64_t operation = 0;
     RememberUI::LanguageCallback language { [this] { updateText(); } };
     juce::SharedResourcePointer<RememberUI::TooltipWindow> tooltips;
 };

@@ -7,13 +7,13 @@ juce::Result WaveformEnvelope::read (const juce::File& file, const std::function
     juce::AudioFormatManager formats; PreviewAudio::registerFormats (formats);
     if (cancelled()) return juce::Result::ok();
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
-    if (! reader || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0
+    if (! reader || ! std::isfinite (reader->sampleRate) || reader->sampleRate <= 0 || reader->sampleRate > 768000
         || reader->lengthInSamples <= 0 || reader->numChannels == 0)
         return juce::Result::fail ("Cannot read waveform: " + file.getFullPathName());
     const auto length = reader->lengthInSamples;
     channelCount = (int) juce::jmin (2u, reader->numChannels);
     // Keep enough detail for enlarged/high-DPI editors without decoding on paint.
-    const auto bins = (int) juce::jlimit ((juce::int64) 1, (juce::int64) 32768, (length + 63) / 64);
+    const auto bins = (int) juce::jlimit ((juce::int64) 1, (juce::int64) 32768, 1 + (length - 1) / 64);
     for (auto& channel : channels) channel.assign ((size_t) bins, {});
     const int fftOrder = juce::jlimit (10, 15, (int) std::ceil (std::log2 (reader->sampleRate / 24.0)));
     const int fftSize = 1 << fftOrder;

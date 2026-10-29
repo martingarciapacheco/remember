@@ -80,6 +80,7 @@ OfflineRenderingDialog::OfflineRenderingDialog()
         for (const auto& app : DawLauncher::discover()) if (app.name == "FL Studio") { job.exe = app.executable; break; }
     }, [this] (Work& job)
     {
+        if (job.result.failed()) { setStatus (job.result.getErrorMessage()); setBusy (false); return; }
         options = job.options; flExecutable = job.exe;
         daw.setSelectedId (job.defaultSupported ? 1 : 0, juce::dontSendNotification);
         beside.setToggleState (options.saveBesideProject, juce::dontSendNotification);
@@ -97,13 +98,19 @@ void OfflineRenderingDialog::begin (std::function<void (Work&)> run, std::functi
 {
     jassert (! work); completed = std::move (finish); work = std::make_shared<Work> (std::move (run));
     if (! work->module.valid() || ! work->startThread())
-    { completed = {}; work.reset(); setStatus ("Failed"); setBusy (false); }
+    {
+        completed = {}; work.reset();
+        if (batch && current < rowStates.size()) rowStates.set (current, "Failed");
+        else plan = {};
+        batch = false; setStatus ("Failed"); list.updateContent(); setBusy (false);
+    }
 }
 void OfflineRenderingDialog::timerCallback()
 {
     if (! work || ! work->done.load()) return;
     auto finished = std::move (work); auto callback = std::move (completed);
-    if (finished->result.failed()) { batch = false; setStatus (finished->result.getErrorMessage()); setBusy (false); }
+    if (finished->threadShouldExit())
+    { batch = false; setStatus ("Offline rendering cancelled."); setBusy (false); }
     else if (callback) callback (*finished);
     BackgroundRetirement::retire (std::move (finished));
     if (refreshPending && ! work && ! batch) { refreshPending = false; refresh(); }
@@ -111,7 +118,7 @@ void OfflineRenderingDialog::timerCallback()
 void OfflineRenderingDialog::setBusy (bool busy)
 {
     body.setEnabled (! busy); daw.setEnabled (! busy); renderButton.setEnabled (! busy && plan.result.wasOk() && ! plan.jobs.empty());
-    stopButton.setEnabled (batch || work != nullptr);
+    stopButton.setEnabled (batch || work != nullptr || confirmingStart);
 }
 void OfflineRenderingDialog::choose (int kind)
 {
@@ -131,6 +138,8 @@ void OfflineRenderingDialog::refresh()
 {
     if (work) { refreshPending = true; return; }
     if (batch) return;
+    ++operation;
+    plan = {}; rowStates.clear(); estimate = {}; list.updateContent();
     if (daw.getSelectedId() != 1) { plan.jobs.clear(); list.updateContent(); setStatus ("Select FL Studio to continue."); updateText(); setBusy (false); return; }
     juce::StringArray selected; for (auto& format : formats) if (format.getToggleState() && format.getButtonText() != "M4A" && format.getButtonText() != "MID") selected.add (format.getButtonText().toLowerCase());
     options.formats = selected;
@@ -145,6 +154,7 @@ void OfflineRenderingDialog::refresh()
         job.estimate = OfflineRendering::estimateBatch (job.plan, job.settings, LibraryStore::readJson (LibraryStore::configFile()), cancel);
     }, [this] (Work& job)
     {
+        if (job.result.failed()) { setStatus (job.result.getErrorMessage()); updateText(); setBusy (false); return; }
         flSettings = job.settings; plan = std::move (job.plan); estimate = job.estimate;
         rowStates.clear(); for (size_t i = 0; i < plan.jobs.size(); ++i) rowStates.add ("Pending");
         list.updateContent(); updateText(); setBusy (false);
@@ -153,16 +163,17 @@ void OfflineRenderingDialog::refresh()
 }
 void OfflineRenderingDialog::start()
 {
-    if (work || batch || plan.result.failed() || plan.jobs.empty()) return;
-    auto go = [safe = juce::Component::SafePointer<OfflineRenderingDialog> (this)] (bool use)
-    { if (safe) { safe->batch = true; safe->batchPreviews = use; safe->current = 0; safe->setBusy (true); safe->next(); } };
+    if (work || batch || confirmingStart || plan.result.failed() || plan.jobs.empty()) return;
+    const auto request = ++operation;
+    auto go = [safe = juce::Component::SafePointer<OfflineRenderingDialog> (this), request] (bool use)
+    { if (safe && safe->operation == request) { safe->confirmingStart = false; safe->batch = true; safe->batchPreviews = use; safe->current = 0; safe->setBusy (true); safe->next(); } };
     if (! options.useRendersAsPreviews) { go (false); return; }
-    setBusy (true);
+    confirmingStart = true; setBusy (true);
     juce::AlertWindow::showYesNoCancelBox (juce::MessageBoxIconType::QuestionIcon, RememberUI::tr ("Use full renders for this batch?"),
         RememberUI::tr ("Assign the highest-fidelity readable render to every project in this batch. Manual preview choices remain protected."),
         RememberUI::tr ("Use renders"), RememberUI::tr ("Render only"), RememberUI::tr ("Cancel batch"), this,
-        juce::ModalCallbackFunction::create ([go, safe = juce::Component::SafePointer<OfflineRenderingDialog> (this)] (int answer)
-        { if (! safe) return; if (answer != 0) go (answer == 1); else safe->setBusy (false); }));
+        juce::ModalCallbackFunction::create ([go, request, safe = juce::Component::SafePointer<OfflineRenderingDialog> (this)] (int answer)
+        { if (! safe || safe->operation != request) return; safe->confirmingStart = false; if (answer != 0) go (answer == 1); else safe->setBusy (false); }));
 }
 void OfflineRenderingDialog::next()
 {
@@ -172,44 +183,56 @@ void OfflineRenderingDialog::next()
     begin ([previous] (Work& job)
     {
         job.result = OfflineRendering::requireFlStudioClosed(); if (job.result.failed()) return;
-        job.plan.jobs.push_back (OfflineRendering::flStudioCommand (previous.executable, previous.project, previous.destination, previous.formats));
+        job.plan.jobs.push_back (OfflineRendering::flStudioCommand (previous.executable, previous.project, previous.destination, previous.formats,
+            [&job] { return job.threadShouldExit(); }));
     }, [this, safeThis] (Work& job)
     {
         if (! batch) { setBusy (false); return; }
+        if (job.result.failed())
+        { rowStates.set (current, "Failed"); batch = false; list.repaint(); setStatus (job.result.getErrorMessage()); setBusy (false); return; }
         const auto command = job.plan.jobs.front();
         if (command.result.failed()) { batch = false; setStatus (command.result.getErrorMessage()); setBusy (false); return; }
         if (command.existingOutputs.isEmpty()) { execute (command, false); return; }
         juce::String names; for (const auto& file : command.existingOutputs) names += "\n" + file.getFullPathName();
         juce::AlertWindow::showYesNoCancelBox (juce::MessageBoxIconType::QuestionIcon, RememberUI::tr ("Overwrite existing audio?"), RememberUI::tr ("The following output files already exist:") + names,
             RememberUI::tr ("Overwrite"), RememberUI::tr ("Skip project"), RememberUI::tr ("Cancel batch"), this,
-            juce::ModalCallbackFunction::create ([safe = safeThis, command] (int answer)
+            juce::ModalCallbackFunction::create ([safe = safeThis, command, request = operation] (int answer)
             {
-                if (! safe || ! safe->batch) return;
+                if (! safe || ! safe->batch || safe->operation != request) return;
                 if (answer == 1) safe->execute (command, true);
                 else if (answer == 2) { safe->rowStates.set (safe->current++, "Skipped"); safe->list.repaint(); safe->next(); }
                 else safe->stop();
             }));
     });
 }
-void OfflineRenderingDialog::execute (OfflineRendering::Command command, bool approved)
+void OfflineRenderingDialog::execute (OfflineRendering::Command command, bool approved, OfflineRendering::ProcessRunner runner)
 {
     if (! batch) return;
     rowStates.set (current, "Rendering"); list.repaint();
-    begin ([command, approved, use = batchPreviews] (Work& job)
+    begin ([command, approved, use = batchPreviews, runner = std::move (runner)] (Work& job)
     {
-        job.rendered = OfflineRendering::render (command, approved, [&job] { return job.threadShouldExit(); });
-        if (job.rendered.result.wasOk()) job.result = OfflineRendering::recordCompletedRender (command, job.rendered, OfflineRendering::readProjectTiming (command.project).seconds, use);
+        job.rendered = OfflineRendering::render (command, approved, [&job] { return job.threadShouldExit(); }, runner);
+        const auto cancel = [&job] { return job.threadShouldExit(); };
+        if (job.rendered.result.wasOk()) job.result = OfflineRendering::recordCompletedRender (command, job.rendered,
+            OfflineRendering::readProjectTiming (command.project, cancel).seconds, use, cancel);
     }, [this] (Work& job)
     {
-        rowStates.set (current++, job.rendered.result.wasOk() ? "Completed" : "Failed"); list.repaint();
-        if (job.rendered.result.failed()) { setStatus (job.rendered.result.getErrorMessage()); batch = false; setBusy (false); }
+        const auto result = job.rendered.result.failed() ? job.rendered.result : job.result;
+        rowStates.set (current++, result.wasOk() ? "Completed" : "Failed"); list.repaint();
+        if (result.failed()) { setStatus (result.getErrorMessage()); batch = false; setBusy (false); }
         else { ProjectScanner::refreshAsync(); next(); }
     });
 }
 void OfflineRenderingDialog::stop()
-{ batch = false; refreshPending = false; if (work) work->requestStop(); else setBusy (false); }
+{
+    ++operation; confirmingStart = false; refreshPending = false;
+    if (batch && current < rowStates.size()) rowStates.set (current, "Cancelled");
+    else { plan = {}; rowStates.clear(); list.updateContent(); }
+    batch = false; list.repaint(); setStatus ("Offline rendering cancelled.");
+    if (work) work->requestStop(); else setBusy (false);
+}
 void OfflineRenderingDialog::setStatus (const juce::String& text)
-{ statusSource = text; status.setText (RememberUI::diagnostic (text), juce::dontSendNotification); }
+{ statusSource = text; status.setText (RememberUI::diagnostic (text), juce::dontSendNotification); status.setTooltip (RememberUI::diagnostic (text)); }
 void OfflineRenderingDialog::updateText()
 {
     setStatus (statusSource);
