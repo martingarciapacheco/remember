@@ -11,10 +11,17 @@ Remember is two pieces that work together:
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
-## Changes in 1.0.0-beta5 — refreshed 23 October 2026
+## Changes in 1.0.0-beta5 — refreshed 1 November 2026
 
 This replaces the earlier beta5 installer at the same download URL. Check the
 commit in the app/plugin or `release-manifest.json` to identify the build.
+
+- Added **Offline rendering** for saved FL Studio projects: sequential file/folder batches, explicit subfolder scanning, WAV/MP3/OGG/FLAC choices, beside-project or custom output, estimates and confirmed overwrites. Saved FL settings are displayed read-only. MID, M4A and stems remain pending; real-host evidence is limited to FL Studio 2026 template probes. See [OFFLINE_RENDERING.md](OFFLINE_RENDERING.md) and [DAW_COMPATIBILITY.md](DAW_COMPATIBILITY.md).
+- Added **Select preview** in each recording's ellipsis menu. Play and export a complete external audio file while keeping the plugin capture. Untick to return to the capture; missing/unreadable audio falls back automatically. Manual choices, including disabled selections, survive later automatic render assignments.
+- Hardened render publication with content-aware overwrite checks, rollback on failure/cancellation and retained recovery files when restoration is blocked. Cancellation invalidates old confirmations and callbacks; unreadable folders cannot produce a successful partial batch.
+- Improved large-batch planning and duration reading, cancellable export hashing, bounded JSON/audio-header reads and waveform-error recovery. Library indexing restarts obsolete scans and publishes folder edits coherently, preserving selection and undo. The [October audit](AUDITORIA_2026-10-28.md) records the fixes and Release/AddressSanitizer evidence; synthetic measurements do not predict whole-app or DAW-render speed.
+
+### Included from the 23 October build
 
 - Added **English / Español (España)** selection in app Settings → Appearance and the plugin's Settings → Appearance → Language menu. The preference saves immediately and updates open interfaces across app/plugin instances. Project names, paths, tags, notes and musical metadata remain unchanged. Existing profiles fall back to English. The installer wizard remains in English.
 - Added sidebar **smart folders** created from active conditions or a new filter, with reviewable rules and confirmed condition edits. Temporary search/filters narrow the selected smart folder; Clear filters keeps its saved scope. Saved filters have a separate right-click deletion action.

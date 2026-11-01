@@ -2,15 +2,15 @@
 
 **Current beta: 1.0.0-beta5 · Windows x64 · standalone app + VST3.**
 
-Beta5 refreshed on **23 October 2026**. The download keeps the same filename;
+Beta5 refreshed on **1 November 2026**. The download keeps the same filename;
 check the commit shown in the app/plugin or the release's `release-manifest.json`
 to distinguish builds. Install the app and plugin together: older beta5 builds
 cannot read the new `.rmp` preview format. Existing WAV/OGG previews remain readable.
 
-This refresh adds English/Spanish language selection, sidebar smart folders,
-scoped filters, reorganised Settings and refinements to project opening and dialogs.
-It also includes Statistics, WAV preview export, waveform options and contextual
-undo from the earlier build. See the feature guide below and the
+This refresh adds FL Studio offline rendering, external audio selection for previews,
+and fixes for rendering, playback and library consistency from the October audit.
+It retains English/Spanish language selection, smart folders, Statistics, WAV export,
+waveform options and contextual undo. See the feature guide below and the
 [DAW compatibility register](DAW_COMPATIBILITY.md) for support and validation limits.
 
 ## Install and record your first preview
@@ -49,6 +49,7 @@ wizard itself remains in English; the installed app and plugin offer both langua
 - **Playback and export:** seekable waveform, queue, shuffle, repeat Off/All/One/Single, loudness normalization, volume/mute, output-device selection, media keys and Windows taskbar controls. Drag the complete preview as a 24-bit WAV; optionally show spectral colours and separate L/R axes.
 - **Musical tools:** BPM/key analysis with manual corrections and a BPM-synchronised metronome with its own saved volume.
 - **Selected previews:** use Select preview in a recording's ellipsis menu to reference a complete audio file instead of its plugin capture. A link indicator identifies the selection; untick the option to return to the capture. Missing or unreadable selected audio falls back to the capture. Manual choices are protected from automatic render assignments.
+- **Offline rendering for FL Studio:** open the header's Offline rendering window to render a saved project or a folder of projects sequentially, with opt-in subfolders, destination/format choices, overwrite confirmation and optional use of full renders as previews. FL export settings are read-only; see the limits below.
 - **Used sounds for FL Studio:** inspect samples, MIDI patterns and generators from the last saved `.flp`; filter by playlist usage, audition samples/MIDI and drag or save copies of samples, `.mid` files and saved generator state as FL Studio `.fst` presets. Supported formats show saved preset names. MIDI audition offers piano, saw, square and sine sounds; supported sample channels use their source sample.
 - **Appearance and language:** System, Light and Dark themes, interface zoom, shared typography, keyboard shortcuts and live English/Spanish selection in app and plugin.
 - **Statistics for FL Studio and Ableton Live:** rank the library's top 1000 sample paths, 50 instruments and 50 effects, counting each item once per saved project. Search, audition or copy samples and hide/unhide ranking entries. See the dedicated section below for coverage and limits.
@@ -153,6 +154,42 @@ waveform and no-results states, settings/tags/recovery dialogs, and the plugin a
 painting; visual acceptance inside a real DAW remains a separate check.
 
 ## Components
+
+### Offline rendering and selected previews
+
+Open **Offline rendering** beside Statistics and Settings. Select FL Studio and
+its executable, then one saved `.flp` or a folder. Folder scans exclude subfolders
+unless explicitly enabled. Choose WAV, MP3, OGG or FLAC and save beside each project
+or into one custom destination. **MID and M4A remain unavailable**, and stems are
+not supported. Save and close FL Studio before starting; Remember does not attach
+to an existing session. Settings → Projects & audition stores the default offline DAW.
+
+Remember reuses saved FL export settings and displays the recognised values in
+read-only form; unknown values remain unknown. It does not edit FL's settings.
+Time and disk estimates are approximate: the initial time reference is 1× audio
+duration, with matching project history used when available. Tempo automation,
+plugin loading and effect tails can change the actual result.
+
+Rendering runs sequentially through staging and validates audio before publishing.
+Existing output files require confirmation; changes since confirmation invalidate
+approval. Failed or cancelled publication attempts restore outputs already replaced
+for that project. If restoration fails or another program changes a published file,
+Remember retains staging and reports its recovery location. Multi-file publication
+is not atomic against power loss. Unexpected additional outputs stop publication
+for review. Stop or closing the window cancels pending work.
+
+Full-render preview assignment requires confirmation and preserves manual choices,
+including an explicit return to the capture. You can also choose **Select preview**
+from a recording's ellipsis menu, select a readable audio file, or untick it to use
+the plugin capture again. The original capture is retained. Playback, waveforms and
+WAV export use the complete selected audio, falling back to the capture if it is
+missing or unreadable. Used Sounds and recovery audition keep their own sources.
+
+Real FL Studio 2026 probes cover its Empty template and WAV/MP3/OGG/FLAC output;
+they do not certify every song, FL version or export control. See
+[OFFLINE_RENDERING.md](OFFLINE_RENDERING.md) and the
+[DAW compatibility register](DAW_COMPATIBILITY.md) for evidence and pending work.
+Ableton offline rendering and additional Used Sounds readers remain pending.
 
 ### Statistics (FL Studio and Ableton Live)
 
@@ -413,6 +450,20 @@ An empty undo history in one context does not undo an action in the other.
 Bulk recording deletion is one undo action. Text fields retain their native undo.
 
 ## Regression checks
+
+The October audit fixes protect manual preview choices and concurrent associations,
+revalidate overwrite contents, roll back incomplete render publication, reject partial
+project scans and cancel obsolete rendering callbacks. They also bound JSON/waveform
+reads, make export hashing cancellable, recover from waveform failures, and restart
+obsolete library scans while preserving coherent folder edits and selection.
+See [AUDITORIA_2026-10-28.md](AUDITORIA_2026-10-28.md) for the findings and recorded
+Release/AddressSanitizer acceptance. Synthetic benchmark gains are not whole-app or
+DAW-render speed claims.
+
+`RememberOfflineRendering` and `RememberSelectedPreviews` cover planning, collisions,
+publication/recovery, cancellation, associations, manual choices and audio fallback.
+The frontend suite also produces `offline-rendering-en-640.png`,
+`offline-rendering-en-840.png` and corresponding `es` snapshots.
 
 The frontend and configuration suites also verify language persistence, live
 app/plugin synchronization, return to English, stable choices and unchanged user
