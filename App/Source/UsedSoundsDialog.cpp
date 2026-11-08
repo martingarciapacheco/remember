@@ -1,5 +1,6 @@
 #include "UsedSoundsDialog.h"
 #include "../../Shared/LibraryStore.h"
+#include <algorithm>
 
 struct UsedSoundsDialog::Workspace
 {
@@ -110,7 +111,7 @@ public:
             const int range = juce::jmax (12, high - low + 3);
             g.setColour (RememberUI::colour (Pal::Accent));
             // Bounded drawing cost even for very dense patterns; exports retain every note.
-            const auto stride = juce::jmax<size_t> (1, sound.notes.size() / 2048);
+            const auto stride = std::max<size_t> (1, sound.notes.size() / 2048);
             for (size_t i = 0; i < sound.notes.size(); i += stride)
             {
                 const auto& note = sound.notes[i];

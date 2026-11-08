@@ -212,6 +212,8 @@ void testHostLoading (const juce::File& root)
 
 int main (int argc, char** argv)
 {
+    std::cout << std::unitbuf;
+    std::cerr << std::unitbuf;
     if (argc == 2 && juce::String (argv[1]) == "--validation-profile-probe")
     {
         try { std::cout << LibraryStore::dataDirectory().getFullPathName() << std::endl; return 0; }

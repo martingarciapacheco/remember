@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <algorithm>
 
 // Metadata readers only. Never instantiate a plugin or guess from channel names,
 // sample paths, arbitrary printable strings, or a bank's first program.
@@ -41,7 +42,7 @@ inline juce::String componentName (const juce::String& plugin, const uint8_t* p,
     if (plugin.startsWithIgnoreCase ("Diva") && n > 10 && le32 (p) == n - 4
         && std::memcmp (p + 4, "#pgm=", 5) == 0)
     {
-        const auto limit = juce::jmin<size_t> (n, 521);
+        const auto limit = std::min<size_t> (n, 521);
         for (size_t end = 9; end < limit; ++end)
             if (p[end] == '\r' || p[end] == '\n')
             {

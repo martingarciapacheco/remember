@@ -3,6 +3,7 @@
 #include "ProjectListComponent.h"   // for Pal::
 #include "../../Shared/LibraryStore.h"
 #include "PreviewExport.h"
+#include <algorithm>
 
 namespace
 {
@@ -925,7 +926,7 @@ void WaveformPlayerComponent::paint (juce::Graphics& g)
         const auto bounds = waveArea.toFloat().reduced (4);
         const int range = juce::jmax (12, midiHigh - midiLow + 3);
         const auto& notes = *currentEntry.auditionNotes;
-        const auto stride = juce::jmax<size_t> (1, (notes.size() + 2047) / 2048);
+        const auto stride = std::max<size_t> (1, (notes.size() + 2047) / 2048);
         g.setColour (RememberUI::colour (Pal::Accent));
         for (size_t i = 0; i < notes.size(); i += stride)
         {

@@ -24,6 +24,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
+#include <algorithm>
 
 namespace
 {
@@ -160,7 +161,7 @@ int main (int argc, char** argv)
             for (size_t c = 0; c < report.items.size(); ++c)
             {
                 std::cout << "Category " << c << " rows=" << report.items[c].size() << "\n";
-                for (size_t i = 0; i < juce::jmin<size_t> (10, report.items[c].size()); ++i)
+                for (size_t i = 0; i < std::min<size_t> (10, report.items[c].size()); ++i)
                     std::cout << report.items[c][i].projects << " " << report.items[c][i].name << "\n";
             }
             for (const auto& detail : report.details) std::cout << detail << "\n";
