@@ -1,5 +1,5 @@
 @echo off
-REM Requires PowerShell 7.2+. Pass explicit tool/source paths.
+REM Build Windows and macOS installers together in GitHub Actions.
 if not defined REMEMBER_PWSH set "REMEMBER_PWSH=pwsh.exe"
-"%REMEMBER_PWSH%" -NoProfile -File "%~dp0build-release.ps1" %*
+"%REMEMBER_PWSH%" -NoProfile -File "%~dp0build-installers.ps1" %*
 exit /b %errorlevel%

@@ -5,6 +5,8 @@
 #if JUCE_WINDOWS
  #include <windows.h>
  #include <bcrypt.h>
+#else
+ #include <sys/stat.h>
 #endif
 
 namespace
@@ -236,7 +238,11 @@ juce::String ProjectIdentity::fileId (const juce::File& file)
          + juce::String::toHexString ((juce::int64) info.nFileIndexHigh) + ":"
          + juce::String::toHexString ((juce::int64) info.nFileIndexLow);
 #else
-    return file.exists() ? juce::String::toHexString ((juce::int64) file.getFileIdentifier()) : juce::String{};
+    // Inodes are unique within a volume, not across the user's mounted disks.
+    struct stat info {};
+    if (stat (file.getFullPathName().toRawUTF8(), &info) != 0) return {};
+    return juce::String::toHexString ((juce::int64) info.st_dev) + ":"
+         + juce::String::toHexString ((juce::int64) info.st_ino);
 #endif
 }
 

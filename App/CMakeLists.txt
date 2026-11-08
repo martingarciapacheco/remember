@@ -8,8 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberSanitizers.cmake)
 
 remember_generate_build_info()
 
-set(JUCE_PATH "E:/JUCE" CACHE PATH "Path to JUCE root")
-add_subdirectory(${JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberJuce.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
 juce_add_binary_data(RememberAudioData HEADER_NAME RememberAudioData.h NAMESPACE RememberAudioData

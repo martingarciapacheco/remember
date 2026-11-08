@@ -1,0 +1,11 @@
+# Use an explicit checkout on every platform; retain the existing Windows default.
+if(WIN32)
+    set(remember_default_juce "E:/JUCE")
+else()
+    set(remember_default_juce "${CMAKE_CURRENT_LIST_DIR}/../out/tools/JUCE")
+endif()
+set(JUCE_PATH "${remember_default_juce}" CACHE PATH "Path to JUCE root")
+if(NOT EXISTS "${JUCE_PATH}/CMakeLists.txt")
+    message(FATAL_ERROR "JUCE checkout missing. Set -DJUCE_PATH=/absolute/path/to/JUCE (see installer/dependencies.json)")
+endif()
+add_subdirectory("${JUCE_PATH}" JUCE EXCLUDE_FROM_ALL)

@@ -8,9 +8,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberSanitizers.cmake)
 
 remember_generate_build_info()
 
-# Adjust this path if JUCE is installed elsewhere
-set(JUCE_PATH "E:/JUCE" CACHE PATH "Path to JUCE root")
-add_subdirectory(${JUCE_PATH} JUCE EXCLUDE_FROM_ALL)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberJuce.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../Shared/RememberFonts.cmake)
 
 option(REMEMBER_COPY_PLUGIN_AFTER_BUILD "Install the VST3 after building" OFF)
@@ -29,7 +27,6 @@ juce_add_plugin(RememberPlugin
     IS_MIDI_EFFECT          FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD ${REMEMBER_COPY_PLUGIN_AFTER_BUILD}
-    VST3_COPY_DIR           "C:/Program Files/Common Files/VST3"
     PRODUCT_NAME            "Remember"
 )
 

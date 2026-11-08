@@ -4,11 +4,6 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-    inputs:
-      package:
-        description: Build an installer after all validation gates
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -47,19 +42,10 @@ jobs:
           Invoke-WebRequest $lock.pluginval.url -OutFile $archive
           if ((Get-FileHash $archive -Algorithm SHA256).Hash -ine $lock.pluginval.archiveSha256) { throw 'pluginval download checksum mismatch' }
           Expand-Archive $archive out/tools/pluginval
-      - name: Obtain pinned portable packaging tools
-        if: github.event_name == 'workflow_dispatch' && inputs.package
-        run: |
-          $tools = ./installer/get-packaging-tools.ps1 -OutputDirectory out/tools/packaging
-          "REMEMBER_ISCC=$($tools.iscc)" >> $env:GITHUB_ENV
-          "REMEMBER_UNPACKER=$($tools.unpacker)" >> $env:GITHUB_ENV
       - name: Build app and VST3, run CTest and native VST3 validation
-        env:
-          PACKAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.package }}
         run: |
           ./installer/build-release.ps1 -JucePath out/tools/JUCE -PluginvalPath out/tools/pluginval/pluginval.exe `
-            -Generator 'Visual Studio 17 2022' -BuildRoot out/ci-release -SkipPackage:($env:PACKAGE -ne 'true') `
-            -IsccPath $env:REMEMBER_ISCC -UnpackerPath $env:REMEMBER_UNPACKER
+            -Generator 'Visual Studio 17 2022' -BuildRoot out/ci-release -SkipPackage
       - name: Retain binary, manifest and complete diagnostics
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

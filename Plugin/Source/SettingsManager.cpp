@@ -39,7 +39,7 @@ public:
     // A selected output-folder edit is accepted work. Finish it after closure;
     // no UI object is needed to complete or publish the transaction.
     void requestStop() override {}
-    bool readyToRelease() const override { return completion.finished() && publication->complete.load (std::memory_order_acquire); }
+    bool readyToRelease() const override { return ! isThreadRunning() && completion.finished() && publication->complete.load (std::memory_order_acquire); }
     void run() override
     {
         // Retain the OS thread handle before even a fast read can return.
