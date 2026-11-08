@@ -26,8 +26,9 @@ int main()
         BackgroundRetirement::NativeCompletion completion;
         const bool captured = completion.capture (reinterpret_cast<uintptr_t> (thread));
         const bool premature = completion.finished();
+        if (iteration % 2 != 0) pthread_detach (thread);
         release.store (true);
-        pthread_join (thread, nullptr);
+        if (iteration % 2 == 0) pthread_join (thread, nullptr);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds (2);
         while (! completion.finished() && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for (std::chrono::milliseconds (1));

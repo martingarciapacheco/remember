@@ -1,4 +1,5 @@
 #pragma once
+#include "../../Shared/RememberInterProcessLock.h"
 #include "ProjectScanner.h"
 #include "PreviewSelection.h"
 
@@ -27,10 +28,10 @@ inline juce::Result prepare (const ProjectEntry& entry, const juce::File& librar
     const auto name = juce::File::createLegalFileName (entry.name).substring (0, nameBudget);
     const auto destination = directory.getChildFile ((name.isEmpty() ? juce::String{} : name + "-") + digest + ".wav");
     // A content hash and an interprocess lock prevent stale files and competing writers.
-    juce::InterProcessLock lock ("RememberPreviewExport-" + juce::SHA256 (destination.getFullPathName().toRawUTF8(),
+    Remember::InterProcessLock lock ("RememberPreviewExport-" + juce::SHA256 (destination.getFullPathName().toRawUTF8(),
         destination.getFullPathName().getNumBytesAsUTF8()).toHexString());
     if (! lock.enter (5000)) return juce::Result::fail ("Another export is busy; select the preview again to retry");
-    struct Unlock { juce::InterProcessLock& lock; ~Unlock() { lock.exit(); } } unlock { lock };
+    struct Unlock { Remember::InterProcessLock& lock; ~Unlock() { lock.exit(); } } unlock { lock };
     if (! reader || reader->lengthInSamples <= 0 || reader->numChannels < 1 || reader->numChannels > 2)
         return juce::Result::fail ("Cannot read preview for export");
     if (destination.existsAsFile())

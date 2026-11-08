@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "LibraryStore.h"
+#include "RememberInterProcessLock.h"
 #include <mutex>
 
 namespace RememberLogger
@@ -20,7 +21,7 @@ public:
     {
         juce::ScopedLock guard (lock);
         if (! processLock.enter (100)) return;
-        struct Unlock { juce::InterProcessLock& lock; ~Unlock() { lock.exit(); } } unlock { processLock };
+        struct Unlock { Remember::InterProcessLock& lock; ~Unlock() { lock.exit(); } } unlock { processLock };
         const auto line = juce::Time::getCurrentTime().toISO8601 (true) + " " + message.substring (0, 8192) + "\n";
         if (file.getSize() + (juce::int64) line.getNumBytesAsUTF8() > limit)
         {
@@ -41,7 +42,7 @@ public:
 private:
     juce::File file;
     juce::CriticalSection lock;
-    juce::InterProcessLock processLock;
+    Remember::InterProcessLock processLock;
 };
 inline void ensureInitialised (const juce::String& name, const juce::String& headerLine)
 {

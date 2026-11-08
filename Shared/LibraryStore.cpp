@@ -3,6 +3,7 @@
 #include "LibraryStore.h"
 #include "AtomicJsonWriter.h"
 #include "ProjectIdentity.h"
+#include "RememberInterProcessLock.h"
 #include <stdexcept>
 #include <limits>
 #if JUCE_WINDOWS
@@ -165,7 +166,7 @@ juce::String lockName (const juce::File& file)
 }
 struct Guard
 {
-    juce::InterProcessLock lock;
+    Remember::InterProcessLock lock;
     bool locked;
     explicit Guard (const juce::File& file) : lock (lockName (file)), locked (lock.enter (3000)) {}
     ~Guard() { if (locked) lock.exit(); }

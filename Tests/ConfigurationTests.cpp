@@ -726,7 +726,7 @@ void testConfiguration (const juce::File& fixtureRoot)
         check (xml != nullptr, "Cannot read ordered-restoration seed");
         auto gate = std::make_shared<ReadGate>(); ReleaseGate release { gate };
         RecordingEngine engine ([] { return HostProject{}; });
-        engine.setOutputFolder (first); engine.restoreState (*xml);
+        engine.setOutputFolder (first); engine.restoreState (*xml, [gate] { return gate->read(); });
         engine.prepareAsync (8000, 128, [gate] { return gate->read(); });
         check (gate->entered.wait (1000), "Cannot hold settings behind restoration");
         engine.keepRecording ("Ordered restoration edit", manualId);

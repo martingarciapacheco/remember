@@ -1,6 +1,7 @@
 #include "OfflineRendering.h"
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/ProjectIdentity.h"
+#include "../../Shared/RememberInterProcessLock.h"
 #include <filesystem>
 #include <unordered_set>
 #if JUCE_WINDOWS
@@ -243,15 +244,15 @@ RenderResult render (const Command& command, bool approved, const Cancel& cancel
     if (command.outputs.isEmpty() || command.arguments.isEmpty()) return finish (juce::Result::fail ("No render job is planned."));
     if (! command.existingOutputs.isEmpty() && ! approved)
         return finish (juce::Result::fail ("Confirm before overwriting existing renders."));
-    juce::InterProcessLock flLock ("RememberOfflineFLStudio");
+    Remember::InterProcessLock flLock ("RememberOfflineFLStudio");
     if (! flLock.enter (0)) return finish (juce::Result::fail ("Another FL Studio render is running."));
-    struct FlUnlock { juce::InterProcessLock& lock; ~FlUnlock() { lock.exit(); } } flUnlock { flLock };
+    struct FlUnlock { Remember::InterProcessLock& lock; ~FlUnlock() { lock.exit(); } } flUnlock { flLock };
     if (! runner)
         if (auto closed = requireFlStudioClosed(); closed.failed()) return finish (closed);
-    juce::InterProcessLock lock ("RememberOfflineOutput-" + juce::SHA256 (
+    Remember::InterProcessLock lock ("RememberOfflineOutput-" + juce::SHA256 (
         command.destination.getFullPathName().toRawUTF8(), command.destination.getFullPathName().getNumBytesAsUTF8()).toHexString());
     if (! lock.enter (0)) return finish (juce::Result::fail ("Another render is using this destination."));
-    struct Unlock { juce::InterProcessLock& lock; ~Unlock() { lock.exit(); } } unlock { lock };
+    struct Unlock { Remember::InterProcessLock& lock; ~Unlock() { lock.exit(); } } unlock { lock };
     const auto unchanged = [&]
     {
         for (const auto& file : command.outputs)

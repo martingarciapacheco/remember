@@ -1,4 +1,5 @@
 #include "LibraryTests.h"
+#include "../Shared/RememberInterProcessLock.h"
 #include "../App/Source/ProjectScanner.h"
 #include "../App/Source/OfflineRendering.h"
 #include "../App/Source/SettingsDialog.h"
@@ -1004,7 +1005,7 @@ void testSettingsRecovery (const juce::File& root)
                #if JUCE_WINDOWS
                 path = path.toLowerCase();
                #endif
-                juce::InterProcessLock lock ("Remember-file-" + juce::String::toHexString (path.hashCode64()));
+                Remember::InterProcessLock lock ("Remember-file-" + juce::String::toHexString (path.hashCode64()));
                 if (! lock.enter (1000)) return;
                 entered.signal(); release.wait (10000); lock.exit();
             }) {}
