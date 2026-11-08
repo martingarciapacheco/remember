@@ -36,9 +36,12 @@ struct OwnerLease::Impl
     Impl()
     {
         const auto folder = dataDirectory().getChildFile ("owners");
-        if (folder.createDirectory().failed()) return;
+        if (ensureDirectory (folder).failed()) return;
         token = folder.getChildFile (id);
         handle = open (token.getFullPathName().toRawUTF8(), O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (handle < 0)
+            juce::Logger::writeToLog ("Cannot open Mac recording owner token: " + token.getFullPathName()
+                                     + " (errno " + juce::String (errno) + ")");
         if (handle >= 0 && flock (handle, LOCK_EX | LOCK_NB) != 0)
         { close (handle); handle = -1; token.deleteFile(); }
     }
