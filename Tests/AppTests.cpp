@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <algorithm>
+#include <cstdlib>
 
 namespace
 {
@@ -77,6 +78,17 @@ int main (int argc, char** argv)
         double started = juce::Time::getMillisecondCounterHiRes();
         ~Cleanup()
         {
+            // Standalone modes must finish native retirement before process
+            // statics and GUI services disappear (not just scanner publication).
+            ProjectScanner::beginShutdown();
+            const auto deadline = juce::Time::getMillisecondCounter() + 15000;
+            while (! ProjectScanner::shutdownReady() || WaveformPlayerComponent::pendingLoads() != 0
+                   || BackgroundRetirement::pending() != 0)
+            {
+                if (juce::Time::getMillisecondCounter() >= deadline)
+                { std::cerr << "FAIL: test shutdown left native background work pending\n"; std::abort(); }
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (5);
+            }
             const auto owner = juce::File::getCurrentWorkingDirectory();
             if (root.getParentDirectory() != owner || ! root.isAChildOf (owner)
                 || ! root.getFileName().startsWith ("remember-") || root.isSymbolicLink()) return;

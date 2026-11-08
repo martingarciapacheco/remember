@@ -147,6 +147,13 @@ if(REMEMBER_BUILD_TESTS)
     set_tests_properties(RememberAnalysis PROPERTIES TIMEOUT 90)
     add_test(NAME RememberCaptureMatrix COMMAND RememberTests --capture-matrix)
     set_tests_properties(RememberCaptureMatrix PROPERTIES TIMEOUT 90)
+    if(REMEMBER_ENABLE_ASAN)
+        # Instrumenting the complete codec/analysis graph is substantially slower
+        # on hosted runners. Only aggregate watchdogs change: native Release
+        # deadlines, fixture assertions and callback/resource bounds stay intact.
+        set_tests_properties(RememberRegression PROPERTIES TIMEOUT 120)
+        set_tests_properties(RememberFeatureCache PROPERTIES TIMEOUT 360)
+    endif()
     if(WIN32)
         find_program(REMEMBER_PWSH_EXECUTABLE NAMES pwsh.exe pwsh
             HINTS "$ENV{ProgramFiles}/PowerShell/7")

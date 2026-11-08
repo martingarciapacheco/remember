@@ -57,8 +57,11 @@ void popup (juce::Component& root, const juce::String& title, int action)
     else button->onClick();
     auto* menu = juce::Component::getCurrentlyModalComponent(); check (menu != nullptr, "Workflow menu did not open");
     if (title == "Preview actions") snapshot (*menu, "workflow-row-actions");
+    auto completed = std::make_shared<bool> (false);
+    juce::ModalComponentManager::getInstance()->attachCallback (menu,
+        juce::ModalCallbackFunction::create ([completed] (int) { *completed = true; }));
     menu->exitModalState (action);
-    juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+    waitFor ([&] { return *completed; });
 }
 void writeAudio (const juce::File& file, float amplitude)
 {

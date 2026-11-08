@@ -26,7 +26,9 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
   installed Mac app bundles as well as existing Windows installations.
 - Both English and Spanish remain available. The Mac build preserves native
   window controls and uses the system font, Command shortcuts and Finder labels
-  in both languages. Existing Ctrl shortcuts continue to work. Mac association currently uses
+  in both languages. Existing Ctrl keyboard shortcuts continue to work. Native
+  dialog sizing and shutdown during deferred cleanup are hardened for Mac.
+  Mac association currently uses
   **Associate → Select project file** or **Keep recording without a file**.
 - Mac supports **VST3 hosts**. AU (Logic/GarageBand) and AAX (Pro Tools) are not
   included. FL Studio offline rendering is Windows-only. Developer ID signing,

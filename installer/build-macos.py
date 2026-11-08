@@ -48,8 +48,8 @@ def main():
     artifacts = root / 'artifacts'
     artifacts.mkdir()
     tests = []
-    for source, targets in [('Plugin', ['RememberPlugin_VST3', 'RememberTests']),
-                            ('App', ['RememberApp', 'RememberAppTests'])]:
+    for source, targets in [('App', ['RememberApp', 'RememberAppTests']),
+                            ('Plugin', ['RememberPlugin_VST3', 'RememberTests'])]:
         build = root / source
         run('cmake', '-S', source, '-B', build, '-G', 'Xcode',
             f'-DJUCE_PATH={juce}', '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64',
@@ -57,8 +57,14 @@ def main():
             '-DREMEMBER_COPY_PLUGIN_AFTER_BUILD=OFF', f'-DREMEMBER_BUILD_ID=macos-{commit[:12]}')
         run('cmake', '--build', build, '--config', 'Release', '--parallel', '3', '--target', *targets)
         report = root / f'{source.lower()}-tests.xml'
-        run('ctest', '--test-dir', build, '-C', 'Release', '--output-on-failure',
-            '--no-tests=error', '--output-junit', report)
+        try:
+            run('ctest', '--test-dir', build, '-C', 'Release', '--output-on-failure',
+                '--no-tests=error', '--output-junit', report)
+        finally:
+            # Failed native UI tests are precisely when their snapshots matter.
+            workspace = Path((build / 'generated/test-workspace.txt').read_text().strip())
+            if (workspace / 'artifacts').is_dir():
+                shutil.copytree(workspace / 'artifacts', artifacts / f'{source.lower()}-ui-artifacts')
         cases = ET.parse(report).findall('.//testcase')
         if not cases or any(c.find('failure') is not None or c.find('skipped') is not None for c in cases):
             raise RuntimeError('Incomplete or failed test report')
@@ -68,9 +74,6 @@ def main():
         if info['commit'] != commit or info['productVersion'] != version or info['sourceState'] != 'clean':
             raise RuntimeError('Compiled build information does not match clean release source')
         shutil.copy2(info_path, artifacts / f'{source.lower()}-build-info.json')
-        workspace = Path((build / 'generated/test-workspace.txt').read_text().strip())
-        if (workspace / 'artifacts').is_dir():
-            shutil.copytree(workspace / 'artifacts', artifacts / f'{source.lower()}-ui-artifacts')
 
     payload = root / 'payload'
     app = payload / 'Applications/Remember.app'

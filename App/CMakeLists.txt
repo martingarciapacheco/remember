@@ -170,6 +170,12 @@ if(REMEMBER_BUILD_TESTS)
     add_test(NAME RememberAppFrontend COMMAND RememberAppTests --frontend)
     set_tests_properties(RememberAppFrontend PROPERTIES TIMEOUT 90)
     set_tests_properties(RememberAppRegression PROPERTIES TIMEOUT 300)
+    if(REMEMBER_ENABLE_ASAN)
+        # Includes all native UI/storage cases and the 10,000-entry scene. The
+        # sanitizer watchdog allows instrumentation overhead without changing
+        # native deadlines, individual latency assertions or fixture coverage.
+        set_tests_properties(RememberAppRegression PROPERTIES TIMEOUT 600)
+    endif()
     add_test(NAME RememberAppStorageRecovery COMMAND RememberAppTests --storage-recovery)
     set_tests_properties(RememberAppStorageRecovery PROPERTIES TIMEOUT 300)
     add_test(NAME RememberLibraryBenchmark COMMAND RememberAppTests --library-benchmark)

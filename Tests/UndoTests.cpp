@@ -100,7 +100,7 @@ void testContextUndo (const juce::File& root)
         waitFor ([&] { return list->getNumRows() == 2; }, "Undo scene did not publish two rows"); idle();
         const auto press = [&](int key, int mods = 0, juce::juce_wchar text = 0)
         { return scene.getPeer()->handleKeyPress (juce::KeyPress (key, mods, text)); };
-        const auto undo = [&] { check (press ('Z', juce::ModifierKeys::ctrlModifier), "Ctrl+Z was not handled"); idle(); };
+        const auto undo = [&] { check (press ('Z', juce::ModifierKeys::commandModifier), "Native Undo shortcut was not handled"); idle(); };
         const auto confirm = [&](int result)
         {
             waitFor ([] { return dynamic_cast<juce::AlertWindow*> (juce::Component::getCurrentlyModalComponent()) != nullptr; }, "Deletion confirmation did not open");
@@ -185,7 +185,7 @@ void testContextUndo (const juce::File& root)
 
         check (edit ([&] { return ProjectScanner::trashEntry (first); }).wasOk(), "Cannot prepare text-editor deletion");
         search->grabKeyboardFocus(); search->setText ({}, false);
-        press ('X', 0, 'x'); press ('Z', juce::ModifierKeys::ctrlModifier); idle();
+        press ('X', 0, 'x'); press ('Z', juce::ModifierKeys::commandModifier); idle();
         check (search->getText().isEmpty() && trash (first).isDirectory()
             && ProjectScanner::canUndoOrganization (Context::Previews), "Library undo intercepted text-editor Ctrl+Z");
         rows->grabKeyboardFocus(); undo();

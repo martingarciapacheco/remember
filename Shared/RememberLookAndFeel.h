@@ -802,11 +802,13 @@ inline juce::DialogWindow* launchDialog (juce::DialogWindow::LaunchOptions& opti
                 opts.componentToCentreAround != nullptr ? juce::Component::getApproximateScaleFactorForComponent (opts.componentToCentreAround) : 1.0f)
         {
             setLookAndFeel (&theme.get());
+            // Native chrome changes the content border. Apply it before sizing
+            // the window from its content, so Mac dialogs retain that size.
+            setUsingNativeTitleBar (opts.useNativeTitleBar);
             if (opts.content.willDeleteObject()) setContentOwned (opts.content.release(), true);
             else setContentNonOwned (opts.content.release(), true);
             centreAroundComponent (opts.componentToCentreAround, getWidth(), getHeight());
             setResizable (opts.resizable, opts.useBottomRightCornerResizer);
-            setUsingNativeTitleBar (opts.useNativeTitleBar);
             setAlwaysOnTop (juce::WindowUtils::areThereAnyAlwaysOnTopWindows());
         }
         ~ThemedDialog() override { setLookAndFeel (nullptr); }

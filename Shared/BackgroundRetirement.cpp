@@ -27,7 +27,18 @@ struct Queue
     std::atomic<size_t> count { 0 };
     bool running = false;
 };
-Queue& queue() { static Queue value; return value; }
+Queue& queue()
+{
+   #if defined(__APPLE__)
+    // The code image is process-resident on Mac. Its service anchor must also
+    // survive static teardown if a host exits during deferred I/O. Individual
+    // completed jobs are still destroyed by drain, not retained until exit.
+    static auto* value = new Queue;
+    return *value;
+   #else
+    static Queue value; return value;
+   #endif
+}
 void drain()
 {
     for (;;)
@@ -111,7 +122,7 @@ ModuleReference::ModuleReference()
     Dl_info info {};
     if (dladdr (reinterpret_cast<const void*> (&retire), &info) && info.dli_fname)
     {
-        module = dlopen (info.dli_fname, RTLD_LAZY | RTLD_NOLOAD | RTLD_NODELETE);
+        module = dlopen (info.dli_fname, RTLD_LAZY | RTLD_NOLOAD | RTLD_NODELETE | RTLD_LOCAL);
         // Executables cannot be opened as dylibs; the main image never unloads.
         if (! module && info.dli_fbase == reinterpret_cast<const void*> (_dyld_get_image_header (0)))
             module = dlopen (nullptr, RTLD_LAZY);

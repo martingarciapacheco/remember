@@ -1375,9 +1375,9 @@ void testSidebarUi (const juce::File& root)
     clickFolder (rootItem (4), juce::ModifierKeys::altModifier); // Batch 002
     check (sidebar->getSelectedFolders().size() == 3 && tree->getNumSelectedItems() == 3
         && sidebar->getSelectedFolders().contains ("Batch 001"), "Alt-click did not select the contiguous visible range");
-    clickFolder (rootItem (6), juce::ModifierKeys::ctrlModifier);
+    clickFolder (rootItem (6), juce::ModifierKeys::commandModifier);
     check (sidebar->getSelectedFolders().size() == 4 && sidebar->getSelectedFolders().contains ("Batch 004"), "Ctrl-click did not add a separate folder");
-    clickFolder (rootItem (3), juce::ModifierKeys::ctrlModifier);
+    clickFolder (rootItem (3), juce::ModifierKeys::commandModifier);
     check (sidebar->getSelectedFolders().size() == 3 && ! sidebar->getSelectedFolders().contains ("Batch 001"), "Ctrl-click did not toggle a selected folder");
     sidebar->refresh();
     check (sidebar->getSelectedFolders().size() == 3 && tree->getNumSelectedItems() == 3, "Refresh lost multiple folder identities");
@@ -1413,12 +1413,12 @@ void testSidebarUi (const juce::File& root)
         sidebar->onFoldersSelected = [&] (juce::StringArray paths) { selectedList.setFolderFilters (paths); };
         clickFolder (rootItem (2), 0);
         check (selectedList.getNumRows() == 0, "Empty selected folder did not filter the library");
-        clickFolder (rootItem (1), juce::ModifierKeys::ctrlModifier); // union with A
+        clickFolder (rootItem (1), juce::ModifierKeys::commandModifier); // union with A
         check (selectedList.getNumRows() == 1, "Multiple folders did not combine their recordings");
         auto* nested = rootItem (1)->getSubItem (0);
-        clickFolder (nested, juce::ModifierKeys::ctrlModifier);
+        clickFolder (nested, juce::ModifierKeys::commandModifier);
         check (selectedList.getNumRows() == 1, "Overlapping selected folders duplicated recordings");
-        clickFolder (rootItem (0), juce::ModifierKeys::ctrlModifier);
+        clickFolder (rootItem (0), juce::ModifierKeys::commandModifier);
         check (sidebar->getSelectedFolders().isEmpty() && tree->getNumSelectedItems() == 1
             && selectedList.getNumRows() == 1, "All did not reset multiple folder filtering");
         sidebar->onFoldersSelected = nullptr;
