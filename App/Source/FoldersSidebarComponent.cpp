@@ -339,7 +339,7 @@ void FoldersSidebarComponent::selectFolder (const juce::String& path, juce::Modi
                 if (item->fullPath == selectionAnchor) first = row;
                 if (item->fullPath == path) last = row;
             }
-        if (! modifiers.isCtrlDown()) selectedFolders.clear();
+        if (! modifiers.isCtrlDown() && ! modifiers.isCommandDown()) selectedFolders.clear();
         if (first >= 0 && last >= 0)
             for (int row = juce::jmin (first, last); row <= juce::jmax (first, last); ++row)
                 if (auto* item = dynamic_cast<FolderItem*> (tree.getItemOnRow (row)); item && item->fullPath.isNotEmpty())

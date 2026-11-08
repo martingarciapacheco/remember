@@ -63,7 +63,11 @@ def main():
         if not cases or any(c.find('failure') is not None or c.find('skipped') is not None for c in cases):
             raise RuntimeError('Incomplete or failed test report')
         tests.append({'suite': source, 'passed': len(cases), 'reportSha256': digest(report)})
-        shutil.copy2(build / 'generated/build-info.json', artifacts / f'{source.lower()}-build-info.json')
+        info_path = build / 'generated/build-info.json'
+        info = json.loads(info_path.read_text())
+        if info['commit'] != commit or info['productVersion'] != version or info['sourceState'] != 'clean':
+            raise RuntimeError('Compiled build information does not match clean release source')
+        shutil.copy2(info_path, artifacts / f'{source.lower()}-build-info.json')
         workspace = Path((build / 'generated/test-workspace.txt').read_text().strip())
         if (workspace / 'artifacts').is_dir():
             shutil.copytree(workspace / 'artifacts', artifacts / f'{source.lower()}-ui-artifacts')
@@ -76,6 +80,8 @@ def main():
     for bundle in (app, vst):
         executable = bundle / 'Contents/MacOS/Remember'
         run('lipo', '-verify_arch', 'arm64', 'x86_64', executable)
+        if commit.encode() not in executable.read_bytes():
+            raise RuntimeError('Release commit is absent from the compiled executable')
         # Ad-hoc signatures are required for native Apple Silicon loading. They
         # are not Developer ID signatures and do not imply notarization.
         run('codesign', '--force', '--deep', '--sign', '-', bundle)
@@ -116,6 +122,7 @@ def main():
     run('codesign', '--verify', '--deep', '--strict', extracted / 'Applications/Remember.app')
     run('codesign', '--verify', '--deep', '--strict', extracted / 'Library/Audio/Plug-Ins/VST3/Remember.vst3')
     manifest = {'version': version, 'commit': commit, 'platform': 'macOS', 'architectures': ['arm64', 'x86_64'],
+                'testHostArchitecture': platform.machine(), 'testHostOS': platform.mac_ver()[0],
                 'minimumOS': '11.0', 'signing': 'ad-hoc; installer unsigned; not notarized',
                 'tests': tests, 'pluginval': {'version': lock['pluginvalMac']['version'], 'strictness': 5,
                 'logSha256': digest(root / 'pluginval.log')},

@@ -8,6 +8,9 @@ namespace RememberUI
 const std::map<juce::String, juce::String>& spanishSpain()
 {
     static const std::map<juce::String, juce::String> strings {
+        { "Show project file in Finder", "Mostrar el archivo del proyecto en Finder" },
+        { "Show file in Finder", "Mostrar el archivo en Finder" },
+        { juce::String::fromUTF8 ("Drag a copy to Finder or another application"), juce::String::fromUTF8 ("Arrastra una copia a Finder u otra aplicación") },
         { "Default offline rendering DAW", "DAW de renderizado predeterminado offline" },
         { "Used when opening Offline rendering. Saved with OK.", "Se utiliza al abrir Renderizado offline. Se guarda con OK." },
         { "Select preview", "Seleccionar preview" },

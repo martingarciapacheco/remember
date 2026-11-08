@@ -299,7 +299,7 @@ void StatisticsDialog::returnKeyPressed (int row)
 { if (row >= 0 && row < (int) visible.size()) audition (visible[(size_t) row]); }
 bool StatisticsDialog::keyPressed (const juce::KeyPress& key)
 {
-    if (key == juce::KeyPress ('f', juce::ModifierKeys::ctrlModifier, 0)) { search.grabKeyboardFocus(); search.selectAll(); return true; }
+    if (RememberUI::matchesShortcut (key, 'f')) { search.grabKeyboardFocus(); search.selectAll(); return true; }
     return false;
 }
 void StatisticsDialog::audition (size_t index)

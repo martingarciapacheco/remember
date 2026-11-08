@@ -367,7 +367,19 @@ inline void icon (juce::Graphics& g, const juce::String& kind, juce::Rectangle<f
 inline juce::String shortcutTooltip (const juce::String& title, const juce::String& shortcut,
                                      const juce::String& details = {})
 {
+   #if JUCE_MAC
+    const auto nativeShortcut = shortcut.replace ("Ctrl+", "Cmd+");
+    if (nativeShortcut != shortcut)
+        return title + " (" + nativeShortcut + " / " + shortcut + ")" + (details.isEmpty() ? juce::String{} : "\n" + details);
+   #endif
     return title + " (" + shortcut + ")" + (details.isEmpty() ? juce::String{} : "\n" + details);
+}
+
+// Keep existing Ctrl bindings while accepting the native Command equivalent.
+inline bool matchesShortcut (const juce::KeyPress& key, int code, int extraModifiers = 0)
+{
+    return key == juce::KeyPress (code, juce::ModifierKeys::ctrlModifier | extraModifiers, 0)
+        || key == juce::KeyPress (code, juce::ModifierKeys::commandModifier | extraModifiers, 0);
 }
 
 inline void iconButton (juce::TextButton& button, const juce::String& kind, const juce::String& title)

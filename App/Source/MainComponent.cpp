@@ -139,10 +139,10 @@ void MainComponent::globalFocusChanged (juce::Component* component)
 
 bool MainComponent::libraryShortcut (const juce::KeyPress& key)
 {
-    if (key == juce::KeyPress ('F', juce::ModifierKeys::ctrlModifier, 0)) { list.focusSearch(); return true; }
-    if (key == juce::KeyPress (',', juce::ModifierKeys::ctrlModifier, 0)) { showSettingsDialog(); return true; }
-    if (key == juce::KeyPress ('O', juce::ModifierKeys::ctrlModifier, 0)) { list.openSelectedInDaw(); return true; }
-    if (key == juce::KeyPress ('F', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0))
+    if (RememberUI::matchesShortcut (key, 'F')) { list.focusSearch(); return true; }
+    if (RememberUI::matchesShortcut (key, ',')) { showSettingsDialog(); return true; }
+    if (RememberUI::matchesShortcut (key, 'O')) { list.openSelectedInDaw(); return true; }
+    if (RememberUI::matchesShortcut (key, 'F', juce::ModifierKeys::shiftModifier))
     { list.toggleFavoritesFilter(); return true; }
     return false;
 }
@@ -164,7 +164,7 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     { player.seekBySeconds (-5); return true; }
     if (key == juce::KeyPress (juce::KeyPress::rightKey, juce::ModifierKeys::altModifier, 0))
     { player.seekBySeconds (5); return true; }
-    if (key == juce::KeyPress ('Z', juce::ModifierKeys::ctrlModifier, 0))
+    if (RememberUI::matchesShortcut (key, 'Z'))
     {
         const auto context = lastUndoContext;
         ProjectScanner::editAsync ([context] { return ProjectScanner::undoOrganization (context); },
@@ -178,8 +178,8 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
         player.togglePlay();
         return true;
     }
-    if (key.getModifiers().isCtrlDown() && key.getKeyCode() == juce::KeyPress::rightKey) { player.next(); return true; }
-    if (key.getModifiers().isCtrlDown() && key.getKeyCode() == juce::KeyPress::leftKey) { player.previous(); return true; }
+    if ((key.getModifiers().isCtrlDown() || key.getModifiers().isCommandDown()) && key.getKeyCode() == juce::KeyPress::rightKey) { player.next(); return true; }
+    if ((key.getModifiers().isCtrlDown() || key.getModifiers().isCommandDown()) && key.getKeyCode() == juce::KeyPress::leftKey) { player.previous(); return true; }
     // Enter is handled inside ProjectListComponent::returnKeyPressed (plays the row)
     // R: rename selected (no modifier — search box catches it when typing)
     if (key.getKeyCode() == 'R' && ! key.getModifiers().isAnyModifierKeyDown())

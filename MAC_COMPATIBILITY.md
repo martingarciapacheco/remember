@@ -32,7 +32,7 @@ must not be claimed based on successful ad-hoc codesign verification.
 | Recovery ownership | Per-profile exclusive `flock` tokens distinguish live and crashed writers. Unknown machine/profile/protocol remains protected and requires explicit recovery approval. Recovery subprocesses share an isolated test profile. |
 | Storage | Existing bounded JSON, atomic replacement, revision receipts and recovery remain shared; Windows DACL/share-mode cases remain Windows-specific. |
 | Library notifications | Windows has native change notifications; Mac uses the existing polling fallback. No FSEvents support is claimed. |
-| UI | Existing native Mac title bars, system font, JUCE file choosers, CoreAudio output, bilingual controls and async work are preserved. No UI redesign is introduced. |
+| UI | Native Mac title bars, system font, JUCE file choosers, CoreAudio output, bilingual controls and async work are preserved. Command equivalents supplement the existing Ctrl shortcuts; Finder replaces Explorer in Mac labels in both languages. Modified selection respects Command. No UI redesign is introduced. |
 | DAW discovery | Existing discovery scans system/user Applications folders. Project association is manual on Mac; automatic title discovery remains Windows-only. |
 | Readers | FL Used Sounds and FL/Ableton Statistics retain separate support limits. Foreign drive-letter paths remain unavailable rather than being rewritten to guessed Mac paths. |
 | Offline rendering | The FL executable/registry/process runner is Windows-specific. Mac does not gain native FL rendering support in this release. |

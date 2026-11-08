@@ -21,7 +21,8 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
   mounted volumes, native worker completion and safe VST3 code lifetime on macOS.
   Mac recording ownership uses OS file locks, including crash/orphan recovery.
 - Both English and Spanish remain available. The Mac build preserves native
-  window controls and uses the system font. Mac association currently uses
+  window controls and uses the system font, Command shortcuts and Finder labels
+  in both languages. Existing Ctrl shortcuts continue to work. Mac association currently uses
   **Associate → Select project file** or **Keep recording without a file**.
 - Mac supports **VST3 hosts**. AU (Logic/GarageBand) and AAX (Pro Tools) are not
   included. FL Studio offline rendering is Windows-only. Developer ID signing,

@@ -546,6 +546,8 @@ void testFrontendDesign (const juce::File& root)
         auto press = [&] (int code, int modifiers = 0, juce::juce_wchar text = 0)
         { return scene->getPeer()->handleKeyPress (juce::KeyPress (code, modifiers, text)); };
         check (press ('F', juce::ModifierKeys::ctrlModifier) && search->hasKeyboardFocus (false), "Ctrl+F did not focus search");
+        scene->grabKeyboardFocus();
+        check (press ('F', juce::ModifierKeys::commandModifier) && search->hasKeyboardFocus (false), "Native primary-modifier F did not focus search");
         search->setText ({}, false);
         press ('M', 0, 'm'); press ('S', 0, 's'); press ('L', 0, 'l');
         check (search->getText() == "msl" && ! player->isMuted(), "Transport shortcuts intercepted typing");
@@ -1226,6 +1228,10 @@ void testFrontendDesign (const juce::File& root)
         check (languageSelector && languageSelector->isVisible() && languageSelector->getWidth() >= 150 && languageSelector->getHeight() >= 28 && translated.getLocalBounds().contains (languageSelector->getBounds()), "Language selector is absent from Appearance");
         languageSelector->setSelectedId (2);
         awaitUi ([&] { return RememberUI::language == RememberUI::Language::SpanishSpain && languageSelector->isEnabled(); });
+       #if JUCE_MAC
+        check (RememberUI::localize ("Show project file in Explorer") == "Mostrar el archivo del proyecto en Finder",
+               "Mac Spanish file manager label is not localized to Finder");
+       #endif
         check (LibraryStore::readJson (LibraryStore::configFile())["language"].toString() == "es-ES", "Spanish selection was not persisted");
         check (tabs->getTabNames()[1] == RememberUI::localize ("Appearance"), "Open settings tabs did not follow language");
         juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
@@ -1246,6 +1252,10 @@ void testFrontendDesign (const juce::File& root)
         awaitUi ([&] { return saved && RememberUI::language == RememberUI::Language::English; }, 5000,
             "An external shared-config language edit did not reach the open app");
         check (languageSelector->getSelectedId() == 1 && tabs->getTabNames()[1] == "Appearance", "Open language selector did not synchronize");
+       #if JUCE_MAC
+        check (RememberUI::localize ("Show project file in Explorer") == "Show project file in Finder",
+               "Mac English file manager label is not Finder");
+       #endif
     }
     player->releaseEntry (ProjectScanner::scan()[0].metadataFile);
     check (! openButton->isEnabled() && openButton->getTooltip().isEmpty(), "Clearing selection retained the Open in DAW tooltip");

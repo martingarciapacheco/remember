@@ -16,6 +16,12 @@ inline Language languageFromConfig (const juce::var& config)
 // project names and persisted identifiers are never looked up automatically.
 inline juce::String localize (const juce::String& source)
 {
+   #if JUCE_MAC
+    // Preserve stable catalog keys while naming the native file manager.
+    if (source == "Show project file in Explorer") return localize ("Show project file in Finder");
+    if (source == "Show file in Explorer") return localize ("Show file in Finder");
+    if (source == "Drag a copy to Explorer or another application") return localize ("Drag a copy to Finder or another application");
+   #endif
     if (language == Language::SpanishSpain)
     {
         if (const auto found = spanishSpain().find (source); found != spanishSpain().end()) return found->second;

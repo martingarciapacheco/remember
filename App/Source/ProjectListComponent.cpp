@@ -618,7 +618,7 @@ juce::Component* ProjectListComponent::refreshComponentForRow (int row, bool isS
     comp->onSelectionGesture = [this, row] (juce::ModifierKeys modifiers)
     {
         listBox.selectRowsBasedOnModifierKeys (row, modifiers, false);
-        if (! modifiers.isCtrlDown() && ! modifiers.isShiftDown() && view != 3 && onEntrySelected && row < filtered.size()) onEntrySelected (filtered[row]);
+        if (! modifiers.isCtrlDown() && ! modifiers.isCommandDown() && ! modifiers.isShiftDown() && view != 3 && onEntrySelected && row < filtered.size()) onEntrySelected (filtered[row]);
     };
 
     // Mutation lambdas capture `metadataFile` so a stale `row` after a sort/filter
