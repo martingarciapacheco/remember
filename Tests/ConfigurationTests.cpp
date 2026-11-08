@@ -662,7 +662,10 @@ void testConfiguration (const juce::File& fixtureRoot)
         check (metadata.getProperty ("settingsFingerprint", "").toString() == expected.fingerprint
                && (int) metadata.getProperty ("settingsRevision", 0) == 23 && (int) metadata.getProperty ("recordSeconds", 0) == 15
                && (int) metadata.getProperty ("oggQuality", 0) == 9 && (bool) metadata.getProperty ("recordMono", false)
-               && stateFolder (processor) == second.getFullPathName() && processor.getEngine().getDroppedCaptures() == 0,
+               // A later global settings poll may publish the next destination.
+               // Check this accepted capture's actual files, not that mutable UI snapshot.
+               && ! first.getChildFile (".pending").getChildFile (id).getChildFile ("metadata.json").existsAsFile()
+               && processor.getEngine().getDroppedCaptures() == 0,
                "A later external edit mixed fields or redirected the accepted capture");
         std::cout << "PASS: settings held beyond 15 s preserve frame zero, averaged mono, duration, quality, destination and fingerprint; prepare="
                   << prepareMs << " ms, save=" << saveMs << " ms; dispatch remains live\n";

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 
 def sha256(path):
@@ -45,12 +46,47 @@ def prepare(root, version, commit, repository):
     return [*assets, windows_path, mac_path]
 
 
+def required_checks(runs, commit):
+    required = ['.github/workflows/windows-validation.yml', '.github/workflows/macos-native-validation.yml']
+    pending = []
+    for workflow in required:
+        matches = [r for r in runs if r.get('path') == workflow and r.get('head_sha') == commit and r.get('event') == 'push']
+        if not matches:
+            pending.append(workflow)
+            continue
+        latest = max(matches, key=lambda r: r['id'])
+        if latest['status'] != 'completed':
+            pending.append(workflow)
+        elif latest['conclusion'] != 'success':
+            raise RuntimeError('Required validation failed: ' + latest['html_url'])
+    return pending
+
+
+def wait_for_checks(repository, commit):
+    deadline = time.monotonic() + 45 * 60
+    while True:
+        result = subprocess.check_output(['gh', 'api', f'repos/{repository}/actions/runs?head_sha={commit}&event=push&per_page=100'], text=True)
+        pending = required_checks(json.loads(result)['workflow_runs'], commit)
+        if not pending:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Required validation did not finish before the publication deadline')
+        print('Waiting for required validation: ' + ', '.join(pending), flush=True)
+        time.sleep(30)
+
+
 def main():
     root = Path(sys.argv[1]).resolve()
     version = Path('VERSION').read_text().strip()
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     repository = os.environ['GH_REPO']
     assets = prepare(root, version, commit, repository)
+    wait_for_checks(repository, commit)
+    ref = os.environ.get('GITHUB_REF', '')
+    if ref.startswith('refs/heads/'):
+        current = subprocess.check_output(['git', 'ls-remote', 'origin', ref], text=True).split()
+        if not current or current[0] != commit:
+            raise RuntimeError('Release branch advanced during validation; build the current source before publishing')
     tag = 'v' + version
     # Existing tags are immutable; never move a released version to another commit.
     remote = subprocess.check_output(['git', 'ls-remote', 'origin', f'refs/tags/{tag}', f'refs/tags/{tag}^{{}}'], text=True).strip()

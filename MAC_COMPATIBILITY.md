@@ -56,6 +56,9 @@ the `.pkg`, expands it and compares every installed file against the signed
 payload. Windows retains its full CTest, pinned validator and Inno extraction
 gates. Both installers and manifests must agree on version and commit before
 publication. A failed platform prevents publication of the pair.
+Publication additionally waits for the same commit's Windows validation workflow
+(including app/plugin AddressSanitizer) and native Mac lifetime workflow. A failed
+required workflow or an advanced release branch prevents tag/release creation.
 
 Evidence is retained in GitHub Actions `windows-installers` and
 `macos-installers` artifacts: CTest reports, native UI snapshots, validator logs,

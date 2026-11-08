@@ -70,6 +70,22 @@ class PairedReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum or path'):
             self.prepare()
 
+    def test_failed_required_ci(self):
+        runs = [{'path': '.github/workflows/windows-validation.yml', 'head_sha': self.commit, 'event': 'push',
+                 'id': 1, 'status': 'completed', 'conclusion': 'failure', 'html_url': 'https://github.com/example/actions/runs/1'}]
+        with self.assertRaisesRegex(RuntimeError, 'Required validation failed'):
+            publisher.required_checks(runs, self.commit)
+
+    def test_other_commit_does_not_satisfy_ci(self):
+        runs = [{'path': '.github/workflows/windows-validation.yml', 'head_sha': 'b' * 40, 'event': 'push',
+                 'id': 1, 'status': 'completed', 'conclusion': 'success'}]
+        self.assertEqual(len(publisher.required_checks(runs, self.commit)), 2)
+
+    def test_all_required_ci_passed(self):
+        runs = [{'path': path, 'head_sha': self.commit, 'event': 'push', 'id': i, 'status': 'completed', 'conclusion': 'success'}
+                for i, path in enumerate(['.github/workflows/windows-validation.yml', '.github/workflows/macos-native-validation.yml'])]
+        self.assertEqual(publisher.required_checks(runs, self.commit), [])
+
 
 if __name__ == '__main__':
     unittest.main()
