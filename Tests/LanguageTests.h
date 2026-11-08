@@ -37,6 +37,11 @@ inline void testLocalizedControls()
     setLanguage (Language::English); setLanguage (Language::SpanishSpain);
     if (label.getText() != "Settings") throw std::runtime_error ("Recycled language binding translated user data");
     setLanguage (Language::English);
+   #if JUCE_MAC
+    if (! localize ("Alt-click to select a range; Ctrl-click to add or remove folders").contains ("Cmd-click")
+        || localize ("Undo preview change (Ctrl+Z)") != "Undo preview change (Cmd+Z)")
+        throw std::runtime_error ("Mac interaction hints do not name native Command/Option modifiers");
+   #endif
     if (button.getButtonText() != "Cancel" || choice.getSelectedId() != 29 || choice.getText() != "Dark")
         throw std::runtime_error ("Returning to English lost original text or stable selection");
     juce::var config (new juce::DynamicObject());

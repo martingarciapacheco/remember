@@ -21,6 +21,9 @@ inline juce::String localize (const juce::String& source)
     if (source == "Show project file in Explorer") return localize ("Show project file in Finder");
     if (source == "Show file in Explorer") return localize ("Show file in Finder");
     if (source == "Drag a copy to Explorer or another application") return localize ("Drag a copy to Finder or another application");
+    if (source == "Alt-click to select a range; Ctrl-click to add or remove folders")
+        return localize ("Option-click to select a range; Cmd-click to add or remove folders");
+    if (source == "Undo preview change (Ctrl+Z)") return localize ("Undo preview change (Cmd+Z)");
    #endif
     if (language == Language::SpanishSpain)
     {
