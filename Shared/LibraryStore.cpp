@@ -246,8 +246,14 @@ juce::File dataDirectory()
 {
     auto& state = dataDirectoryOverride();
     juce::ScopedLock lock (state.lock);
-    return state.directory != juce::File{} ? state.directory
-        : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Remember");
+    if (state.directory != juce::File{}) return state.directory;
+    const auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    // JUCE returns ~/Library here; app-owned data belongs in Application Support.
+    return base.getChildFile ("Application Support/Remember");
+   #else
+    return base.getChildFile ("Remember");
+   #endif
 }
 void setDataDirectoryForTests (const juce::File& directory)
 {
