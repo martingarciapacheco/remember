@@ -20,6 +20,8 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
 - Fixed Clang portability, platform-specific JUCE paths, file identities across
   mounted volumes, native worker completion and safe VST3 code lifetime on macOS.
   Mac recording ownership uses OS file locks, including crash/orphan recovery.
+- FL Studio Used Sounds and Statistics now locate factory sample data inside
+  installed Mac app bundles as well as existing Windows installations.
 - Both English and Spanish remain available. The Mac build preserves native
   window controls and uses the system font, Command shortcuts and Finder labels
   in both languages. Existing Ctrl shortcuts continue to work. Mac association currently uses

@@ -34,7 +34,7 @@ must not be claimed based on successful ad-hoc codesign verification.
 | Library notifications | Windows has native change notifications; Mac uses the existing polling fallback. No FSEvents support is claimed. |
 | UI | Native Mac title bars, system font, JUCE file choosers, CoreAudio output, bilingual controls and async work are preserved. Command equivalents supplement the existing Ctrl shortcuts; Finder replaces Explorer in Mac labels in both languages. Modified selection respects Command. No UI redesign is introduced. |
 | DAW discovery | Existing discovery scans system/user Applications folders. Project association is manual on Mac; automatic title discovery remains Windows-only. |
-| Readers | FL Used Sounds and FL/Ableton Statistics retain separate support limits. Foreign drive-letter paths remain unavailable rather than being rewritten to guessed Mac paths. |
+| Readers | FL Used Sounds and FL/Ableton Statistics retain separate support limits. Both FL readers now discover factory data inside installed Mac FL Studio app bundles, including user Applications. Foreign drive-letter paths are not rewritten to guessed Mac paths. |
 | Offline rendering | The FL executable/registry/process runner is Windows-specific. Mac does not gain native FL rendering support in this release. |
 | Formats | VST3 only. Logic/GarageBand need AU; Pro Tools needs AAX. Neither format is included. |
 

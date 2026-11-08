@@ -5,6 +5,7 @@
 #include "../App/Source/WaveformPlayerComponent.h"
 #include "../Shared/LibraryStore.h"
 #include "../Shared/BackgroundRetirement.h"
+#include "../Shared/FlStudioPaths.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -172,6 +173,19 @@ void snapshot (juce::Component& component, const juce::String& name)
 }
 void testUsedSounds (const juce::File& root)
 {
+    {
+        const auto applications = root.getChildFile ("Mac Applications");
+        const auto data = applications.getChildFile ("FL Studio 2026.app/Contents/Resources/FL/Data");
+        check (data.createDirectory().wasOk(), "Cannot create isolated Mac FL installation");
+        check (applications.getChildFile ("Other.app/Contents/Resources/FL/Data").createDirectory().wasOk(), "Cannot create unrelated Mac app");
+        check (applications.getChildFile ("FL Studio incomplete.app").createDirectory().wasOk(), "Cannot create incomplete Mac app");
+        const auto factories = FlStudioPaths::macFactoryDataDirectories ({ applications, applications });
+        check (factories.size() == 1 && factories[0] == data, "Mac FL factory discovery accepted another app, missing data or duplicates");
+        const auto sample = data.getChildFile ("Factory tone.wav");
+        check (sample.replaceWithText ("path resolution fixture"), "Cannot create Mac factory sample");
+        check (UsedSounds::resolveSample ("%FLStudioFactoryData%/Factory tone.wav", root.getChildFile ("song.flp"), {}, factories) == sample,
+               "Mac FL factory sample token did not resolve inside the app bundle");
+    }
     {
         auto read = [] (const char* plugin, const juce::MemoryOutputStream& state, bool wrapper = true)
         { return UsedSounds::Presets::read (plugin, (const uint8_t*) state.getData(), state.getDataSize(), wrapper); };

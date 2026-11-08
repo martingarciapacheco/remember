@@ -17,6 +17,10 @@ siendo exclusiva de Windows. El ejecutor de renderizado offline de FL Studio
 también sigue limitado a Windows. Statistics y Used Sounds conservan sus
 lectores y límites independientes de la matriz; leer un proyecto de Windows en
 Mac no convierte sus rutas de samples en rutas locales válidas.
+Used Sounds y Statistics comparten ahora la búsqueda de datos de fábrica de FL
+en `/Applications/FL Studio*.app/Contents/Resources/FL/Data` y en Applications
+del usuario. La regresión usa bundles simulados y resolución del token de
+fábrica; no certifica instalaciones o proyectos reales de FL Studio para Mac.
 
 Logic Pro/GarageBand requieren AU y Pro Tools requiere AAX: el VST3 de Mac no
 añade soporte para esos hosts. La validación en runners macOS no certifica

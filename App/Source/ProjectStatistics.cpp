@@ -1,4 +1,5 @@
 #include "ProjectStatistics.h"
+#include "../../Shared/FlStudioPaths.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -84,14 +85,7 @@ Inventory readFl (const juce::File& file, const Cancel& cancel)
         return fail ("Invalid FL Studio project header");
     bool unicode = false, mixer = false, haveChannel = false; int major = 0, type = -1, events = 0;
     juce::String currentPlugin, wrapperName, samplePath, dataPath;
-    juce::Array<juce::File> factories;
-    for (const auto* variable : { "ProgramFiles", "ProgramFiles(x86)" })
-    {
-        const auto root = juce::SystemStats::getEnvironmentVariable (variable, {});
-        if (root.isEmpty()) continue;
-        const auto installs = juce::File (root).getChildFile ("Image-Line").findChildFiles (juce::File::findDirectories, false, "FL Studio*");
-        for (int i = 0; i < juce::jmin (64, installs.size()); ++i) factories.add (installs[i].getChildFile ("Data"));
-    }
+    const auto factories = FlStudioPaths::factoryDataDirectories();
     auto flush = [&]
     {
         if (! mixer && haveChannel && type != 3 && type != 5 && samplePath.isNotEmpty())

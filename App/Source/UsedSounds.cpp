@@ -1,4 +1,5 @@
 #include "UsedSounds.h"
+#include "../../Shared/FlStudioPaths.h"
 #include "UsedSoundPresets.h"
 #include <map>
 #include <set>
@@ -41,16 +42,7 @@ struct Channel
 };
 juce::Array<juce::File> factoryDirectories()
 {
-    juce::Array<juce::File> roots;
-    for (const auto& variable : { "ProgramFiles", "ProgramFiles(x86)" })
-    {
-        const auto path = juce::SystemStats::getEnvironmentVariable (variable, {});
-        if (path.isEmpty()) continue;
-        juce::Array<juce::File> installs;
-        juce::File (path).getChildFile ("Image-Line").findChildFiles (installs, juce::File::findDirectories, false, "FL Studio*");
-        for (int i = 0; i < juce::jmin (64, installs.size()); ++i) roots.add (installs[i].getChildFile ("Data"));
-    }
-    return roots;
+    return FlStudioPaths::factoryDataDirectories();
 }
 juce::String safePart (juce::String s)
 {
