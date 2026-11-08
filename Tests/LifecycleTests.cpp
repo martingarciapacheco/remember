@@ -75,6 +75,9 @@ void capture (RecordingEngine& engine, double rate, float value, double start = 
 
 void testLifecycle (const juce::File& root)
 {
+    // Other regression fixtures may still be retiring on fast platforms. Their
+    // buffers must not become part of this fixture's live-resource baseline.
+    await ([] { return BackgroundRetirement::pending() == 0; }, "Earlier regression workers did not retire before lifecycle baseline");
    #if JUCE_WINDOWS
     for (int attempt = 0; attempt < 8; ++attempt)
     {

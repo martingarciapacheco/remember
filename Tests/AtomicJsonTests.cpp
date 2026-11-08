@@ -2,6 +2,8 @@
 #include "../Shared/LibraryStore.h"
 #include "../Shared/AtomicJsonWriter.h"
 #include "../Shared/ProjectIdentity.h"
+#include "../Shared/RememberInterProcessLock.h"
+#include <thread>
 #include <iostream>
 #include <stdexcept>
 #if JUCE_WINDOWS
@@ -100,6 +102,20 @@ void testAtomicJson (const juce::File& fixtureRoot)
     check (fixtureRoot.isAChildOf (juce::File::getCurrentWorkingDirectory()), "Atomic JSON fixture root is not isolated");
     const auto root = fixtureRoot.getChildFile ("atomic-json");
     check (LibraryStore::ensureDirectory (root).wasOk(), "Cannot create atomic JSON fixture");
+    {
+        const auto name = "Remember-lock-regression-" + juce::Uuid().toString();
+        Remember::InterProcessLock held (name);
+        check (held.enter (0) && held.enter (0), "Native transaction lock is not reentrant");
+        bool crossed = false;
+        std::thread contender ([&] { Remember::InterProcessLock other (name); crossed = other.enter (0); if (crossed) other.exit(); });
+        contender.join();
+        held.exit(); held.exit();
+        check (! crossed, "A transaction lock admitted another thread in the same process");
+        bool retried = false;
+        std::thread retry ([&] { Remember::InterProcessLock other (name); retried = other.enter (100); if (retried) other.exit(); });
+        retry.join();
+        check (retried, "Native transaction lock was not released for retry");
+    }
     const auto oldText = juce::JSON::toString (json (juce::String::fromUTF8 ("Anterior: canción 🎹")));
     const auto next = json (juce::String::fromUTF8 ("Nueva: grabación 🎵"));
     const auto target = root.getChildFile ("config.json");
