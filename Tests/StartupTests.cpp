@@ -111,6 +111,19 @@ void testColdStartupCase (const juce::File& root, int count, int missingPercent,
     const auto setupMs = juce::Time::getMillisecondCounterHiRes() - preparing;
     std::cout << "COLD_FIXTURE_READY setupMs=" << setupMs << std::endl;
 
+    // Match RememberApplication: its app theme exists and is the default before
+    // MainComponent construction. Report this native bootstrap separately;
+    // neither file/index caches nor the scene itself are warmed here.
+    const auto themeBeginning = juce::Time::getMillisecondCounterHiRes();
+    auto* previousLook = &juce::LookAndFeel::getDefaultLookAndFeel();
+    juce::SharedResourcePointer<RememberUI::LookAndFeel> appTheme;
+    struct RestoreDefaultTheme
+    {
+        juce::LookAndFeel* previous;
+        ~RestoreDefaultTheme() { juce::LookAndFeel::setDefaultLookAndFeel (previous); }
+    } restoreDefaultTheme { previousLook };
+    juce::LookAndFeel::setDefaultLookAndFeel (&appTheme.get());
+    const auto themeBootstrapMs = juce::Time::getMillisecondCounterHiRes() - themeBeginning;
     const auto begun = juce::Time::getMillisecondCounterHiRes();
     auto scene = std::make_unique<MainComponent>();
     const auto constructedMs = juce::Time::getMillisecondCounterHiRes() - begun;
@@ -128,6 +141,8 @@ void testColdStartupCase (const juce::File& root, int count, int missingPercent,
         check (status->isVisible() && status->getText().startsWith ("Loading library"),
                "Cold library is blank while the first index scan is pending");
     if (mode == "close") check (pendingAtConstruction, "Early-close fixture did not interrupt the first scan");
+    std::cout << "COLD_CONSTRUCT count=" << count << " themeBootstrapMs=" << themeBootstrapMs
+              << " constructorMs=" << constructedMs << std::endl;
     check (constructedMs < 2000, "Cold scene constructor waited for library I/O");
     if (count == 10000 && missingPercent == 50)
         saveImage (*scene, artifact (count, missingPercent, mode, "-initial.png"));
@@ -243,6 +258,8 @@ void testColdStartupCase (const juce::File& root, int count, int missingPercent,
     result->setProperty ("passed", true); result->setProperty ("count", count); result->setProperty ("missingPercent", missingPercent);
     result->setProperty ("mode", mode); result->setProperty ("pendingAtConstruction", pendingAtConstruction);
     result->setProperty ("constructorMs", constructedMs); result->setProperty ("readyMs", readyMs);
+    result->setProperty ("themeBootstrapMs", themeBootstrapMs);
+    result->setProperty ("themeAndReadyMs", themeBootstrapMs + readyMs);
     result->setProperty ("fixtureSetupMs", setupMs);
     result->setProperty ("sharedFixture", shared);
     result->setProperty ("missingProjects", missing); result->setProperty ("liveRows", liveRows);

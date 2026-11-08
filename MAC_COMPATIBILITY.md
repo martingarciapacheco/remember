@@ -76,6 +76,10 @@ run as passed; the existence of this procedure alone is not validation evidence.
 - Confirm external drag/drop, tray/menu behavior, English/Spanish text fit and
   native rendering at the actual screen scale. Software component snapshots
   cannot certify the physical graphics driver or DAW embedding.
+- Cold-scene fixtures install the same application-wide theme as the production
+  standalone before constructing MainComponent. Reports retain theme bootstrap
+  and combined theme/ready times separately; the 2-second constructor assertion
+  and all library/input cases remain unchanged.
 - Intel code is built and verified as a slice; a native Apple Silicon test run
   does not prove Intel/Rosetta runtime behavior or all supported macOS versions.
 

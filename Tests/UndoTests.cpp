@@ -134,12 +134,19 @@ void testContextUndo (const juce::File& root)
             && ! ProjectScanner::canUndoOrganization (Context::Previews), "Bulk deletion did not undo as one queued action");
 
         check (edit ([] { return ProjectScanner::createFolder ("Menu folder"); }).wasOk(), "Cannot prepare menu-context folder");
+        waitFor ([] { return ProjectScanner::getAllFolderPaths().contains ("Menu folder"); },
+                 "Menu-context folder was not published before opening preview actions");
         auto* menuRow = dynamic_cast<ProjectRowComponent*> (rows->getComponentForRowNumber (0));
         check (menuRow && menuRow->onActions, "Preview actions menu is missing");
         menuRow->onActions (menuRow);
         auto* menu = juce::Component::getCurrentlyModalComponent();
         check (menu != nullptr, "Preview actions menu did not open");
-        menu->exitModalState (11); idle();
+        auto menuCompleted = std::make_shared<bool> (false);
+        juce::ModalComponentManager::getInstance()->attachCallback (menu,
+            juce::ModalCallbackFunction::create ([menuCompleted] (int result)
+            { check (result == 11, "Preview undo fixture selected a different action"); *menuCompleted = true; }));
+        menu->exitModalState (11);
+        waitFor ([&] { return *menuCompleted; }, "Preview undo callback did not complete"); idle();
         // Exercise the callback even with preview undo disabled: it must never
         // fall through to the only available folder operation.
         check (ProjectScanner::getAllFolderPaths().contains ("Menu folder"), "Preview menu undid a folder");
