@@ -1,10 +1,10 @@
 # Remember
 
-**Current beta: 1.0.0-beta5 · Windows x64 · standalone app + VST3.**
+**Current beta: 1.0.0-beta6 · Windows x64 + macOS universal (Apple Silicon / Intel) · standalone app + VST3.**
 
-Beta5 refreshed on **1 November 2026**. The download keeps the same filename;
-check the commit shown in the app/plugin or the release's `release-manifest.json`
-to distinguish builds. Install the app and plugin together: older beta5 builds
+Beta6 includes the changes developed after the published beta5, plus native Mac
+packaging and portability fixes. Check the commit shown in the app/plugin and the
+release manifests to identify the build. Install the app and plugin together: older beta5 builds
 cannot read the new `.rmp` preview format. Existing WAV/OGG previews remain readable.
 
 This refresh adds FL Studio offline rendering, external audio selection for previews,
@@ -15,7 +15,7 @@ waveform options and contextual undo. See the feature guide below and the
 
 ## Install and record your first preview
 
-1. Download `Remember-1.0.0-beta5-setup.exe` from the [beta release](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta5). The installer includes both the app and plugin.
+1. Download `Remember-1.0.0-beta6-setup.exe` (Windows) or `Remember-1.0.0-beta6-macOS-universal.pkg` (Mac) from the [beta release](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta6). Each installer includes both the app and plugin.
 2. Close Remember and your DAW before installing. Setup requests administrator access to install the system VST3. This beta is unsigned; Windows may show an unknown-publisher warning.
 3. Open Remember from the Start menu. The first-run guide helps create or choose a dedicated previews folder. Then add the folders containing your DAW projects in Settings. Adding a search folder starts a recursive search; saving with OK also refreshes the project index in the background, even after Settings closes. Existing recordings stay in their original library if you change that destination.
 4. Load Remember as a VST3 insert on your DAW master bus. Save the project, then play from exactly the beginning. The default capture lasts up to 60 seconds; stopping earlier keeps a capture of at least one second.
@@ -26,6 +26,20 @@ Setup installs the app under `C:\Program Files\Remember` and the plugin under
 DAW if Remember does not appear. Settings and logs live in `%APPDATA%\Remember`;
 recordings live in your selected previews folder. Closing the app window keeps it
 in the tray; choose **Exit** from the tray menu to quit.
+
+On Mac, the package installs `/Applications/Remember.app` and
+`/Library/Audio/Plug-Ins/VST3/Remember.vst3`. Both contain native `arm64` and
+`x86_64` code, including Apple Silicon M5 Pro; Rosetta is not required for Remember
+in a native Apple Silicon VST3 host. Minimum deployment target: macOS 11.
+Settings and logs use `~/Library/Application Support/Remember`; recordings stay
+in the folder you choose. Use **Associate → Select project file** or **Keep
+recording without a file**: automatic host-window project detection is currently
+Windows-only. Logic/GarageBand require AU and Pro Tools requires AAX; this VST3
+does not load in those hosts. FL Studio offline rendering remains Windows-only.
+The Mac binaries are ad-hoc signed; the package has no Developer ID signature or
+Apple notarization. macOS may require approval in **System Settings → Privacy &
+Security → Open Anyway**. See [Mac compatibility](MAC_COMPATIBILITY.md) for review,
+validation evidence and remaining physical-host acceptance work.
 
 ## Interface language
 
@@ -575,4 +589,4 @@ The publisher requires `-Installer` and `-Manifest` paths; it does not search a 
 ./installer/publish-release.ps1 -Installer '<artifacts/Remember-version-setup.exe>' -Manifest '<artifacts/release-manifest.json>' -ValidateOnly
 ```
 
-[Windows CI](.github/workflows/windows-validation.yml) builds both Release targets, runs app AddressSanitizer checks in a separate job and retains evidence. A manual workflow input can request installer packaging; publication is never automatic. Writing this workflow is not evidence that a remote run or installer acceptance has passed.
+[Windows CI](.github/workflows/windows-validation.yml) builds both Release targets, runs app/plugin AddressSanitizer checks in separate jobs and retains evidence. Installer generation now uses [Release installers](.github/workflows/release-installers.yml): every installer request builds **both Windows and macOS**, validates them, and retains both artifacts. Run `./installer/build-installers.ps1` to build the pair, or add `-Publish` to publish after both succeed. The batch wrappers use this paired entry point too. Changes must be committed and pushed first. The legacy Windows builder remains a CI implementation detail and `publish-release.ps1` permits `-ValidateOnly` but rejects single-platform publication. See [MAC_COMPATIBILITY.md](MAC_COMPATIBILITY.md) for Mac installation, signing status and validation limits.

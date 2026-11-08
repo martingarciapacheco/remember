@@ -8,6 +8,23 @@ Estados: **Implementado** = existe código; **Parcial** = tiene límites indicad
 **Pendiente** = falta implementación; **Genérico** = no necesita un lector específico.
 La validación se registra por separado; no se deduce del estado.
 
+## Plataformas — beta6
+
+Windows x64 y macOS universal (`arm64`/`x86_64`) tienen instaladores de app +
+VST3 construidos conjuntamente. En Mac se conserva la captura genérica y la
+asociación manual/Keep; la detección automática por título de ventana sigue
+siendo exclusiva de Windows. El ejecutor de renderizado offline de FL Studio
+también sigue limitado a Windows. Statistics y Used Sounds conservan sus
+lectores y límites independientes de la matriz; leer un proyecto de Windows en
+Mac no convierte sus rutas de samples en rutas locales válidas.
+
+Logic Pro/GarageBand requieren AU y Pro Tools requiere AAX: el VST3 de Mac no
+añade soporte para esos hosts. La validación en runners macOS no certifica
+DAWs reales, acceso a carpetas protegidas, arrastre entre aplicaciones ni el
+hardware M5 Pro. Registro detallado: `MAC_COMPATIBILITY.md`. La evidencia nativa
+se conserva en el workflow `Release installers`, con CTest, pluginval nivel 5,
+snapshots y comparación de los archivos extraídos de ambos instaladores.
+
 | Funcionalidad | FL Studio `.flp` | Ableton Live `.als` | Otros DAW |
 |---|---|---|---|
 | Grabación de previews mediante el VST3 | Genérico | Genérico | Genérico, requiere host VST3 compatible |

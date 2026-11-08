@@ -45,7 +45,7 @@ jobs:
       - name: Build app and VST3, run CTest and native VST3 validation
         run: |
           ./installer/build-release.ps1 -JucePath out/tools/JUCE -PluginvalPath out/tools/pluginval/pluginval.exe `
-            -Generator 'Visual Studio 17 2022' -BuildRoot out/ci-release -SkipPackage
+            -BuildRoot out/ci-release -SkipPackage
       - name: Retain binary, manifest and complete diagnostics
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -72,7 +72,7 @@ jobs:
       - name: AddressSanitizer app tests
         run: |
           $ErrorActionPreference = 'Stop'
-          cmake -S App -B out/app-asan -G 'Visual Studio 17 2022' -A x64 -DJUCE_PATH="$PWD/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_ENABLE_ASAN=ON
+          cmake -S App -B out/app-asan -A x64 -DJUCE_PATH="$PWD/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_ENABLE_ASAN=ON
           if ($LASTEXITCODE) { throw 'ASan configure failed' }
           cmake --build out/app-asan --config Release --target RememberAppTests -- /nr:false /m:2
           if ($LASTEXITCODE) { throw 'ASan build failed' }
@@ -105,7 +105,7 @@ jobs:
       - name: AddressSanitizer plugin lifetime, settings, capture and analysis tests
         run: |
           $ErrorActionPreference = 'Stop'
-          cmake -S Plugin -B out/plugin-asan -G 'Visual Studio 17 2022' -A x64 -DJUCE_PATH="$PWD/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_ENABLE_ASAN=ON -DREMEMBER_COPY_PLUGIN_AFTER_BUILD=OFF
+          cmake -S Plugin -B out/plugin-asan -A x64 -DJUCE_PATH="$PWD/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_ENABLE_ASAN=ON -DREMEMBER_COPY_PLUGIN_AFTER_BUILD=OFF
           if ($LASTEXITCODE) { throw 'Plugin ASan configure failed' }
           cmake --build out/plugin-asan --config Release --target RememberTests -- /nr:false /m:2
           if ($LASTEXITCODE) { throw 'Plugin ASan build failed' }

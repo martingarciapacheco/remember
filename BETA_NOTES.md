@@ -11,10 +11,36 @@ Remember is two pieces that work together:
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
-## Changes in 1.0.0-beta5 — refreshed 1 November 2026
+## Changes in 1.0.0-beta6 — 8 November 2026
 
-This replaces the earlier beta5 installer at the same download URL. Check the
-commit in the app/plugin or `release-manifest.json` to identify the build.
+- Added a **macOS universal installer** containing the standalone app and VST3,
+  with native Apple Silicon (`arm64`, including M5 Pro) and Intel (`x86_64`)
+  binaries. Windows and Mac installers are built and validated together from one
+  commit; publication waits for both platforms. Existing beta5 stays available.
+- Fixed Clang portability, platform-specific JUCE paths, file identities across
+  mounted volumes, native worker completion and safe VST3 code lifetime on macOS.
+  Mac recording ownership uses OS file locks, including crash/orphan recovery.
+- Both English and Spanish remain available. The Mac build preserves native
+  window controls and uses the system font. Mac association currently uses
+  **Associate → Select project file** or **Keep recording without a file**.
+- Mac supports **VST3 hosts**. AU (Logic/GarageBand) and AAX (Pro Tools) are not
+  included. FL Studio offline rendering is Windows-only. Developer ID signing,
+  Apple notarization and real M5 Pro/DAW acceptance remain pending. Mac binaries
+  are ad-hoc signed; see [MAC_COMPATIBILITY.md](MAC_COMPATIBILITY.md).
+
+### Cambios de beta6
+
+Instalador para macOS con app y VST3 universales (Apple Silicon e Intel), pruebas
+nativas en ambas plataformas y publicación conjunta desde el mismo commit.
+Incluye todas las mejoras posteriores a la beta5 publicada: renderizado offline
+de FL Studio en Windows, selección de audio externo, español, carpetas
+inteligentes y correcciones de audio, biblioteca y rendimiento de la auditoría.
+En Mac, asocia el proyecto mediante **Asociar → Seleccionar archivo de proyecto**
+o conserva la grabación sin archivo. Logic/GarageBand (AU) y Pro Tools (AAX)
+siguen fuera del formato VST3. El paquete de Mac aún no tiene firma Developer ID
+ni notarización de Apple; los binarios llevan firma ad-hoc.
+
+### Included improvements since the published beta5
 
 - Added **Offline rendering** for saved FL Studio projects: sequential file/folder batches, explicit subfolder scanning, WAV/MP3/OGG/FLAC choices, beside-project or custom output, estimates and confirmed overwrites. Saved FL settings are displayed read-only. MID, M4A and stems remain pending; real-host evidence is limited to FL Studio 2026 template probes. See [OFFLINE_RENDERING.md](OFFLINE_RENDERING.md) and [DAW_COMPATIBILITY.md](DAW_COMPATIBILITY.md).
 - Added **Select preview** in each recording's ellipsis menu. Play and export a complete external audio file while keeping the plugin capture. Untick to return to the capture; missing/unreadable audio falls back automatically. Manual choices, including disabled selections, survive later automatic render assignments.

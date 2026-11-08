@@ -208,6 +208,7 @@ void testRecovery (const juce::File& fixtureRoot)
                && LibraryStore::recoverEntryRevision (folder, selected, alternatives.selectionToken).result.failed()
                && manifest.existsAsFile() && manifest.getSize() == 0, "Missing/present-empty manifests shared a stale review token");
         check (manifest.replaceWithText ("{"), "Cannot seed held recovery manifest");
+       #if JUCE_WINDOWS
         {
             const auto handle = CreateFileW (manifest.getFullPathName().toWideCharPointer(), GENERIC_READ,
                                              0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -218,6 +219,7 @@ void testRecovery (const juce::File& fixtureRoot)
                    && failed.result.getErrorMessage().contains ("Cannot read recovery manifest"),
                    "Unreadable recovery manifest was treated as absent and offered overwrite choices");
         }
+       #endif
         check (manifest.loadFileAsString() == "{" && manifest.deleteFile(), "Failed manifest read changed the original");
         auto changedReceipt = LibraryStore::readJson (receiptFile);
         changedReceipt.getDynamicObject()->getProperty ("metadata").getDynamicObject()->setProperty ("key", "changed after review");

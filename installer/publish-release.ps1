@@ -32,19 +32,3 @@ Assert-RememberTag $source.commit $localCommit $remoteCommit
 Write-Host "Validated installer $Installer, tag $($version.tag), commit $($source.commit)"
 if ($ValidateOnly) { Write-Host 'Validation only; no tag, push or release created.'; return }
 throw 'Single-platform publication is disabled. Use installer/build-installers.ps1 -Publish to build and publish both Windows and macOS installers from the same commit.'
-$gh = Resolve-RememberTool 'gh.exe' $GhPath @('C:/Program Files/GitHub CLI/gh.exe')
-Assert-RememberSourceUnchanged $source (Get-RememberSource $git $repo)
-if ((Get-RememberRepository $git $repo) -ine $repository) { throw 'Release origin changed during validation' }
-if (!$localCommit) { $null = Invoke-RememberGit $git $repo @('tag', '-a', $version.tag, $source.commit, '-m', "Release $($version.tag)") }
-$actualTag = Invoke-RememberGit $git $repo @('rev-parse', "$($version.tag)^{commit}")
-Assert-RememberTag $source.commit $actualTag $remoteCommit
-$null = Invoke-RememberGit $git $repo @('push', 'origin', "refs/tags/$($version.tag):refs/tags/$($version.tag)")
-$root = Split-Path ([IO.Path]::GetFullPath($Manifest)) -Parent
-$notesArtifact = @($release.artifacts | Where-Object role -eq 'notes')[0]
-$notes = Resolve-RememberArtifact $root $notesArtifact.path
-$releaseArgs = Get-RememberReleaseArguments $repository $version $notes $Installer $Manifest
-Push-Location $repo
-try {
-    & $gh @releaseArgs
-    if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed; no success reported' }
-} finally { Pop-Location }
