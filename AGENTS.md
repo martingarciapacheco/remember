@@ -1,4 +1,16 @@
-# Frontend design policy
+# Remember project requirements
+
+## Installer platforms (persistent requirement)
+
+Every installer release must generate both Windows x64 and macOS universal
+(`arm64` + `x86_64`) installers from the same committed source and `VERSION`.
+Use `.github/workflows/release-installers.yml` via `installer/build-installers.ps1`
+(or the batch wrappers). Publish only after both platforms pass their native
+builds, regression tests, plugin validation and installer payload verification.
+Do not publish a Windows-only installer. Preserve the Mac compatibility limits
+and validation evidence in `MAC_COMPATIBILITY.md` and `DAW_COMPATIBILITY.md`.
+
+## Frontend design policy
 
 All new or changed UI in the Remember plugin and app must follow the Apple-inspired
 design system documented in `DESIGN.md`. This is a persistent project requirement.
