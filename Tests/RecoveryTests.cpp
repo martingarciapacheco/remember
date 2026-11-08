@@ -63,7 +63,7 @@ void crash (const juce::File& folder, const juce::String& phase)
 {
     juce::ChildProcess child;
     check (child.start (juce::StringArray { juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName(),
-            "--storage-crash", folder.getFullPathName(), phase }), "Cannot start recovery crash fixture");
+            "--storage-crash", folder.getFullPathName(), phase, LibraryStore::dataDirectory().getFullPathName() }), "Cannot start recovery crash fixture");
     if (! child.waitForProcessToFinish (15000)) { child.kill(); throw std::runtime_error ("Recovery crash fixture timed out"); }
     if (child.getExitCode() != 77) throw std::runtime_error ("Recovery child failed: " + child.readAllProcessOutput().toStdString());
 }
@@ -178,7 +178,7 @@ void testRecovery (const juce::File& fixtureRoot)
         check (LibraryStore::recoverEntry (folder).result.wasOk(), "Repairing the invalid receipt did not restore verified audio");
         std::cout << "PASS: array-root manifests/settings patches/receipts are rejected without null object mutation; valid committed audio recovers through history\n";
     }
-   #if JUCE_WINDOWS
+   #if JUCE_WINDOWS || JUCE_MAC
     {
         const auto lib = library (root, "ambiguous-pending"), folder = entry (lib.getChildFile (".pending"));
         crash (folder, "1"); crash (folder, "1"); // Two real writers exit after their first receipts.
@@ -348,7 +348,7 @@ void testRecovery (const juce::File& fixtureRoot)
         juce::ignoreUnused (second, third);
     }
     std::cout << "PASS: checksum corruption, cancelled repair, history fallback, analysis/organisation consistency and tombstones\n";
-   #if JUCE_WINDOWS
+   #if JUCE_WINDOWS || JUCE_MAC
     {
         const auto lib = library (root, "first-pending"), pending = lib.getChildFile (".pending"), folder = entry (pending);
         crash (folder, "1"); // Receipt persisted; first manifest never existed.

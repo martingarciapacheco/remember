@@ -54,7 +54,7 @@ void image (juce::Component& component, const char* name)
 
 void testRecoveryUi (const juce::File& root)
 {
-   #if JUCE_WINDOWS
+   #if JUCE_WINDOWS || JUCE_MAC
     check (root.isAChildOf (juce::File::getCurrentWorkingDirectory()), "Recovery UI root is not isolated");
     struct RestoreConfig
     {
@@ -82,7 +82,7 @@ void testRecoveryUi (const juce::File& root)
     {
         juce::ChildProcess writer;
         check (writer.start (juce::StringArray { juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName(),
-                                               "--storage-crash", folder.getFullPathName(), "1" })
+                                               "--storage-crash", folder.getFullPathName(), "1", LibraryStore::dataDirectory().getFullPathName() })
             && writer.waitForProcessToFinish (15000) && writer.getExitCode() == 77,
                "Cannot interrupt recovery UI fixture writer at its receipt");
     }

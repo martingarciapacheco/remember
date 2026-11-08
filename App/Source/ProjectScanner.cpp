@@ -284,7 +284,7 @@ juce::Result ProjectScanner::rebuildSettings (const juce::File& previews, const 
                                              int seconds, int quality, bool mono, const juce::String& fingerprint,
                                              juce::File& originalBackup, const CaptureOptions* capture, int midiVoice, double compactAboveMB, const juce::String& offlineDaw)
 {
-    originalBackup = {};
+    originalBackup = juce::File{};
     const auto current = readSettings();
     if (current.result.wasOk() || ! current.canRebuild)
         return juce::Result::fail ("Configuration is valid or unavailable: " + configFilePath().getFullPathName() + ". Reload Settings before saving");
@@ -885,7 +885,7 @@ juce::Array<ProjectEntry> ProjectScanner::scan (const juce::File& root,
             e.metadataFile = metaFile; e.metadataStamp = stamp;
             // A folder name is not a project ID. Unknown/legacy entries keep
             // metadata-path identity until a valid manifest supplies an ID.
-            e.previewOgg = {}; e.projectAvailable = false;
+            e.previewOgg = juce::File{}; e.projectAvailable = false;
             if (e.name.isEmpty()) e.name = "Unavailable recording " + dir.getFileName();
             e.storageError = "Recording unavailable: " + metaFile.getFullPathName() + " (" + reason
                 + "). Right-click to check and repair, or press Refresh after restoring the files.";

@@ -325,7 +325,7 @@ void WaveformPlayerComponent::releaseEntry (const juce::File& metadataFile)
     if (currentEntry.metadataFile != metadataFile) return;
     loadGeneration->fetch_add (1);
     stop(); detachSource();
-    currentEntry = {}; waveform.reset(); waveformError.clear(); exportedPreview = {}; dragBtn.setEnabled (false);
+    currentEntry = {}; waveform.reset(); waveformError.clear(); exportedPreview = juce::File{}; dragBtn.setEnabled (false);
     dragBtn.setTooltip (RememberUI::tr ("Select a recording to prepare its WAV copy"));
     metronome.setTempo (0); metronomeBtn.setEnabled (false);
     isLoaded = false; isLoading = false; playWhenLoaded = false;
@@ -343,7 +343,7 @@ void WaveformPlayerComponent::loadEntry (const ProjectEntry& entry)
     detachSource();
     const auto request = loadGeneration->fetch_add (1) + 1;
     currentEntry = entry;
-    exportedPreview = {}; dragBtn.setEnabled (false);
+    exportedPreview = juce::File{}; dragBtn.setEnabled (false);
     dragBtn.setTooltip (entry.pending ? RememberUI::tr ("Recording is not ready for export") : entry.auditionReader
         ? RememberUI::tr ("Use the MIDI row's Drag action") : RememberUI::tr ("Preparing complete preview WAV..."));
     queue.select (entry);

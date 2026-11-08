@@ -283,7 +283,7 @@ Inventory readProject (const juce::File& project, const Cancel& cancelled)
         if (ch.plugin.isNotEmpty())
         {
             sound.kind = Kind::Generator; sound.instrument = ch.vstName.isNotEmpty() ? ch.vstName : ch.plugin;
-            sound.name = sound.instrument; sound.sample = {}; sound.sourcePath.clear();
+            sound.name = sound.instrument; sound.sample = juce::File{}; sound.sourcePath.clear();
             sound.presetName = Presets::read (sound.instrument, ch.state, ch.stateSize, ch.plugin.containsIgnoreCase ("fruity wrapper"));
             size_t dataSize = versionEventSize;
             for (const auto& event : ch.presetEvents) dataSize += event.second;

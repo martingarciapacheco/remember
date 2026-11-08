@@ -218,7 +218,13 @@ int main (int argc, char** argv)
         catch (const std::exception& error) { std::cerr << error.what() << std::endl; return 2; }
     }
     juce::ScopedJuceInitialiser_GUI initialise;
-    if (argc == 4 && juce::String (argv[1]) == "--storage-crash") return storageCrash (juce::File (argv[2]), argv[3]);
+    if (argc == 5 && juce::String (argv[1]) == "--storage-crash")
+    {
+        const juce::File profile (argv[4]);
+        if (! profile.isAChildOf (juce::File::getCurrentWorkingDirectory())) return 2;
+        LibraryStore::setDataDirectoryForTests (profile);
+        return storageCrash (juce::File (argv[2]), argv[3]);
+    }
     if (argc == 3 && juce::String (argv[1]) == "--storage-writer") return storageWriter (juce::File (argv[2]));
     // Preserve the full random UUID while leaving room for nested revisions
     // and JUCE's atomic temporary filenames in Windows build directories.

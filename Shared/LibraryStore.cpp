@@ -7,6 +7,11 @@
 #include <limits>
 #if JUCE_WINDOWS
  #include <windows.h>
+#elif JUCE_MAC
+ #include <cerrno>
+ #include <fcntl.h>
+ #include <sys/file.h>
+ #include <unistd.h>
 #endif
 
 namespace LibraryStore
@@ -25,6 +30,24 @@ struct OwnerLease::Impl
         { CloseHandle (handle); handle = nullptr; }
     }
     ~Impl() { if (handle != nullptr) CloseHandle (handle); }
+   #elif JUCE_MAC
+    int handle = -1;
+    juce::File token;
+    Impl()
+    {
+        const auto folder = dataDirectory().getChildFile ("owners");
+        if (folder.createDirectory().failed()) return;
+        token = folder.getChildFile (id);
+        handle = open (token.getFullPathName().toRawUTF8(), O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (handle >= 0 && flock (handle, LOCK_EX | LOCK_NB) != 0)
+        { close (handle); handle = -1; token.deleteFile(); }
+    }
+    ~Impl()
+    {
+        // Remove while still holding the lock. An abrupt process exit instead
+        // leaves an unlocked token, which can be proven orphaned by another host.
+        if (handle >= 0) { token.deleteFile(); close (handle); }
+    }
    #endif
 };
 OwnerLease::OwnerLease() : impl (std::make_unique<Impl>()) {}
@@ -33,6 +56,8 @@ bool OwnerLease::valid() const
 {
    #if JUCE_WINDOWS
     return impl->handle != nullptr;
+   #elif JUCE_MAC
+    return impl->handle >= 0;
    #else
     return true; // Recording remains usable; recovery cannot prove ownership here.
    #endif
@@ -47,6 +72,9 @@ juce::var OwnerLease::proof() const
     object->setProperty ("protocol", "windows-event-v1");
     object->setProperty ("process", (juce::int64) GetCurrentProcessId());
     object->setProperty ("session", (juce::int64) impl->session);
+   #elif JUCE_MAC
+    object->setProperty ("protocol", "macos-flock-v1");
+    object->setProperty ("profile", dataDirectory().getFullPathName());
    #else
     object->setProperty ("protocol", "unknown");
    #endif
@@ -66,6 +94,21 @@ OwnerState ownerState (const juce::var& proof)
     const auto handle = OpenEventW (SYNCHRONIZE, FALSE, ("Local\\Remember-owner-" + id).toWideCharPointer());
     if (handle != nullptr) { CloseHandle (handle); return OwnerState::Active; }
     return GetLastError() == ERROR_FILE_NOT_FOUND ? OwnerState::Orphaned : OwnerState::Unknown;
+   #elif JUCE_MAC
+    const auto id = proof.getProperty ("id", "").toString();
+    if (proof.getProperty ("protocol", "").toString() != "macos-flock-v1"
+        || proof.getProperty ("profile", "").toString() != dataDirectory().getFullPathName()
+        || juce::Uuid (id).isNull() || juce::Uuid (id).toString() != id
+        || proof.getProperty ("machine", "").toString() != juce::SystemStats::getComputerName())
+        return OwnerState::Unknown;
+    const auto token = dataDirectory().getChildFile ("owners").getChildFile (id);
+    const auto handle = open (token.getFullPathName().toRawUTF8(), O_RDWR | O_NOFOLLOW | O_CLOEXEC);
+    if (handle < 0) return errno == ENOENT ? OwnerState::Orphaned : OwnerState::Unknown;
+    const auto acquired = flock (handle, LOCK_EX | LOCK_NB) == 0;
+    const auto error = errno;
+    close (handle);
+    if (acquired) return OwnerState::Orphaned;
+    return error == EWOULDBLOCK ? OwnerState::Active : OwnerState::Unknown;
    #else
     juce::ignoreUnused (proof);
     return OwnerState::Unknown;
@@ -393,7 +436,7 @@ juce::Result patchJson (const juce::File& file, const juce::var& patch, bool all
 juce::Result rebuildSettingsJson (const juce::File& file, const juce::var& patch,
                                   const juce::String& expectedFingerprint, juce::File& originalBackup)
 {
-    originalBackup = {};
+    originalBackup = juce::File{};
     if (patch.getDynamicObject() == nullptr || expectedFingerprint.isEmpty()) return juce::Result::fail ("Settings recovery requires the damaged snapshot");
     Guard guard (file);
     if (! guard.locked) return juce::Result::fail ("Settings are busy: " + file.getFullPathName() + ". Retry after pending saves finish");

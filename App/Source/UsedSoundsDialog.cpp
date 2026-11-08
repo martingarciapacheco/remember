@@ -239,7 +239,7 @@ void UsedSoundsDialog::load()
                 sound.presetData.reset(); // The staging file owns the exported state now.
                 if (result.failed())
                 {
-                    file = {}; sound.exportError = RememberUI::diagnostic (result.getErrorMessage());
+                    file = juce::File{}; sound.exportError = RememberUI::diagnostic (result.getErrorMessage());
                     next->warnings.addIfNotAlreadyThere ((sound.kind == UsedSounds::Kind::Generator
                         ? RememberUI::tr ("Some preset exports are unavailable: ") : RememberUI::tr ("Some MIDI exports are unavailable: ")) + sound.exportError);
                 }

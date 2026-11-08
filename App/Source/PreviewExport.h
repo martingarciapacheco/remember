@@ -8,7 +8,7 @@ namespace PreviewExport
 inline juce::Result prepare (const ProjectEntry& entry, const juce::File& library,
                              juce::File& exported, const std::function<bool()>& cancelled)
 {
-    exported = {};
+    exported = juce::File{};
     if (library == juce::File{}) return juce::Result::fail ("Configure the previews folder before exporting");
     if (entry.auditionReader || entry.pending || entry.storageError.isNotEmpty())
         return juce::Result::fail ("This preview cannot be exported");

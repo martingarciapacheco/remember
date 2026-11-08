@@ -60,7 +60,13 @@ int main (int argc, char** argv)
     std::cout << "AddressSanitizer instrumentation enabled\n";
 #endif
     juce::ScopedJuceInitialiser_GUI gui;
-    if (argc == 4 && juce::String (argv[1]) == "--storage-crash") return storageCrash (juce::File (argv[2]), argv[3]);
+    if (argc == 5 && juce::String (argv[1]) == "--storage-crash")
+    {
+        const juce::File profile (argv[4]);
+        if (! profile.isAChildOf (juce::File::getCurrentWorkingDirectory())) return 2;
+        LibraryStore::setDataDirectoryForTests (profile);
+        return storageCrash (juce::File (argv[2]), argv[3]);
+    }
     const auto root = juce::File::getCurrentWorkingDirectory().getChildFile ("remember-" + juce::Uuid().toString().removeCharacters ("-"));
     check (root.createDirectory().wasOk(), "Cannot create test directory");
     LibraryStore::setDataDirectoryForTests (root.getChildFile ("profile"));

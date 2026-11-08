@@ -429,7 +429,7 @@ void SettingsDialog::loadSettings (std::function<ProjectScanner::SettingsSnapsho
     settingsLoaded = false;
     searchGeneration->fetch_add (1);
     searchStatus.setText ({}, juce::dontSendNotification);
-    validationGeneration->fetch_add (1); storageGeneration->fetch_add (1); measuredFolder = {};
+    validationGeneration->fetch_add (1); storageGeneration->fetch_add (1); measuredFolder = juce::File{};
     for (auto* child : getChildren()) if (child != &cancelBtn) child->setEnabled (false);
     previewsPath.setEnabled (false);
     previewsPath.setButtonText (RememberUI::tr ("Loading settings..."));
@@ -608,7 +608,7 @@ void SettingsDialog::compactLargePreviews()
                 safe->okBtn.setEnabled (true);
                 safe->pcmPolicy.setText (result.failed() ? RememberUI::diagnostic (result.getErrorMessage()) : summary->text(), juce::dontSendNotification);
                 safe->pcmPolicy.setTooltip (summary->errors.joinIntoString ("\n"));
-                safe->measuredFolder = {}; safe->updateStorageUsage();
+                safe->measuredFolder = juce::File{}; safe->updateStorageUsage();
                 if (! summary->errors.isEmpty()) PreviewCompactionActions::show (juce::MessageBoxOptions()
                     .withTitle (RememberUI::tr ("Compaction needs attention")).withAssociatedComponent (safe.getComponent())
                     .withMessage (summary->text() + "\n\n" + summary->errors.joinIntoString ("\n")).withButton (RememberUI::tr ("OK")));

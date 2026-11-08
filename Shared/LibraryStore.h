@@ -11,8 +11,8 @@ inline constexpr size_t maximumJsonBytes = 8 * 1024 * 1024;
 // its JSON is damaged, false for I/O/size failures that must not trigger repair.
 juce::Result readJsonChecked (const juce::File&, juce::var&, bool* readable = nullptr);
 enum class OwnerState { Active, Orphaned, Unknown };
-// A unique session token backed by a live kernel object on Windows. No
-// filesystem, process-ID guessing or thread-affine mutex ownership is needed.
+// Unique ownership proof: a live kernel event on Windows, an exclusive
+// per-profile flock on macOS. Neither relies on reusable process IDs.
 class OwnerLease
 {
 public:

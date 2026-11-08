@@ -305,7 +305,7 @@ void testUsedSounds (const juce::File& root)
     check (track->getEndTime() == 1920, "MIDI duration wrong");
     juce::MidiMessageSequence tempos; parsed.findAllTempoEvents (tempos);
     check (tempos.getNumEvents() == 1 && std::abs (tempos.getEventPointer (0)->message.getTempoSecondsPerQuarterNote() - 60 / 128.5) < 0.000002, "MIDI tempo wrong");
-    auto synth = *midi; synth.sourcePath.clear(); synth.sample = {};
+    auto synth = *midi; synth.sourcePath.clear(); synth.sample = juce::File{};
     for (int v = 1; v <= 4; ++v)
     {
         auto reader = UsedSounds::createPreviewReader (synth, std::make_shared<const std::vector<UsedSounds::Note>> (synth.notes), 128.5, UsedSounds::voiceFromId (v));
@@ -325,7 +325,7 @@ void testUsedSounds (const juce::File& root)
         check (reader->read (&first, 0, 4096, 0, true, true) && first.getMagnitude (0, 0, 4096) > 0.01f, "Live sampler silent");
         check (reader->read (&sought, 0, 1024, 1024, true, true), "Sampler seek failed");
         for (int i = 0; i < 1024; ++i) check (std::abs (first.getSample (0, i + 1024) - sought.getSample (0, i)) < 0.00001f, "Sampler seek changed sample position");
-        auto missing = *midi; missing.sample = {};
+        auto missing = *midi; missing.sample = juce::File{};
         check (! UsedSounds::createPreviewReader (missing, notes, 128.5, UsedSounds::Voice::Sine), "Missing sample silently replaced");
     }
     {

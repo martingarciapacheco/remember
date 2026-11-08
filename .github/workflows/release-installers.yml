@@ -37,7 +37,7 @@ jobs:
           ./Tests/ReleasePipelineTests.ps1
           $lock = Get-Content installer/dependencies.json -Raw | ConvertFrom-Json
           New-Item -ItemType Directory out/tools/pluginval | Out-Null
-          Invoke-WebRequest $lock.pluginval.url -OutFile out/tools/pluginval.zip
+          Invoke-WebRequest $lock.pluginval.url -OutFile out/tools/pluginval.zip -MaximumRetryCount 4 -RetryIntervalSec 5
           if ((Get-FileHash out/tools/pluginval.zip).Hash -ine $lock.pluginval.archiveSha256) { throw 'pluginval checksum mismatch' }
           Expand-Archive out/tools/pluginval.zip out/tools/pluginval
           $tools = ./installer/get-packaging-tools.ps1 -OutputDirectory out/tools/packaging
