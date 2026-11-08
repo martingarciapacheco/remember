@@ -48,7 +48,7 @@ for both platforms. The legacy Windows publisher permits validation only;
 single-platform publication is disabled. `build-release.ps1` is the low-level
 Windows builder used by CI, not the user-facing paired release entry point.
 
-The macOS job builds app, VST3 and test executables with both architecture slices,
+The macOS job builds app and VST3 with both architecture slices and native test executables,
 runs all registered CTest suites on the runner's native architecture, then runs
 pinned pluginval 1.0.4 at strictness 5 against the staged VST3 with an isolated
 profile. It verifies both executable architectures and code signatures, builds

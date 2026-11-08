@@ -108,6 +108,9 @@ option(REMEMBER_BUILD_TESTS "Build Remember app regression tests" OFF)
 if(REMEMBER_BUILD_TESTS)
     enable_testing()
     juce_add_console_app(RememberAppTests PRODUCT_NAME "Remember app regression tests")
+    if(APPLE)
+        set_target_properties(RememberAppTests PROPERTIES OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    endif()
     target_sources(RememberAppTests PRIVATE
         ../Tests/AppTests.cpp ../Tests/PlaybackTests.cpp ../Tests/DeviceTests.cpp
         Source/OfflineRendering.cpp ../Tests/OfflineRenderingTests.cpp

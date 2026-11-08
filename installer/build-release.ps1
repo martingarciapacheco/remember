@@ -72,7 +72,7 @@ foreach ($target in @('Plugin', 'App')) {
     if ($Generator) { $configure += @('-G', $Generator) }
     Invoke-RememberProcess $cmake $configure (Join-Path $logs "$target-configure.log") -WithoutPath
     $buildTargets = if ($target -eq 'Plugin') { @('RememberPlugin_VST3', 'RememberTests') } else { @('RememberApp', 'RememberAppTests') }
-    Invoke-RememberProcess $cmake (@('--build', $build, '--config', 'Release', '--target') + $buildTargets + @('--', '/nr:false')) (Join-Path $logs "$target-build.log") -WithoutPath
+    Invoke-RememberProcess $cmake (@('--build', $build, '--config', 'Release', '--target') + $buildTargets + @('--', '/nr:false', '/m:2')) (Join-Path $logs "$target-build.log") -WithoutPath
     $suite = $target.ToLowerInvariant()
     $junit = Join-Path $logs "$suite-tests.xml"
     try {
