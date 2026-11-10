@@ -41,12 +41,12 @@ struct LoadTicket
 int WaveformPlayerComponent::pendingLoads() { return activeLoads.load(); }
 
 WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* externalDevice, bool persistDeviceState)
-    : outputManager (externalDevice ? *externalDevice : deviceManager), persistAudioState (persistDeviceState)
+    : outputManager (externalDevice), persistAudioState (persistDeviceState)
 {
     RememberStartupTrace::Scope trace ("player body");
     auto safePlayer = juce::Component::SafePointer<WaveformPlayerComponent> (this);
     setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Seek preview"), "Alt+Left / Alt+Right", RememberUI::tr ("Move backward or forward by 5 seconds.")));
-    outputManager.addChangeListener (this);
+    if (outputManager != nullptr) outputManager->addChangeListener (this);
     auto& visual = waveformPreferences();
     visual.addChangeListener (this);
     if (! visual.requested)
@@ -287,14 +287,17 @@ WaveformPlayerComponent::~WaveformPlayerComponent()
     cursorVBlank = {};
     if (metronomePopup != nullptr) metronomePopup->dismiss();
     loadGeneration->fetch_add (1);
-    outputManager.removeChangeListener (this);
+    if (outputManager != nullptr) outputManager->removeChangeListener (this);
     waveformPreferences().removeChangeListener (this);
     if (audioDialog != nullptr)
     { audioDialog->clearContentComponent(); audioDialog->exitModalState (0); }
     detachSource();
     sourcePlayer.setSource (nullptr);
-    outputManager.removeAudioCallback (&sourcePlayer);
-    outputManager.closeAudioDevice();
+    if (outputManager != nullptr)
+    {
+        outputManager->removeAudioCallback (&sourcePlayer);
+        outputManager->closeAudioDevice();
+    }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -476,6 +479,17 @@ void WaveformPlayerComponent::detachSource()
     waitingForBuffer = false;
 }
 
+juce::AudioDeviceManager& WaveformPlayerComponent::audioDeviceManager()
+{
+    if (outputManager == nullptr)
+    {
+        ownedDeviceManager = std::make_unique<juce::AudioDeviceManager>();
+        outputManager = ownedDeviceManager.get();
+        outputManager->addChangeListener (this);
+    }
+    return *outputManager;
+}
+
 bool WaveformPlayerComponent::ensureAudioDevice()
 {
     if (audioDeviceOpen) return true;
@@ -483,7 +497,7 @@ bool WaveformPlayerComponent::ensureAudioDevice()
     auto xml = juce::parseXML (savedAudioState);
     if (savedAudioState.isNotEmpty() && ! xml)
     { playbackErrorFromDevice = true; playbackError = RememberUI::tr ("Saved audio output is invalid. Use Audio to choose an output."); pathLabel.setText (playbackError, juce::dontSendNotification); return false; }
-    const auto outputError = outputManager.initialise (0, 2, xml.get(), false);
+    const auto outputError = audioDeviceManager().initialise (0, 2, xml.get(), false);
     if (outputError.isNotEmpty())
     {
         playbackErrorFromDevice = true;
@@ -492,7 +506,7 @@ bool WaveformPlayerComponent::ensureAudioDevice()
         return false;
     }
     sourcePlayer.setSource (&metronome);
-    outputManager.addAudioCallback (&sourcePlayer);
+    outputManager->addAudioCallback (&sourcePlayer);
     audioDeviceOpen = true;
     clearDeviceError();
     return true;
@@ -503,8 +517,8 @@ void WaveformPlayerComponent::releaseAudioDevice()
     if (! audioDeviceOpen) return;
     audioDeviceOpen = false;
     sourcePlayer.setSource (nullptr);
-    outputManager.removeAudioCallback (&sourcePlayer);
-    outputManager.closeAudioDevice();
+    outputManager->removeAudioCallback (&sourcePlayer);
+    outputManager->closeAudioDevice();
 }
 void WaveformPlayerComponent::armIdleRelease()
 {
@@ -606,7 +620,7 @@ void WaveformPlayerComponent::showAudioSettings()
     if (savedAudioState.isNotEmpty() && ! juce::parseXML (savedAudioState)) savedAudioState.clear();
     ensureAudioDevice();
     juce::DialogWindow::LaunchOptions options;
-    auto* selector = new juce::AudioDeviceSelectorComponent (outputManager, 0, 0, 2, 2, false, false, true, false);
+    auto* selector = new juce::AudioDeviceSelectorComponent (audioDeviceManager(), 0, 0, 2, 2, false, false, true, false);
     // The player owns this dialog and clears it before its style reference dies.
     selector->setLookAndFeel (&getLookAndFeel());
     selector->setSize (500, 340);
@@ -745,11 +759,11 @@ void WaveformPlayerComponent::setOpenProjectAvailable (bool available)
 void WaveformPlayerComponent::changeListenerCallback (juce::ChangeBroadcaster* broadcaster)
 {
     if (broadcaster == &waveformPreferences()) { repaint (waveArea); return; }
-    if (broadcaster != &outputManager) return;
-    auto* device = outputManager.getCurrentAudioDevice();
+    if (outputManager == nullptr || broadcaster != outputManager) return;
+    auto* device = outputManager->getCurrentAudioDevice();
     if (! audioDeviceOpen && audioDialog != nullptr && device && device->isOpen())
     {
-        sourcePlayer.setSource (&metronome); outputManager.addAudioCallback (&sourcePlayer);
+        sourcePlayer.setSource (&metronome); outputManager->addAudioCallback (&sourcePlayer);
         audioDeviceOpen = true; armIdleRelease();
     }
     if (! audioDeviceOpen) return;
@@ -759,7 +773,7 @@ void WaveformPlayerComponent::changeListenerCallback (juce::ChangeBroadcaster* b
         handleDeviceFailure (reason.isNotEmpty() ? reason : RememberUI::tr ("Output device disconnected")); return;
     }
     clearDeviceError();
-    if (auto xml = outputManager.createStateXml())
+    if (auto xml = outputManager->createStateXml())
     {
         savedAudioState = xml->toString();
         if (persistAudioState && savedAudioState != lastSavedAudioState)
@@ -782,7 +796,7 @@ void WaveformPlayerComponent::timerCallback()
     if (openSettingsWhenReady && deviceSettingsLoaded) { openSettingsWhenReady = false; showAudioSettings(); }
     if (audioDeviceOpen)
     {
-        auto* device = outputManager.getCurrentAudioDevice();
+        auto* device = outputManager->getCurrentAudioDevice();
         if (! device || ! device->isOpen() || ! device->isPlaying())
         { handleDeviceFailure (device ? device->getLastError() : RememberUI::tr ("Output device disconnected")); return; }
     }

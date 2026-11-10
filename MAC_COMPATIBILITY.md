@@ -8,7 +8,7 @@ with the pinned JUCE 8.0.12 source and a macOS 11 deployment target. The `arm64`
 slice runs natively on Apple Silicon, including M5 Pro. This is architectural
 compatibility, not evidence of testing on the user's physical computer.
 
-Settings/logs use JUCE's per-user Application Support directory. The existing
+Settings/logs use `~/Library/Application Support/Remember`. The existing
 English/Spanish preference and chosen preview library are preserved. The package
 contains no postinstall scripts and does not modify the user's audio library.
 Close the app and DAW before upgrading. To uninstall, remove the installed app
@@ -27,6 +27,7 @@ must not be claimed based on successful ad-hoc codesign verification.
 | Build system | Explicit, quoted cross-platform JUCE checkout; removed Windows-only VST3 install directory override; builds leave the system plugin directory untouched. |
 | Compiler | Explicit empty `juce::File` assignments resolve Clang overload ambiguity in storage, settings, previews and fixtures. |
 | Audio capture | Existing transparent processBlock, background encoding/analysis and mono/stereo capture remain shared; capture and passthrough suites run natively. |
+| Standalone startup | The audio manager is created on Play or Audio, preserving saved-device restoration and external-manager injection. Constructing JUCE's manager registers CoreMIDI and was measured blocking fresh Mac scenes for 3.6–4.6 seconds before any device was opened. Browsing/loading previews no longer creates it; native cold-startup limits remain unchanged. |
 | Worker lifetime | macOS retains the native Mach thread port until termination. The settings task additionally waits for JUCE thread completion. VST3 code uses `RTLD_NODELETE` to prevent detached cleanup returning into unmapped code. Code and the retirement-service anchor remain resident until the DAW exits; retired audio buffers/workers are still released. Test shutdown waits for native retirement before destroying GUI/process services. |
 | File identity | POSIX identity includes device and inode, preventing collisions across mounted volumes. Existing path handling preserves case outside Windows. |
 | Recovery ownership | Per-profile exclusive `flock` tokens distinguish live and crashed writers. Unknown machine/profile/protocol remains protected and requires explicit recovery approval. Recovery subprocesses share an isolated test profile. |

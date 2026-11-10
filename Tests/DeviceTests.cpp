@@ -5,6 +5,7 @@
 
 struct PlaybackCursorTestAccess
 {
+    static bool hasManager (const WaveformPlayerComponent& player) { return player.outputManager != nullptr; }
     static bool displaySynced (const WaveformPlayerComponent& player) { return ! player.cursorVBlank.isEmpty(); }
     static double position (const WaveformPlayerComponent& player) { return player.cursorSeconds; }
     static double lastFrame (const WaveformPlayerComponent& player) { return player.lastVBlankTime; }
@@ -80,6 +81,13 @@ struct Manager final : juce::AudioDeviceManager
 
 void testDevice (const ProjectEntry& entry)
 {
+    {
+        WaveformPlayerComponent idle (nullptr, false);
+        check (! PlaybackCursorTestAccess::hasManager (idle), "An idle player registered native audio/MIDI services");
+        idle.loadEntry (entry);
+        await ([&] { return idle.hasLoadedEntry(); }, "load without native manager");
+        check (! PlaybackCursorTestAccess::hasManager (idle), "Preview loading registered native audio/MIDI services");
+    }
     State state;
     Manager manager (state);
     WaveformPlayerComponent player (&manager, false);

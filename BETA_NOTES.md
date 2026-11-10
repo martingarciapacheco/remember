@@ -28,6 +28,8 @@ The plugin is fully transparent — audio passes through unchanged, only a copy 
   window controls and uses the system font, Command shortcuts and Finder labels
   in both languages. Existing Ctrl keyboard shortcuts continue to work. Native
   dialog sizing and shutdown during deferred cleanup are hardened for Mac.
+  Opening the browser no longer waits for JUCE's native audio/MIDI registration;
+  the output manager is created when Play or Audio is used.
   Mac association currently uses
   **Associate → Select project file** or **Keep recording without a file**.
 - Mac supports **VST3 hosts**. AU (Logic/GarageBand) and AAX (Pro Tools) are not

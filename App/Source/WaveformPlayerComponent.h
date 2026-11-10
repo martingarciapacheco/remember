@@ -109,6 +109,7 @@ private:
     void   updatePathLabel();
     void   setOpenProjectAvailable (bool available);
     bool   ensureAudioDevice();
+    juce::AudioDeviceManager& audioDeviceManager();
     void   detachSource();
     void   releaseAudioDevice();
     void   armIdleRelease();
@@ -122,9 +123,10 @@ private:
     double duration() const;
     double position() const;
 
-    juce::AudioDeviceManager        deviceManager;
-    REMEMBER_STARTUP_MEMBER ("player device manager ready")
-    juce::AudioDeviceManager&       outputManager;
+    // JUCE registers CoreMIDI while constructing a manager, even before opening
+    // an audio device. Defer that native service until Play or Audio is used.
+    std::unique_ptr<juce::AudioDeviceManager> ownedDeviceManager;
+    juce::AudioDeviceManager* outputManager = nullptr;
     juce::AudioTransportSource      transport;
     REMEMBER_STARTUP_MEMBER ("player transport ready")
     MetronomeSource metronome { transport };
