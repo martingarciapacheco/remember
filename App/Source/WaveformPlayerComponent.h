@@ -7,6 +7,7 @@
 #include "PlaybackQueue.h"
 #include "MetronomeSource.h"
 #include <optional>
+#include "../../Shared/RememberStartupTrace.h"
 
 class WaveformPlayerComponent : public juce::Component,
                                 public juce::SettableTooltipClient,
@@ -84,13 +85,16 @@ private:
     friend struct WaveformTestAccess;
     friend struct PreviewSelectionTestAccess;
     RememberUI::Style uiStyle { *this };
+    REMEMBER_STARTUP_MEMBER ("player style ready")
     PlaybackQueue queue;
+    REMEMBER_STARTUP_MEMBER ("player queue ready")
     RememberUI::TextButton previousBtn, nextBtn, shuffleBtn, muteBtn, normalizeBtn, playbackOptionsBtn { "..." };
     RememberUI::ContextMenuButton repeatBtn, metronomeBtn;
     juce::Component::SafePointer<juce::CallOutBox> metronomePopup;
     bool compactMode = false;
     int midiLow = 48, midiHigh = 84;
     juce::Slider volumeSlider;
+    REMEMBER_STARTUP_MEMBER ("player slider ready")
     bool normalize = false, autoplay = true, applyingPreferences = false, preferencesTouched = false;
     void applyOutputGain();
     void savePlaybackPreferences();
@@ -119,9 +123,12 @@ private:
     double position() const;
 
     juce::AudioDeviceManager        deviceManager;
+    REMEMBER_STARTUP_MEMBER ("player device manager ready")
     juce::AudioDeviceManager&       outputManager;
     juce::AudioTransportSource      transport;
+    REMEMBER_STARTUP_MEMBER ("player transport ready")
     MetronomeSource metronome { transport };
+    REMEMBER_STARTUP_MEMBER ("player metronome ready")
     struct MonitoredPlayer : juce::AudioSourcePlayer
     {
         std::function<void(juce::String)> onError;
@@ -170,14 +177,17 @@ private:
         [] (const juce::StringArray& files, bool move, juce::Component* source)
         { return juce::DragAndDropContainer::performExternalDragDropOfFiles (files, move, source); };
     RememberUI::TextButton audioBtn { RememberUI::tr ("Audio") };
+    REMEMBER_STARTUP_MEMBER ("player buttons ready")
 
     RememberUI::Label nameLabel;
     RememberUI::Label pathLabel;
     RememberUI::Label timeLabel;
+    REMEMBER_STARTUP_MEMBER ("player labels ready")
 
     // Waveform area cached bounds (set in resized)
     juce::Rectangle<int> waveArea;
     juce::VBlankAttachment cursorVBlank;
+    REMEMBER_STARTUP_MEMBER ("player vblank ready")
     PlaybackFramePacer cursorPacer;
     double cursorSeconds = 0, lastVBlankTime = 0;
 
