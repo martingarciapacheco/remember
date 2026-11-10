@@ -1,6 +1,7 @@
 #include "UndoTests.h"
 #include "../App/Source/MainComponent.h"
 #include "../Shared/OrganizationUndo.h"
+#include "../Shared/BackgroundRetirement.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -200,6 +201,10 @@ void testContextUndo (const juce::File& root)
         list->onBeforeStorageChange = nullptr;
         scene.removeFromDesktop();
     }
+    // Storage-only cases below must not race the previous scene's deferred
+    // read-ahead/native handle retirement, especially under instrumentation.
+    waitFor ([] { return BackgroundRetirement::pending() == 0 && WaveformPlayerComponent::pendingLoads() == 0; },
+             "Undo scene readers did not retire before storage-only fixtures");
     clearHistory();
 
     auto mismatched = first; mismatched.projectId = juce::Uuid().toString();
@@ -211,8 +216,11 @@ void testContextUndo (const juce::File& root)
         const auto result = ProjectScanner::trashEntry (first);
         return result.failed() ? result : ProjectScanner::trashEntry (mismatchedSecond);
     }).failed() && trash (first).isDirectory() && second.metadataFile.existsAsFile(), "Partial deletion lost its successful subset");
-    check (edit ([] { return ProjectScanner::undoOrganization (Context::Previews); }).wasOk()
-        && first.metadataFile.existsAsFile(), "Cannot undo only the successful part of a deletion");
+    const auto partialUndo = edit ([] { return ProjectScanner::undoOrganization (Context::Previews); });
+    if (partialUndo.failed() || ! first.metadataFile.existsAsFile())
+        throw std::runtime_error ("Cannot undo only the successful part of a deletion: "
+            + partialUndo.getErrorMessage().toStdString() + "; original=" + first.metadataFile.getFullPathName().toStdString()
+            + "; trash=" + trash (first).getFullPathName().toStdString());
     check (edit ([&]
     {
         const auto result = ProjectScanner::trashEntry (first);

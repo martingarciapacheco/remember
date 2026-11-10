@@ -82,7 +82,7 @@ def main():
     shutil.copytree(root / 'Plugin/RememberPlugin_artefacts/Release/VST3/Remember.vst3', vst, symlinks=True)
     for bundle in (app, vst):
         executable = bundle / 'Contents/MacOS/Remember'
-        run('lipo', '-verify_arch', 'arm64', 'x86_64', executable)
+        run('lipo', executable, '-verify_arch', 'arm64', 'x86_64')
         if commit.encode() not in executable.read_bytes():
             raise RuntimeError('Release commit is absent from the compiled executable')
         # Ad-hoc signatures are required for native Apple Silicon loading. They
@@ -103,7 +103,13 @@ def main():
     (profile / 'config.json').write_text(json.dumps({'previewsFolder': str(profile / 'previews'), 'projectsRootFolders': []}))
     env = dict(os.environ, REMEMBER_VALIDATION_PROFILE=str(profile))
     with (root / 'pluginval.log').open('w') as log:
-        run(validator_exe, '--strictness-level', '5', '--validate', vst, env=env, stdout=log, stderr=subprocess.STDOUT)
+        run(validator_exe, '--strictness-level', '5', '--timeout-ms', '120000',
+            '--random-seed', '19731007', '--sample-rates', '44100,48000,88200,96000,192000',
+            '--block-sizes', '32,64,128,512,2048', '--validate', vst,
+            env=env, stdout=log, stderr=subprocess.STDOUT)
+    plugin_log = profile / 'logs/plugin.log'
+    if not plugin_log.is_file() or commit not in plugin_log.read_text():
+        raise RuntimeError('Native VST3 did not initialize its isolated release profile')
     docs = app / 'Contents/Resources'
     docs.mkdir(exist_ok=True)
     shutil.copy2(repo / 'BETA_NOTES.md', docs)

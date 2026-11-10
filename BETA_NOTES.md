@@ -11,7 +11,7 @@ Remember is two pieces that work together:
 
 The plugin is fully transparent — audio passes through unchanged, only a copy is captured to disk in the background.
 
-## Changes in 1.0.0-beta6 — 8 November 2026
+## Changes in 1.0.0-beta6 — 10 November 2026
 
 - Added a **macOS universal installer** containing the standalone app and VST3,
   with native Apple Silicon (`arm64`, including M5 Pro) and Intel (`x86_64`)
