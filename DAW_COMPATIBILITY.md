@@ -29,6 +29,30 @@ hardware M5 Pro. Registro detallado: `MAC_COMPATIBILITY.md`. La evidencia nativa
 se conserva en el workflow `Release installers`, con CTest, pluginval nivel 5,
 snapshots y comparación de los archivos extraídos de ambos instaladores.
 
+### Evidencia publicada de beta6 — 10 de noviembre de 2026
+
+La [beta6](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta6)
+publica los instaladores Windows x64 y macOS universal desde el commit limpio
+`8755ea32fb999e10df348f6c4fd6699066d7bf77`. El
+[workflow conjunto](https://github.com/martingarciapacheco/remember/actions/runs/42857004283)
+aprueba compilaciones, regresiones, pluginval nivel 5 y comparación del contenido
+extraído: Mac arm64/macOS 15.8.2, app 15/15 y plugin 14/14; Windows x64, app 16/16
+y plugin 16/16. Las pruebas ejecutadas en arm64 no certifican Intel/Rosetta.
+La [validación independiente de Windows](https://github.com/martingarciapacheco/remember/actions/runs/42856997340)
+también aprueba AddressSanitizer: app 16/16, plugin 9/9 y capturas largas.
+
+Se conservan informes, checksums, snapshots EN/ES y el registro del primer
+timeout de Undo y su repetición completa aprobada en los artefactos de los
+workflows enlazados y en la copia local `out/Remember-1.0.0-beta6-validation.zip`.
+La release publica los dos instaladores y sus manifiestos; el ZIP de logs y
+capturas no se ha publicado como adjunto público.
+El constructor de la ventana ya no registra audio/MIDI hasta Play o Audio; pasa
+la matriz de 13 arranques nuevos, sin ampliar su límite de dos segundos.
+Esta validación no amplía la matriz de lectores ni acredita una sesión real de
+FL Studio en Mac. Siguen pendientes escaneo/captura/recarga en el FL Studio del
+usuario y aceptación física en el M5 Pro. Asociación manual, renderizado offline
+exclusivo de Windows y ausencia de firma Developer ID/notarización se mantienen.
+
 | Funcionalidad | FL Studio `.flp` | Ableton Live `.als` | Otros DAW |
 |---|---|---|---|
 | Grabación de previews mediante el VST3 | Genérico | Genérico | Genérico, requiere host VST3 compatible |

@@ -67,6 +67,43 @@ compiled build information and checksummed manifests. Release assets retain both
 installers and both manifests. See the actual workflow result before treating a
 run as passed; the existence of this procedure alone is not validation evidence.
 
+## Published beta6 validation — 10 November 2026
+
+The [published beta6](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta6)
+contains Windows and Mac installers from clean commit
+`8755ea32fb999e10df348f6c4fd6699066d7bf77`, both with `VERSION=1.0.0-beta6`.
+The [paired workflow](https://github.com/martingarciapacheco/remember/actions/runs/42857004283)
+passed native builds, tests, pluginval and extracted-payload verification on both
+platforms. The Mac run used macOS 15.8.2 on arm64: app 15/15 and plugin 14/14
+suites. Both product binaries contain arm64 and x86_64 code; this does not add
+Intel/Rosetta runtime evidence. Windows passed app 16/16 and plugin 16/16 suites.
+
+The same source passed [Windows native and AddressSanitizer validation](https://github.com/martingarciapacheco/remember/actions/runs/42856997340):
+ASan app 16/16, plugin 9/9 selected suites, plus long-capture reconfiguration and
+closure. [Mac native lifetime tests](https://github.com/martingarciapacheco/remember/actions/runs/42856997803)
+and the [13-process cold-startup diagnostic](https://github.com/martingarciapacheco/remember/actions/runs/42856996873)
+also passed. The diagnostic's scene constructor median was 17.54 ms and maximum
+646.71 ms, with the original 2-second limit. These are component timings on the
+runner, excluding native window/tray and physical audio driver startup.
+
+Native app/VST3 component snapshots were inspected at minimum and normal sizes
+in English and Spanish. Release assets retain both installers and their
+checksummed manifests. Full reports, snapshots and validator logs remain in the
+linked workflow artifacts. A local evidence copy is retained at
+`out/Remember-1.0.0-beta6-validation.zip`; it is not a public release asset.
+The first paired Windows attempt timed out in `RememberContextUndo` after 90 s;
+the independent native run passed it in 0.56 s. A full Windows job retry, without
+source changes or relaxed limits, passed every suite (Undo: 0.71 s). The archive
+and the workflow records preserve both attempts; the intermittent timeout's
+cause was not identified.
+
+Mac installer SHA-256:
+`68052d6f5e695eda9c03d79232f61080993eafbb0d5f0ea29f47c41cfe8f0e73`.
+Windows installer SHA-256:
+`6632cc32ace1a7656cd22d9293b0bd82c8eccff123b39c9eb2e8f6e5d33e2c14`.
+This evidence validates the packaged app/VST3 and synthetic fixtures, not a real
+FL Studio session on the user's M5 Pro. The physical acceptance below remains pending.
+
 ## Remaining physical acceptance
 
 - Install/upgrade/uninstall through the native Installer on the M5 Pro.
