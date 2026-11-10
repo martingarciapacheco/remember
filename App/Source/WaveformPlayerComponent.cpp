@@ -1,3 +1,4 @@
+#include "../../Shared/RememberStartupTrace.h"
 #include "../../Shared/PreviewAudio.h"
 #include "WaveformPlayerComponent.h"
 #include "ProjectListComponent.h"   // for Pal::
@@ -42,6 +43,7 @@ int WaveformPlayerComponent::pendingLoads() { return activeLoads.load(); }
 WaveformPlayerComponent::WaveformPlayerComponent (juce::AudioDeviceManager* externalDevice, bool persistDeviceState)
     : outputManager (externalDevice ? *externalDevice : deviceManager), persistAudioState (persistDeviceState)
 {
+    RememberStartupTrace::Scope trace ("player body");
     auto safePlayer = juce::Component::SafePointer<WaveformPlayerComponent> (this);
     setTooltip (RememberUI::shortcutTooltip (RememberUI::tr ("Seek preview"), "Alt+Left / Alt+Right", RememberUI::tr ("Move backward or forward by 5 seconds.")));
     outputManager.addChangeListener (this);

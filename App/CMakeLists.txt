@@ -105,6 +105,7 @@ endif()
 remember_copy_asan_runtime(RememberApp)
 
 option(REMEMBER_BUILD_TESTS "Build Remember app regression tests" OFF)
+option(REMEMBER_TRACE_STARTUP "Trace scene construction in app test builds" OFF)
 if(REMEMBER_BUILD_TESTS)
     enable_testing()
     juce_add_console_app(RememberAppTests PRODUCT_NAME "Remember app regression tests")
@@ -134,6 +135,9 @@ if(REMEMBER_BUILD_TESTS)
         ../Shared/PreviewAudio.cpp ../Shared/PreviewCompaction.cpp ../Shared/LibraryStore.cpp ../Shared/ProjectIdentity.cpp ../Shared/BackgroundRetirement.cpp ../Shared/RememberLanguage.cpp)
     target_compile_definitions(RememberAppTests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
+    if(REMEMBER_TRACE_STARTUP)
+        target_compile_definitions(RememberAppTests PRIVATE REMEMBER_TRACE_STARTUP=1)
+    endif()
     target_link_libraries(RememberAppTests PRIVATE
         RememberIconData RememberAudioData juce::juce_audio_utils juce::juce_gui_extra juce::juce_dsp juce::juce_cryptography juce::juce_recommended_config_flags)
     if(WIN32)

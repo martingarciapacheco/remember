@@ -1,3 +1,4 @@
+#include "../../Shared/RememberStartupTrace.h"
 #pragma once
 #include "ProjectScanner.h"
 #include "../../Shared/RememberLookAndFeel.h"
@@ -14,6 +15,7 @@ public:
     struct Application { juce::String name; juce::File executable; juce::Image icon; };
     DawLauncher()
     {
+        RememberStartupTrace::Scope trace ("launcher body");
         setTitle (RememberUI::tr ("Installed DAWs"));
         viewport.setViewedComponent (&body, false);
         viewport.setScrollBarsShown (false, true);

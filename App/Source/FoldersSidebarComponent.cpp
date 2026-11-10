@@ -1,3 +1,4 @@
+#include "../../Shared/RememberStartupTrace.h"
 #include "FoldersSidebarComponent.h"
 #include "LibraryFilter.h"
 #include "ProjectListComponent.h"   // for Pal::
@@ -250,6 +251,7 @@ private:
 
 FoldersSidebarComponent::FoldersSidebarComponent()
 {
+    RememberStartupTrace::Scope trace ("sidebar body");
     header.setFont (RememberUI::font (13.0f, true));
     header.setBorderSize (juce::BorderSize<int> (0));
     RememberUI::bindColour (header, RememberUI::Label::textColourId, Pal::Text);
@@ -529,6 +531,7 @@ namespace
 
 void FoldersSidebarComponent::rebuildTree()
 {
+    RememberStartupTrace::Scope trace ("sidebar rebuild");
     // Capture selection + expansion so we can re-apply after rebuild
     const auto previousSelection = selectedFolders;
     auto opennessXml = std::unique_ptr<juce::XmlElement> (tree.getOpennessState (true));

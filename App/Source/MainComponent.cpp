@@ -1,3 +1,4 @@
+#include "../../Shared/RememberStartupTrace.h"
 #include "MainComponent.h"
 #include "ProjectScanner.h"
 #include "SettingsDialog.h"
@@ -11,7 +12,9 @@
 
 MainComponent::MainComponent()
 {
+    RememberStartupTrace::Scope trace ("main body");
     setSize (960, 680);
+    RememberStartupTrace::mark ("main initial resize complete");
     setWantsKeyboardFocus (true);
     list.addSearchKeyListener (this);
     sidebar.addMouseListener (this, true);

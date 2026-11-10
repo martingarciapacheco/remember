@@ -3,6 +3,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      app_startup:
+        description: Run traced native app cold-startup diagnostics
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -17,3 +22,25 @@ jobs:
           mkdir -p out/native-tests
           clang++ -std=c++17 -pthread Tests/MacRetirementTests.cpp Shared/BackgroundRetirement.cpp -o out/native-tests/retirement
           out/native-tests/retirement
+      - name: Fetch pinned JUCE for startup diagnostics
+        if: inputs.app_startup
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: juce-framework/JUCE
+          ref: 29396c22c93392d6738e021b83196283d6e4d850
+          path: out/tools/JUCE
+          persist-credentials: false
+      - name: Build native startup diagnostic tests
+        if: inputs.app_startup
+        run: |
+          cmake -S App -B out/startup-diagnostic -G Ninja -DCMAKE_BUILD_TYPE=Release -DJUCE_PATH="$GITHUB_WORKSPACE/out/tools/JUCE" -DREMEMBER_BUILD_TESTS=ON -DREMEMBER_TRACE_STARTUP=ON
+          cmake --build out/startup-diagnostic --target RememberAppTests --parallel 3
+      - name: Trace fresh-process cold startup
+        if: inputs.app_startup
+        run: ctest --test-dir out/startup-diagnostic -R '^RememberAppColdStartup$' --verbose --output-on-failure
+      - name: Preserve startup diagnostic evidence
+        if: always() && inputs.app_startup
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: macos-startup-diagnostics
+          path: out/t/**/artifacts/cold-startup

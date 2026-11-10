@@ -1,3 +1,4 @@
+#include "../Shared/RememberStartupTrace.h"
 #include "StartupTests.h"
 #include "../App/Source/MainComponent.h"
 #include "../Shared/BackgroundRetirement.h"
@@ -125,7 +126,9 @@ void testColdStartupCase (const juce::File& root, int count, int missingPercent,
     juce::LookAndFeel::setDefaultLookAndFeel (&appTheme.get());
     const auto themeBootstrapMs = juce::Time::getMillisecondCounterHiRes() - themeBeginning;
     const auto begun = juce::Time::getMillisecondCounterHiRes();
+    RememberStartupTrace::mark ("scene begin");
     auto scene = std::make_unique<MainComponent>();
+    RememberStartupTrace::mark ("scene constructed");
     const auto constructedMs = juce::Time::getMillisecondCounterHiRes() - begun;
     scene->setSize (860, 640);
     auto* list = childOf<ProjectListComponent> (*scene);

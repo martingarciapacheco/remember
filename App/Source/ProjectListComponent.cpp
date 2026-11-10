@@ -1,3 +1,4 @@
+#include "../../Shared/RememberStartupTrace.h"
 #include "ProjectListComponent.h"
 #include "../../Shared/RememberDialogs.h"
 #include "TagsEditorDialog.h"
@@ -349,6 +350,7 @@ void ProjectRowComponent::resized()
 
 ProjectListComponent::ProjectListComponent()
 {
+    RememberStartupTrace::Scope trace ("list body");
     RememberUI::placeholder (searchBox, RememberUI::tr ("Search projects, tags, key..."), Pal::Subtext);
     searchBox.setFont (RememberUI::font (13.0f));
     RememberUI::bindColour (searchBox, RememberUI::TextEditor::backgroundColourId, Pal::Elevated);
@@ -411,6 +413,7 @@ void ProjectListComponent::refresh() { ProjectScanner::refreshAsync(); }
 void ProjectListComponent::changeListenerCallback (juce::ChangeBroadcaster*) { publishLibrary(); }
 void ProjectListComponent::publishLibrary()
 {
+    RememberStartupTrace::Scope trace ("list publishLibrary");
     const auto snapshot = ProjectScanner::librarySnapshot();
     allEntries = snapshot->entries;
     const auto previousIndex = collectionCombo.getSelectedId() - 2;
@@ -481,6 +484,7 @@ void ProjectListComponent::scheduleSearchDebounce()
 
 void ProjectListComponent::applyFilter()
 {
+    RememberStartupTrace::Scope trace ("list applyFilter");
     std::unordered_set<std::string> selectedIds;
     const auto selectedRows = listBox.getSelectedRows();
     for (int i = 0; i < selectedRows.size(); ++i)
