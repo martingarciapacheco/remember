@@ -1,5 +1,23 @@
 # Remember project requirements
 
+## Project context and continuity
+
+At the start of a new chat or after moving to another computer, read
+`CONTEXTO_PROYECTO.md` and `ESTADO_TRABAJO.md` before changing code. These files
+index the architecture, confirmed user decisions, historical evidence and current
+handoff. Read the linked specialist documents for the affected area.
+
+- Verify the actual checkout, branch, commit, working tree and available tools;
+  a handoff describes its dated snapshot, not the current machine's state.
+- Keep `ESTADO_TRABAJO.md` current when handing work off: record the request,
+  changes, exact validation performed, remaining work and next concrete step.
+- Add durable, confirmed decisions to `CONTEXTO_PROYECTO.md` or the appropriate
+  specialist document. Distinguish user decisions from proposals and old plans.
+- Do not restart historical audits, paused tasks, releases or publishing just
+  because a document lists them. The user's current request defines the scope.
+- Historical passing tests are evidence for their recorded source/platform,
+  not proof that the current checkout or a new physical computer passes.
+
 ## Installer platforms (persistent requirement)
 
 Every installer release must generate both Windows x64 and macOS universal
