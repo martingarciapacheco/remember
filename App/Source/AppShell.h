@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <functional>
 #include <memory>
+#include "MacDockReopen.h"
 
 // The production window/tray lifecycle. JUCEApplication supplies the final
 // quit callback; background shutdown keeps message dispatch alive until ready.
@@ -22,5 +23,8 @@ private:
     std::unique_ptr<TrayIcon> trayIcon;
     std::function<void()> readyToQuit;
     bool closing = false;
+   #if JUCE_MAC
+    std::unique_ptr<MacDockReopen> dockReopen;
+   #endif
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AppShell)
 };

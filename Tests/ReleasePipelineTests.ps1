@@ -94,7 +94,7 @@ $script:checks++
 $pluginTests = @('RememberPreviewQuality', 'RememberResampling', 'RememberFeatureCache', 'RememberAssociation',
     'RememberRegression', 'RememberConfiguration', 'RememberStorageRecovery', 'RememberSustainedCapture',
     'RememberAnalysis', 'RememberCaptureMatrix', 'RememberHostLoading', 'RememberValidationIsolation')
-$appTests = @('RememberAppRegression', 'RememberAppStorageRecovery', 'RememberLibraryBenchmark', 'RememberAppColdStartup', 'RememberAppShell')
+$appTests = @('RememberAppRegression', 'RememberLibraryWatch', 'RememberAppStorageRecovery', 'RememberLibraryBenchmark', 'RememberAppColdStartup', 'RememberAppShell')
 foreach ($suite in @('plugin', 'app')) {
     $names = if ($suite -eq 'plugin') { $pluginTests } else { $appTests }
     $xml = '<testsuite>' + (($names | ForEach-Object { "<testcase name=`"$_`" status=`"run`" time=`"1`"/>" }) -join '') + '</testsuite>'

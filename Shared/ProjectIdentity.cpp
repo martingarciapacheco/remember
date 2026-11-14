@@ -1,4 +1,5 @@
 #include "ProjectIdentity.h"
+#include "MacIntegration.h"
 #include "LibraryStore.h"
 #include <unordered_set>
 #include <filesystem>
@@ -33,6 +34,27 @@ bool isAbsolute (const juce::String& text)
 juce::String cleanTitle (juce::String text)
 {
     return text.trim().trimCharactersAtStart ("*\"").trimCharactersAtEnd ("*\"").trim();
+}
+
+std::string projectNameKey (juce::String name)
+{
+   #if JUCE_MAC
+    name = name.convertToPrecomposedUnicode();
+   #endif
+    return name.toUpperCase().toStdString();
+}
+
+juce::String historicalProjectName (const juce::String& path)
+{
+    // Imported Windows manifests retain their original path. On macOS JUCE
+    // treats backslashes as filename characters, not directory separators.
+    // Decode only Windows path syntax; a native Unix filename may legally
+    // contain a backslash and must keep it.
+    const bool windowsPath = (path.length() >= 3 && juce::CharacterFunctions::isLetter (path[0])
+        && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) || path.startsWith ("\\\\");
+    const auto portable = windowsPath ? path.replaceCharacter ('\\', '/') : path;
+    const auto filename = portable.fromLastOccurrenceOf ("/", false, false);
+    return filename.containsChar ('.') ? filename.upToLastOccurrenceOf (".", false, false) : filename;
 }
 }
 
@@ -108,6 +130,10 @@ juce::Array<juce::File> ProjectIdentity::searchRoots()
     }
     add (json.getProperty ("projectsRootFolder", "").toString());
     if (! roots.isEmpty()) return roots;
+   #if JUCE_MAC
+    roots.add (juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+    return roots;
+   #else
     auto documents = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
     // Guessed defaults are optional. Their absence is not a failed traversal
     // of a directory the user configured explicitly.
@@ -116,6 +142,7 @@ juce::Array<juce::File> ProjectIdentity::searchRoots()
                                juce::File::getSpecialLocation (juce::File::userMusicDirectory) })
         if (folder.isDirectory()) roots.addIfNotAlreadyThere (folder);
     return roots;
+   #endif
 }
 
 HostProject ProjectIdentity::detectHostProject()
@@ -185,9 +212,40 @@ HostProject ProjectIdentity::detectHostProject()
         title = cache.title;
     }
     return parseTitle (title, daw);
+#elif JUCE_MAC
+    return RememberMac::detectHostProject (daw);
 #else
     return { false, {}, {}, daw };
 #endif
+}
+
+HostProject RememberMac::projectFromWindows (const std::vector<DocumentWindow>& windows, const juce::String& daw)
+{
+    HostProject result { false, {}, {}, daw };
+    const auto extension = daw.containsIgnoreCase ("FL Studio") ? ".flp"
+        : daw.containsIgnoreCase ("Ableton") ? ".als" : "";
+    if (juce::String (extension).isEmpty()) return result;
+    for (const auto& window : windows)
+    {
+        HostProject candidate;
+        if (juce::File::isAbsolutePath (window.path))
+        {
+            const juce::File file (window.path);
+            if (! file.hasFileExtension (extension)) continue;
+            candidate = { true, file.getFileNameWithoutExtension(), window.path, daw };
+        }
+        else
+        {
+            // Use the existing title contract; do not strip unverified host
+            // suffixes that could be part of a real project name.
+            candidate = ProjectIdentity::parseTitle (window.title, daw);
+        }
+        if (! candidate.available) continue;
+        if (result.available && (result.path != candidate.path || result.name != candidate.name))
+            return { false, {}, {}, daw };
+        result = std::move (candidate);
+    }
+    return result;
 }
 
 juce::File ProjectIdentity::preferredProjectFile (const juce::File& file)
@@ -376,7 +434,7 @@ bool ProjectIdentity::CandidateIndex::rebuild (const juce::Array<juce::File>& ro
                #endif
                 if (seen.insert (key.toStdString()).second)
                 {
-                    replacementNames[file.getFileNameWithoutExtension().toUpperCase().toStdString()].push_back (replacement.size());
+                    replacementNames[projectNameKey (file.getFileNameWithoutExtension())].push_back (replacement.size());
                     replacement.push_back ({ file, {}, {}, false, false, file.getFileExtension().toLowerCase() });
                 }
             }
@@ -401,8 +459,8 @@ juce::String ProjectIdentity::CandidateIndex::resolve (const juce::String& name,
 {
     lastAmbiguous = false;
     if (cancelled && cancelled()) return {};
-    const auto previous = previousPath.isNotEmpty() ? juce::File (previousPath) : juce::File{};
-    if (previousPath.isNotEmpty())
+    const auto previous = juce::File::isAbsolutePath (previousPath) ? juce::File (previousPath) : juce::File{};
+    if (previous != juce::File{})
     {
         const auto preferred = preferredProjectFile (previous);
         if (preferred != previous)
@@ -495,8 +553,8 @@ juce::String ProjectIdentity::CandidateIndex::resolve (const juce::String& name,
     }
     if (result.isEmpty() && previousFingerprint.isEmpty() && previousFileId.isEmpty())
     {
-        const auto filename = previousPath.isNotEmpty() ? previous.getFileNameWithoutExtension() : name;
-        if (auto it = names.find (filename.toUpperCase().toStdString()); filename.isNotEmpty() && it != names.end())
+        const auto filename = previousPath.isNotEmpty() ? historicalProjectName (previousPath) : name;
+        if (auto it = names.find (projectNameKey (filename)); filename.isNotEmpty() && it != names.end())
             result = uniqueMatch (it->second, [] (Candidate& candidate) { return candidate.file.existsAsFile(); });
     }
     if (cancelled && cancelled()) return {};

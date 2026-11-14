@@ -6,7 +6,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 $script:PluginTests = @('RememberPreviewQuality', 'RememberResampling', 'RememberFeatureCache',
     'RememberAssociation', 'RememberRegression', 'RememberConfiguration', 'RememberStorageRecovery',
     'RememberSustainedCapture', 'RememberAnalysis', 'RememberCaptureMatrix', 'RememberHostLoading', 'RememberValidationIsolation')
-$script:AppTests = @('RememberAppRegression', 'RememberAppStorageRecovery', 'RememberLibraryBenchmark', 'RememberAppColdStartup', 'RememberAppShell')
+$script:AppTests = @('RememberAppRegression', 'RememberLibraryWatch', 'RememberAppStorageRecovery', 'RememberLibraryBenchmark', 'RememberAppColdStartup', 'RememberAppShell')
 
 function Resolve-RememberTool([string]$Name, [string]$ExplicitPath, [string[]]$Candidates = @()) {
     if ($ExplicitPath) {

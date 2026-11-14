@@ -6,16 +6,6 @@
 namespace
 {
 juce::Component::SafePointer<OfflineRenderingDialog> active;
-juce::String settingsVersion (const juce::File& exe)
-{
-    const auto name = exe.getParentDirectory().getFileName();
-    if (! name.startsWith ("FL Studio ")) return {};
-    const auto number = name.fromFirstOccurrenceOf ("FL Studio ", false, false);
-    if (! number.containsOnly ("0123456789")) return {};
-    const int version = number.getIntValue();
-    return version >= 2024 && version <= 2099 ? juce::String (version - 2000)
-         : version >= 20 && version < 100 ? number : juce::String{};
-}
 juce::String secondsText (double seconds)
 { return juce::String ((int) std::ceil (seconds / 60.0)) + " min"; }
 }
@@ -77,7 +67,9 @@ OfflineRenderingDialog::OfflineRenderingDialog()
         const auto config = LibraryStore::readJson (LibraryStore::configFile());
         job.options = OfflineRendering::optionsFromConfig (config);
         job.defaultSupported = config.getProperty ("offlineDefaultDaw", "fl-studio").toString() == "fl-studio";
-        for (const auto& app : DawLauncher::discover()) if (app.name == "FL Studio") { job.exe = app.executable; break; }
+        for (const auto& app : DawLauncher::discover())
+            if (app.name.startsWithIgnoreCase ("FL Studio") && (job.exe == juce::File{}
+                || app.executable.getFileName().compareNatural (job.exe.getFileName()) > 0)) job.exe = app.executable;
     }, [this] (Work& job)
     {
         if (job.result.failed()) { setStatus (job.result.getErrorMessage()); setBusy (false); return; }
@@ -123,7 +115,12 @@ void OfflineRenderingDialog::setBusy (bool busy)
 void OfflineRenderingDialog::choose (int kind)
 {
     constexpr const char* titles[] { "Select an FL Studio project", "Select a folder containing FL Studio projects", "Select a render destination", "Select FL Studio executable" };
-    chooser = std::make_unique<juce::FileChooser> (RememberUI::tr (titles[kind]), juce::File{}, kind == 0 ? "*.flp" : kind == 3 ? "FL64.exe;FL.exe" : "*");
+   #if JUCE_MAC
+    const auto executableFilter = "*.app";
+   #else
+    const auto executableFilter = "FL64.exe;FL.exe";
+   #endif
+    chooser = std::make_unique<juce::FileChooser> (RememberUI::tr (titles[kind]), juce::File{}, kind == 0 ? "*.flp" : kind == 3 ? executableFilter : "*");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | ((kind == 1 || kind == 2) ? juce::FileBrowserComponent::canSelectDirectories : juce::FileBrowserComponent::canSelectFiles),
         [safe = juce::Component::SafePointer<OfflineRenderingDialog> (this), kind] (const juce::FileChooser& chosen)
         {
@@ -148,7 +145,7 @@ void OfflineRenderingDialog::refresh()
     {
         const auto cancel = [&job] { return job.threadShouldExit(); };
         job.result = OfflineRendering::saveOptions (opts); if (job.result.failed()) return;
-        job.settings = OfflineRendering::readFlStudioSettings (settingsVersion (exe));
+        job.settings = OfflineRendering::readFlStudioSettings (OfflineRendering::flStudioSettingsVersion (exe));
         auto sources = OfflineRendering::collectProjects (juce::File::isAbsolutePath (opts.sourcePath) ? juce::File (opts.sourcePath) : juce::File{}, opts.includeSubfolders, cancel);
         job.plan = OfflineRendering::planBatch (exe, sources, opts, selected, cancel);
         job.estimate = OfflineRendering::estimateBatch (job.plan, job.settings, LibraryStore::readJson (LibraryStore::configFile()), cancel);

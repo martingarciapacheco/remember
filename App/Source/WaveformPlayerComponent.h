@@ -66,6 +66,9 @@ public:
     uint64_t getUnderruns() const noexcept { return readerSource ? readerSource->underruns() : 0; }
     static int pendingLoads();
     bool isPlaying() const { return transport.isPlaying(); }
+    juce::String playbackTitle() const { return currentEntry.name; }
+    double playbackDuration() const { return duration(); }
+    double playbackPosition() const { return position(); }
     void setUiActive (bool);
     void visibilityChanged() override;
     void parentHierarchyChanged() override;

@@ -8,6 +8,8 @@ namespace RememberUI
 const std::map<juce::String, juce::String>& spanishSpain()
 {
     static const std::map<juce::String, juce::String> strings {
+        { "Choose FL Studio app...", "Elegir la app de FL Studio..." },
+        { "Select FL Studio app", "Seleccionar la app de FL Studio" },
         { juce::String::fromUTF8 ("Option-click to select a range; Cmd-click to add or remove folders"), juce::String::fromUTF8 ("Haz clic con la tecla Opción pulsada para seleccionar un rango; haz clic con Cmd para añadir o eliminar carpetas") },
         { "Undo preview change (Cmd+Z)", "Deshacer el cambio en la preview (Cmd+Z)" },
         { "Show project file in Finder", "Mostrar el archivo del proyecto en Finder" },

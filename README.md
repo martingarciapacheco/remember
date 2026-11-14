@@ -13,6 +13,11 @@ It retains English/Spanish language selection, smart folders, Statistics, WAV ex
 waveform options and contextual undo. See the feature guide below and the
 [DAW compatibility register](DAW_COMPATIBILITY.md) for support and validation limits.
 
+Development branch `codex/macos-feature-parity` adds native Mac folder notifications,
+Music-root discovery, conservative FL/Ableton association, FL CLI rendering and
+system playback controls. These changes are not in the published beta6 installer.
+See [Mac development validation and pending acceptance](MAC_COMPATIBILITY.md).
+
 ## Install and record your first preview
 
 1. Download `Remember-1.0.0-beta6-setup.exe` (Windows) or `Remember-1.0.0-beta6-macOS-universal.pkg` (Mac) from the [beta release](https://github.com/martingarciapacheco/remember/releases/tag/v1.0.0-beta6). Each installer includes both the app and plugin.
@@ -27,7 +32,7 @@ DAW if Remember does not appear. Settings and logs live in `%APPDATA%\Remember`;
 recordings live in your selected previews folder. Closing the app window keeps it
 in the tray; choose **Exit** from the tray menu to quit.
 
-On Mac, the package installs `/Applications/Remember.app` and
+In the published beta6 on Mac, the package installs `/Applications/Remember.app` and
 `/Library/Audio/Plug-Ins/VST3/Remember.vst3`. Both contain native `arm64` and
 `x86_64` code, including Apple Silicon M5 Pro; Rosetta is not required for Remember
 in a native Apple Silicon VST3 host. Minimum deployment target: macOS 11.

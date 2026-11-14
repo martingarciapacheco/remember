@@ -4,11 +4,14 @@
 #include <stdexcept>
 #if JUCE_WINDOWS
  #include <windows.h>
+#elif JUCE_MAC
+ #include <libproc.h>
+ #include <unistd.h>
 #endif
 
 void testLibraryWatch (const juce::File& fixtureRoot)
 {
-   #if JUCE_WINDOWS
+   #if JUCE_WINDOWS || JUCE_MAC
     const auto check = [](bool value, const char* reason) { if (! value) throw std::runtime_error (reason); };
     const auto base = fixtureRoot.getChildFile ("native-watch");
     const auto config = base.getChildFile ("profile/config.json");
@@ -17,8 +20,23 @@ void testLibraryWatch (const juce::File& fixtureRoot)
     check (config.getParentDirectory().createDirectory().wasOk() && library.getChildFile ("entry").createDirectory().wasOk()
            && projects.createDirectory().wasOk() && config.replaceWithText ("{}"), "Cannot create native watch fixture");
     LibraryWatch watch;
+    const auto settle = [&]
+    {
+       #if JUCE_MAC
+        // FSEvents can deliver coalesced creation events from fixture setup.
+        // Drain those before testing unrelated writes, including reconfiguration.
+        const auto until = juce::Time::getMillisecondCounter() + 2000;
+        auto quiet = juce::Time::getMillisecondCounter() + 200;
+        while (juce::Time::getMillisecondCounter() < quiet && juce::Time::getMillisecondCounter() < until)
+        {
+            if (watch.takeChanges() != LibraryWatch::None) quiet = juce::Time::getMillisecondCounter() + 200;
+            juce::Thread::sleep (1);
+        }
+       #endif
+    };
     watch.configure (config, library, { projects });
     check (watch.hasCompleteCoverage(), "Native directory watch did not cover the local fixture");
+    settle();
     auto expectChange = [&](unsigned expected, const char* stage)
     {
         const auto until = juce::Time::getMillisecondCounter() + 2000;
@@ -54,6 +72,7 @@ void testLibraryWatch (const juce::File& fixtureRoot)
     check (other.createDirectory().wasOk(), "Cannot create replacement watched library");
     watch.configure (config, other, { projects });
     check (watch.hasCompleteCoverage(), "Watcher did not reconfigure after replacing its roots");
+    settle();
     check (library.getChildFile ("entry/metadata.json").replaceWithText ("{\"old\":true}"), "Cannot modify retired root");
     for (int i = 0; i < 50; ++i)
     { check (watch.takeChanges() == LibraryWatch::None, "Retired root still triggered its previous watcher"); juce::Thread::sleep (2); }
@@ -64,15 +83,27 @@ void testLibraryWatch (const juce::File& fixtureRoot)
     watch.configure (config, other, {});
     check (! watch.hasCompleteCoverage(), "A disappeared root incorrectly disabled polling fallback");
     watch.clear();
+   #if JUCE_WINDOWS
     DWORD handlesBefore = 0, handlesAfter = 0;
     check (GetProcessHandleCount (GetCurrentProcess(), &handlesBefore), "Cannot measure native handles");
+   #else
+    const auto handles = [] { return proc_pidinfo (getpid(), PROC_PIDLISTFDS, 0, nullptr, 0) / (int) sizeof (proc_fdinfo); };
+    const auto handlesBefore = handles();
+    int handlesAfter = 0;
+   #endif
     for (int i = 0; i < 100; ++i)
     {
         LibraryWatch closing; closing.configure (config, library, { projects });
         check (closing.hasCompleteCoverage(), "Repeated native watcher startup failed");
     }
+   #if JUCE_WINDOWS
     check (GetProcessHandleCount (GetCurrentProcess(), &handlesAfter) && handlesAfter <= handlesBefore + 8,
            "Closing pending native watch requests leaked their handles");
+   #else
+    handlesAfter = handles();
+    check (handlesBefore > 0 && handlesAfter > 0 && handlesAfter <= handlesBefore + 8,
+           "Closing native FSEvents streams leaked file descriptors");
+   #endif
     juce::Array<juce::File> manyRoots;
     for (int i = 0; i < 20; ++i)
     {

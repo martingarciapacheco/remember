@@ -17,6 +17,8 @@ inline Language languageFromConfig (const juce::var& config)
 inline juce::String localize (const juce::String& source)
 {
    #if JUCE_MAC
+    if (source == "Choose FL executable...") return localize ("Choose FL Studio app...");
+    if (source == "Select FL Studio executable") return localize ("Select FL Studio app");
     // Preserve stable catalog keys while naming the native file manager.
     if (source == "Show project file in Explorer") return localize ("Show project file in Finder");
     if (source == "Show file in Explorer") return localize ("Show file in Finder");

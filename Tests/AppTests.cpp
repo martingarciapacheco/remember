@@ -26,6 +26,9 @@
 #include <filesystem>
 #include <algorithm>
 #include <cstdlib>
+#if JUCE_MAC
+void testMacPlatform (const juce::File&);
+#endif
 
 namespace
 {
@@ -109,6 +112,48 @@ int main (int argc, char** argv)
     } cleanup { root };
     try
     {
+       #if JUCE_MAC
+        if (argc == 2 && juce::String (argv[1]) == "--mac-platform") { testMacPlatform (root); return 0; }
+       #endif
+        if (argc == 2 && juce::String (argv[1]) == "--library-watch") { testLibraryWatch (root); return 0; }
+        if (argc >= 4 && juce::String (argv[1]) == "--inspect-project-links")
+        {
+            juce::Array<juce::File> roots;
+            for (int i = 3; i < argc; ++i) roots.add (juce::File (juce::String::fromUTF8 (argv[i])));
+            ProjectIdentity::CandidateIndex index;
+            if (! index.rebuild (roots)) throw std::runtime_error (index.getLastError().toStdString());
+            int linked = 0, recovered = 0, missing = 0;
+            // Audit only: resolve against real projects without scan() or any
+            // writes to the user's manifests, configuration or project files.
+            for (const auto& folder : juce::File (juce::String::fromUTF8 (argv[2])).findChildFiles (juce::File::findDirectories, false))
+            {
+                if (folder.getFileName().startsWithChar ('.')) continue;
+                const auto metadata = LibraryStore::readJson (folder.getChildFile ("metadata.json"));
+                if (metadata.getDynamicObject() == nullptr || (bool) metadata.getProperty ("pending", false)) continue;
+                const auto path = metadata.getProperty ("projectPath", "").toString();
+                const auto found = index.resolve (metadata.getProperty ("projectName", "").toString(),
+                    metadata.getProperty ("daw", "").toString(), path,
+                    metadata.getProperty ("projectFileId", "").toString(),
+                    metadata.getProperty ("projectFingerprint", "").toString());
+                if (found.isEmpty()) ++missing;
+                else if (found == path) ++linked;
+                else ++recovered;
+                std::cout << (found.isEmpty() ? "MISSING " : found == path ? "LINKED " : "RECOVERED ")
+                    << metadata.getProperty ("projectName", "").toString() << " -> " << found << "\n";
+            }
+            std::cout << "PROJECT_LINKS linked=" << linked << " recovered=" << recovered << " missing=" << missing << "\n";
+            return 0;
+        }
+        if (argc == 3 && juce::String (argv[1]) == "--inspect-search-root")
+        {
+            ProjectIdentity::CandidateIndex index;
+            const auto started = juce::Time::getMillisecondCounterHiRes();
+            if (! index.rebuild ({ juce::File (juce::String::fromUTF8 (argv[2])) }))
+                throw std::runtime_error (index.getLastError().toStdString());
+            std::cout << "PROJECT_SEARCH candidates=" << index.getCandidateCount() << " elapsedMs="
+                << juce::Time::getMillisecondCounterHiRes() - started << "\n";
+            return 0;
+        }
         if ((argc == 4 || argc == 5) && juce::String (argv[1]) == "--probe-fl-render")
         {
             const juce::File executable (argv[2]), source (argv[3]);
@@ -116,7 +161,9 @@ int main (int argc, char** argv)
             check (source.copyFileTo (copied), "Cannot copy the isolated render probe project");
             const auto formats = argc == 5 ? juce::StringArray::fromTokens (argv[4], ",", "") : juce::StringArray { "wav" };
             const auto command = OfflineRendering::flStudioCommand (executable, copied, root, formats);
-            const auto rendered = OfflineRendering::render (command, false);
+            const auto started = juce::Time::getMillisecondCounter();
+            const auto rendered = OfflineRendering::render (command, false, [started]
+                { return juce::Time::getMillisecondCounter() - started >= 90000; });
             if (rendered.result.failed()) throw std::runtime_error (rendered.result.getErrorMessage().toStdString());
             check (rendered.published.size() == formats.size(), "Render probe did not publish every requested format");
             for (const auto& file : rendered.published)

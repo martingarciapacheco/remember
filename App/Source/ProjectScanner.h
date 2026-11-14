@@ -142,7 +142,7 @@ public:
                                          juce::File& originalBackup, const CaptureOptions* capture = nullptr, int midiVoice = 0, double compactAboveMB = -1, const juce::String& offlineDaw = {});
 
     // Multiple folders where the user keeps DAW projects. Defaults to a single
-    // entry pointing at the user's Desktop if nothing has been configured.
+    // entry pointing at Music on Mac or Desktop on Windows if unconfigured.
     // Legacy `projectsRootFolder` field is migrated on first read.
     static juce::Array<juce::File> getProjectsRootFolders();
     static juce::Result            setProjectsRootFolders (const juce::Array<juce::File>& folders);

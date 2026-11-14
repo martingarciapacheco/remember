@@ -1,3 +1,7 @@
+#if defined (__APPLE__)
+ #include <CoreServices/CoreServices.h>
+ #include <dispatch/dispatch.h>
+#endif
 #include "LibraryWatch.h"
 #include "../../Shared/ProjectIdentity.h"
 #include <array>
@@ -81,6 +85,73 @@ struct LibraryWatch::Watch
         }
         if (handle != INVALID_HANDLE_VALUE) CloseHandle (handle);
         if (request.hEvent != nullptr) CloseHandle (request.hEvent);
+    }
+   #elif JUCE_MAC
+    FSEventStreamRef stream = nullptr;
+    dispatch_queue_t queue = nullptr;
+    std::atomic<unsigned> changes { None };
+    std::atomic<bool> pending { false };
+    juce::String nativeDirectory;
+
+    static void changed (ConstFSEventStreamRef, void* context, size_t count, void* paths,
+                         const FSEventStreamEventFlags flags[], const FSEventStreamEventId[])
+    {
+        auto& self = *static_cast<Watch*> (context);
+        auto** names = static_cast<char**> (paths);
+        for (size_t i = 0; i < count; ++i)
+        {
+            constexpr auto lost = kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped
+                | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagEventIdsWrapped;
+            if ((flags[i] & (lost | kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagUnmount)) != 0)
+            {
+                self.changes.fetch_or (self.kind);
+                if ((flags[i] & (kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagUnmount)) != 0)
+                    self.pending.store (false);
+                continue;
+            }
+            const auto path = juce::String::fromUTF8 (names[i]).convertToPrecomposedUnicode();
+            // FSEvents always watches recursively. A leaf watch must exclude
+            // unrelated profile logs and changes below sibling directories.
+            if (self.leaf.isEmpty() || path == self.nativeDirectory + "/" + self.leaf)
+                self.changes.fetch_or (self.kind);
+        }
+    }
+    void open()
+    {
+        if (! directory.isDirectory()) return;
+        // FSEvents reports physical paths (not /var and /tmp aliases).
+        char resolved[PATH_MAX] {};
+        if (realpath (directory.getFullPathName().toRawUTF8(), resolved) == nullptr) return;
+        nativeDirectory = juce::String::fromUTF8 (resolved).convertToPrecomposedUnicode();
+        leaf = leaf.convertToPrecomposedUnicode();
+        const auto path = CFStringCreateWithCString (nullptr, resolved, kCFStringEncodingUTF8);
+        if (! path) return;
+        const void* value = path;
+        const auto paths = CFArrayCreate (nullptr, &value, 1, &kCFTypeArrayCallBacks);
+        CFRelease (path);
+        if (! paths) return;
+        FSEventStreamContext context { 0, this, nullptr, nullptr, nullptr };
+        stream = FSEventStreamCreate (nullptr, changed, &context, paths, kFSEventStreamEventIdSinceNow, 0.05,
+            kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagNoDefer);
+        CFRelease (paths);
+        if (! stream) return;
+        queue = dispatch_queue_create ("Remember.library-watch", DISPATCH_QUEUE_SERIAL);
+        FSEventStreamSetDispatchQueue (stream, queue);
+        pending.store (FSEventStreamStart (stream));
+    }
+    unsigned takeChanges() { return changes.exchange (None); }
+    ~Watch()
+    {
+        if (stream)
+        {
+            FSEventStreamStop (stream);
+            FSEventStreamInvalidate (stream);
+            // The callback borrows this object. Drain callbacks before releasing
+            // it; all waits belong to the index worker, never UI/audio threads.
+            if (queue) dispatch_sync_f (queue, nullptr, [] (void*) {});
+            FSEventStreamRelease (stream);
+        }
+        if (queue) dispatch_release (queue);
     }
    #else
     void open() {}

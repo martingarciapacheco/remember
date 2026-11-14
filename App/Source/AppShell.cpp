@@ -88,6 +88,23 @@ public:
                 });
         }
        #endif
+       #if JUCE_MAC
+        if (! media)
+        {
+            auto safe = juce::Component::SafePointer<MainComponent> (mainContent());
+            media = std::make_unique<MacMediaTransport> ([safe]
+                { return safe ? safe->macMediaState() : MacMediaTransport::State{}; }, [safe] (int command)
+                {
+                    if (! safe) return;
+                    if (command == 0) safe->taskbarPrevious();
+                    else if (command == 1) safe->taskbarTogglePlay();
+                    else if (command == 2) safe->taskbarNext();
+                    else if (command == 3) safe->mediaPlay();
+                    else if (command == 4) safe->mediaPause();
+                    else if (command == 5) safe->mediaStop();
+                });
+        }
+       #endif
         if (auto* content = mainContent()) content->setUiActive (true);
         setMinimised (false);
         toFront (true);
@@ -104,6 +121,9 @@ public:
 
     ~MainWindow() override
     {
+       #if JUCE_MAC
+        media.reset();
+       #endif
         setLookAndFeel (nullptr);
        #if JUCE_WINDOWS
         taskbar.reset();
@@ -170,6 +190,9 @@ private:
     std::unique_ptr<WindowsTaskbarTransport> taskbar;
    #endif
     bool boundsEdited = false;
+   #if JUCE_MAC
+    std::unique_ptr<MacMediaTransport> media;
+   #endif
     bool boundsReadSucceeded = false;
     juce::Rectangle<int> lastObservedBounds;
 };
@@ -235,11 +258,17 @@ private:
 
 AppShell::AppShell (std::function<void()> onReadyToQuit) : readyToQuit (std::move (onReadyToQuit))
 {
+   #if JUCE_MAC
+    dockReopen = std::make_unique<MacDockReopen> ([this] { open(); });
+   #endif
     trayIcon = std::make_unique<TrayIcon> ([this] { open(); }, [this] { requestQuit(); });
     open();
 }
 AppShell::~AppShell()
 {
+   #if JUCE_MAC
+    dockReopen.reset();
+   #endif
     stopTimer();
     juce::PopupMenu::dismissAllActiveMenus();
     trayIcon.reset();

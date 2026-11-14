@@ -18,6 +18,10 @@ struct FlStudioSettings
 };
 using SettingReader = std::function<juce::String (const juce::String& valueName)>;
 FlStudioSettings readFlStudioSettings (const juce::String& registryVersion, SettingReader = {});
+// Bounded, read-only Mac XML registry reader. Only the selected version's
+// WAVRenderForm and audio sample rate are returned; other values are not exposed.
+FlStudioSettings readMacFlStudioSettings (const juce::File& registry, const juce::String& version);
+juce::String flStudioSettingsVersion (const juce::File& applicationOrExecutable);
 struct Sources
 {
     juce::Result result = juce::Result::ok();

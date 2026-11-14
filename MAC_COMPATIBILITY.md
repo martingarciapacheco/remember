@@ -1,6 +1,107 @@
-# macOS compatibility review — beta6
+# macOS compatibility review
 
-## Scope and installation
+## Unreleased development — 11 November 2026
+
+Branch `codex/macos-feature-parity` adds the following to the published beta6.
+No installer has been published from this work. The beta6 sections below retain
+historical release behavior and evidence.
+
+| Area | Development behavior and limits |
+|---|---|
+| Recursive discovery | New, unconfigured Mac profiles search Music; explicit roots, including an empty list, are preserved. The user's configured root was changed from Desktop to `/Users/martin/Music` with a separate configuration backup. Production indexing found 291 candidates in 2.99 seconds. |
+| Library notifications | Native recursive FSEvents, NFC path normalization, bounded streams, existing debounce and 30-second polling fallback. Dropped events and unavailable roots invalidate the index; teardown drains callbacks before releasing their state. |
+| Automatic association | FL Studio and Ableton host-process AppKit windows are sampled asynchronously on the main thread. Represented document URLs take precedence over titles; conflicting documents remain unassociated. Discovery never waits for the host UI and rejects snapshots older than two seconds. It reads no other process and requires no Accessibility, Automation or Screen Recording permission. Actual host title conventions and VST3 association remain pending real-host acceptance; no unverified Ableton suffix is stripped. |
+| DAW launcher | Versioned application bundles, native executable lookup and application icons. |
+| FL offline rendering | Native bundle executable, macOS `-E`, `-R`, `-O` arguments and running-process guard. Reads only allowlisted numeric saved settings from Image-Line's bounded XML preferences; missing/unverified settings remain Unknown. Native Empty-template probe passed WAV/MP3/OGG/FLAC. It does not certify all projects or export controls. |
+| System playback | Standalone MediaPlayer commands and Now Playing information for play/pause/stop/previous/next. Ownership begins after actual playback, persists while paused and is cleared on teardown. Plugin instances do not register commands. Physical media keys and Control Center still need acceptance. Native menu-bar/window lifecycle remains covered by fixtures; no custom Dock transport buttons were added. |
+| Readers | Real read-only audit: Statistics read 259 FLP + 32 ALS without errors, with 28 unknown FL wrapper/plugin classifications; Used Sounds read 259 FLP without errors. Ableton Used Sounds remains unsupported. Missing foreign samples and opaque plugin internals retain existing limits. |
+
+Local native validation: app **17/17**, plugin **14/14**, pinned pluginval 1.0.4
+strictness 5 **SUCCESS**, five sample rates and five block sizes. Focused
+AddressSanitizer **3/3** (Mac platform, file notifications and frontend). Both product
+binaries contain `arm64` and `x86_64`. Native component snapshots were inspected
+at minimum/normal sizes in English and Spanish, including the Mac FL app picker.
+Synthetic Cocoa tests cover ambiguous documents, Unicode, nonblocking discovery,
+stale snapshots, media registration/teardown and native window close/reopen.
+
+Evidence (local, ignored build output):
+- `out/mac-parity-app-final-tests.log`, `out/mac-parity-plugin-final-tests.log`
+- `out/mac-parity-asan-tests.log`, `out/mac-parity-asan/mac-parity-focused.xml`
+- `out/mac-parity-pluginval.log`, `out/mac-parity-final-{app,plugin}-build.log`
+- `out/mac-parity-music-search.log`, `out/mac-parity-music-readers.log`,
+  `out/mac-parity-used-sounds-real.log`, `out/mac-parity-fl-native-probe.log`
+- `out/t/9703bf8a630e/artifacts/`, `out/t/7bc8f3eee7d8/artifacts/`
+
+Local builds used deployment target **12.0** because Xcode 27.2 rejects 11.0.
+The versioned release target remains **11.0**; this work does not validate it.
+Windows native builds, Intel/Rosetta execution, older supported systems, actual
+FL Studio 26.1.7.5421 / Ableton Live 12.4.16 plugin sessions, physical audio/device
+and drag/drop acceptance remain pending. UI automation could not inspect the
+actual DAW windows; synthetic fixtures must not be interpreted as host evidence.
+All installer publication gates and paired-platform requirements remain in force.
+
+### Imported project paths — 12 November 2026
+
+Corrected filename extraction from legacy Windows drive/UNC paths during
+relocation on Mac. Native `@` and `!` directory names were already enumerated;
+Windows backslashes were being treated as part of the filename. Identity/hash
+checks, backup exclusion and ambiguous-match rejection remain enforced.
+Read-only audit of the 49 preview manifests against `Music/Proyectos` and
+`Music/Beats`: before **14 linked / 35 missing**; after **14 linked / 34 recoverable /
+1 missing**. The remaining entry is `JJ` (historical `Documents/!CURRO/JULIX/JJ/JJ.flp`);
+no matching project file was found in either root. User manifests were not changed.
+
+Universal app/VST3 builds passed; native arm64 library/index regressions passed
+in English and Spanish, and app workflow passed. Plugin association and main regression passed. Configuration
+failed once at the existing damaged-settings audio-revision assertion, then passed
+in isolation; this intermittent failure remains recorded, not resolved here.
+Evidence: `out/path-search-{app,plugin}-build.log`,
+`out/path-search-{before,after}-audit.log`, `out/path-search-after-tests.log`,
+`out/path-search-app-workflow-tests.log`, `out/path-search-plugin-tests.log`,
+`out/path-search-plugin-configuration-retry.log`. No UI strings/layout changed;
+Windows execution and Intel/Rosetta remain unvalidated in this correction.
+Installed copies were not replaced and no installer was published.
+
+### Dock reopen correction — 11 November 2026
+
+Closing the native window hides it while retaining the application. Previously,
+`AppShell::open()` worked from the menu-bar icon, but JUCE's delegate had no
+`applicationShouldHandleReopen:hasVisibleWindows:` handler to route Dock clicks
+to it. The standalone now adds that optional delegate method without replacing
+JUCE's delegate or its quit/file handlers, with a lifetime-scoped callback.
+It restores the main window even when macOS reports another window as visible,
+and rejects reopening during shutdown through the existing shell guard.
+
+Universal app rebuild and signature verification passed. Targeted native Mac
+platform/frontend suites passed **2/2** in `out/mac-dock-reopen-delegate-tests.log`.
+The fixture invokes the installed native delegate entry point after close and
+minimize. Earlier attempts to send/dispatch the full AppleEvent failed because
+the console fixture is not a registered application target; these are retained
+in `out/mac-dock-reopen-*-tests.log`. A physical Dock click is not certified by
+this fixture. The VST3 has no code changes from this correction.
+No visual controls or user-facing strings changed; EN/ES frontend regression passed.
+Apple's [reopen delegate contract](https://developer.apple.com/documentation/appkit/nsapplicationdelegate/applicationshouldhandlereopen%28_%3Ahasvisiblewindows%3A%29?language=objc)
+defines the Dock/Finder event handled here.
+
+### Windows-specific code review
+
+The platform branches in app/plugin/shared code were checked against native
+Mac equivalents. Existing implementations remain in place for POSIX device/inode
+identity, atomic replacement and `flock` recovery ownership, Mach worker completion,
+UTF-8 filesystem traversal, foreign sample-path handling, Finder reveal, Command
+shortcuts, native window chrome, CoreAudio and menu-bar close/reopen. The native
+regression suites exercise the shared library, folders/tags/search, capture,
+playback, waveform/drag preparation, recovery, settings, selected previews,
+Statistics and Used Sounds. Windows-only DACL/share-mode, COM taskbar icons,
+registry, HWND menu-region and frame hooks are platform mechanisms; their Mac
+behavior uses the native/shared implementations above rather than those APIs.
+Physical Finder/DAW drag/drop, media-key delivery and device interaction remain
+acceptance items; passing the software suites does not certify these gestures.
+The paired release Python contracts passed 11/11. The Windows PowerShell
+release-evidence fixture was updated to require the watcher suite but has not
+been executed here because PowerShell is unavailable.
+
+## Published beta6 — scope and installation
 
 The macOS package installs Remember.app in `/Applications` and the VST3 in
 `/Library/Audio/Plug-Ins/VST3`. Both binaries are universal `arm64;x86_64`, built
@@ -130,3 +231,17 @@ y recuperación de grabaciones huérfanas. Los ajustes, el idioma y la bibliotec
 se conservan. En Mac hay que asociar el proyecto manualmente; el renderizado
 offline de FL sigue siendo de Windows. AU/AAX, firma Developer ID, notarización
 y aceptación sobre el M5 Pro y los DAWs reales quedan pendientes.
+
+## Local plugin installation — 13 November 2026
+
+The installed `/Library/Audio/Plug-Ins/VST3/Remember.vst3` was the older
+10 November binary: it contained `ProjectIdentity::detectHostProject` but no
+`RememberMac::detectHostProject`. Rebuilt the current local VST3, verified both
+arm64/x86_64 slices and its ad-hoc signature, and passed pluginval strictness 5.
+Focused association, workflow capture and configuration tests passed 3/3. Logs:
+`out/mac-association-build.log`, `out/mac-association-tests.log`,
+`out/mac-association-pluginval.log`. Replaced the installed bundle and verified
+its binary SHA-256 matches the build. Preserved the previous bundle as
+`/Library/Audio/Plug-Ins/VST3/Remember.before-mac-association-20261113.backup`.
+The host must restart to load the replacement. Actual host association remains
+unverified; this is a local installation, not an installer release.

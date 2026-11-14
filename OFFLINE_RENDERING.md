@@ -3,6 +3,31 @@
 Status: investigation and implementation in progress; no complete DAW rendering support
 is implemented or certified yet. Initial target: FL Studio on Windows.
 
+## macOS development evidence — 11 November 2026
+
+Unreleased branch `codex/macos-feature-parity` adds native FL `.app` selection,
+NSBundle executable resolution, `-Eformats -R project -Odestination` arguments,
+and a process guard requiring FL to be closed. Existing staging, collision
+confirmation, cancellation and rollback behavior is shared with Windows.
+
+Saved settings are read without modification from
+`~/Library/Preferences/Image-Line/reg.xml`, under the versioned
+`HKEY_CURRENT_USER/Software/Image-Line/FL Studio <version>` keys. Only existing
+allowlisted numeric export/audio values are exposed; missing settings remain
+Unknown. XML input is bounded to 8 MiB and rejects DTD/entity declarations.
+The installed FL 2026 profile supplied 48000 Hz but no saved WAVRenderForm;
+that does not establish its other export settings.
+
+A real CLI probe using a temporary copy of the installed Empty template passed
+WAV/MP3/OGG/FLAC in 10.6506 seconds, 48 kHz stereo. WAV/OGG/FLAC decoded as
+16-bit, unlike the historical Windows probe below; MP3 decoding reports float
+samples and does not establish encoded bit depth. Evidence:
+`out/mac-parity-fl-native-probe.log`. No user project or audio was modified.
+This establishes the command/template, not equivalence of every saved setting,
+all songs, stems, MIDI, M4A or real-host cancellation. English/Spanish native
+snapshots at 640×480 and 840×720 were inspected. Native regression and validator
+evidence, toolchain limits and pending host acceptance: `MAC_COMPATIBILITY.md`.
+
 ## Required behavior
 
 - Native Remember screen with a DAW selector at the top and the selected DAW's

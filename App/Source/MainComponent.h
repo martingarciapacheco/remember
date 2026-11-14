@@ -5,6 +5,7 @@
 #include "WaveformPlayerComponent.h"
 #include "FoldersSidebarComponent.h"
 #include "DawLauncher.h"
+#include "MacMediaTransport.h"
 
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
@@ -29,6 +30,11 @@ public:
     bool taskbarPlaying() const { return player.isPlaying(); }
     bool taskbarCanPlay() const { return player.canTogglePlayback(); }
     bool taskbarHasQueue() const { return ! list.visibleEntries().isEmpty(); }
+   #if JUCE_MAC
+    MacMediaTransport::State macMediaState() const
+    { return { player.isPlaying(), player.canTogglePlayback(), taskbarHasQueue(),
+        player.playbackTitle(), player.playbackDuration(), player.playbackPosition() }; }
+   #endif
 
 private:
     void mouseDown (const juce::MouseEvent&) override;

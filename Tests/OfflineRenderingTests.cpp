@@ -22,6 +22,19 @@ void testOfflineRendering (const juce::File& root)
            "Missing FL settings presented as discovered");
     check (OfflineRendering::readFlStudioSettings ("26\\General", [] (const juce::String&) { return "1"; }).result.failed(),
            "Settings discovery escaped the selected version");
+    const auto macRegistry = root.getChildFile ("fl-reg.xml");
+    check (macRegistry.replaceWithText (R"xml(<XMLReg><Key Name="Key1"><Key Name="HKEY_CURRENT_USER"><Key Name="Software"><Key Name="Image-Line"><Key Name="FL Studio 26"><Key Name="General"><Value Name="WFBox" Type="2">0</Value><Key Name="WAVRenderForm"><Value Name="WFBox" Type="2">1</Value><Value Name="MasterFXBox" Type="2">0</Value><Value Name="IPBox" Type="2">bad</Value><Value Name="DitherBox" Type="1">1</Value></Key></Key><Key Name="Devices"><Key Name="Audio output"><Value Name="Sample rate" Type="2">48000</Value></Key></Key></Key></Key></Key></Key></Key></XMLReg>)xml"), "Cannot write Mac FL settings fixture");
+    const auto macSettings = OfflineRendering::readMacFlStudioSettings (macRegistry, "26");
+    check (macSettings.result.wasOk() && (int) macSettings.values["SampleRate"] == 48000
+        && (int) macSettings.values["WFBox"] == 1 && (int) macSettings.values["MasterFXBox"] == 0
+        && ! macSettings.values.contains ("IPBox") && ! macSettings.values.contains ("DitherBox"),
+        "Mac FL settings lost zeroes, accepted a wrong type or read outside WAVRenderForm");
+    check (OfflineRendering::readMacFlStudioSettings (macRegistry, "25").result.failed(),
+        "Mac settings leaked across FL versions");
+    check (macRegistry.replaceWithText ("<!DOCTYPE XMLReg [<!ENTITY bad SYSTEM 'file:///never-read'>]><XMLReg/>"),
+        "Cannot write unsupported XML fixture");
+    check (OfflineRendering::readMacFlStudioSettings (macRegistry, "26").result.failed(),
+        "Mac settings accepted an external entity declaration");
     const auto folder = root.getChildFile ("render sources & spaces");
     const auto child = folder.getChildFile ("subfolder");
     check (child.createDirectory().wasOk(), "Cannot create render fixture");
@@ -42,13 +55,31 @@ void testOfflineRendering (const juce::File& root)
            "Accepted non-FLP source");
     const auto exe = root.getChildFile ("FL64.exe");
     check (exe.replaceWithText ("not executable; never launched"), "Cannot write executable fixture");
+   #if JUCE_MAC
+    const auto app = root.getChildFile ("FL Studio 2026.app");
+    const auto binary = app.getChildFile ("Contents/MacOS/OsxFL");
+    check (binary.getParentDirectory().createDirectory().wasOk() && binary.replaceWithText ("fixture")
+        && app.getChildFile ("Contents/Info.plist").replaceWithText (R"plist(<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>OsxFL</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>)plist"),
+        "Cannot create FL application fixture");
+    check (OfflineRendering::flStudioSettingsVersion (app) == "26"
+        && OfflineRendering::flStudioSettingsVersion (binary) == "26", "Mac FL application version was not discovered");
+    const auto bundleCommand = OfflineRendering::flStudioCommand (app, first, folder, { "wav" });
+    check (bundleCommand.result.wasOk() && bundleCommand.arguments[0] == binary.getFullPathName()
+        && bundleCommand.arguments[1] == "-Ewav" && bundleCommand.arguments[2] == "-R",
+        "A Mac app bundle was not resolved into a native FL command");
+   #endif
     const auto previous = folder.getChildFile (first.getFileNameWithoutExtension() + ".wav");
     check (previous.replaceWithText ("preserve me"), "Cannot write existing render");
     const auto command = OfflineRendering::flStudioCommand (exe, first, folder, { "wav", "mp3", "wav" });
+   #if JUCE_MAC
+    const juce::String prefix = "-";
+   #else
+    const juce::String prefix = "/";
+   #endif
     check (command.result.wasOk() && command.arguments.size() == 5, "Cannot plan explicit render command");
-    check (command.arguments[1] == "/Ewav,mp3" && command.arguments[2] == "/R"
+    check (command.arguments[1] == prefix + "Ewav,mp3" && command.arguments[2] == prefix + "R"
            && command.arguments[3] == first.getFullPathName()
-           && command.arguments[4] == "/O" + folder.getFullPathName(), "Render arguments changed paths/scope");
+           && command.arguments[4] == prefix + "O" + folder.getFullPathName(), "Render arguments changed paths/scope");
     check (command.outputs.size() == 2 && command.existingOutputs.size() == 1
            && command.existingOutputs[0] == previous && previous.loadFileAsString() == "preserve me",
            "Planning failed to report collision or changed an existing render");
@@ -60,7 +91,7 @@ void testOfflineRendering (const juce::File& root)
     auto fake = [&] (const juce::StringArray& arguments, const OfflineRendering::Cancel&)
     {
         ++launches;
-        check (arguments.size() == 5 && arguments[2] == "/R" && arguments[3] == first.getFullPathName(),
+        check (arguments.size() == 5 && arguments[2] == prefix + "R" && arguments[3] == first.getFullPathName(),
                "Executor changed the explicit source project");
         const juce::File stage (arguments[4].substring (2));
         check (stage.getParentDirectory() == folder && stage.getFileName().startsWith (".remember-render-"),

@@ -2,6 +2,7 @@
 #include "../../Shared/LibraryStore.h"
 #include "../../Shared/ProjectIdentity.h"
 #include "../../Shared/RememberInterProcessLock.h"
+#include "../../Shared/MacIntegration.h"
 #include <filesystem>
 #include <unordered_set>
 #if JUCE_WINDOWS
@@ -74,6 +75,9 @@ FlStudioSettings readFlStudioSettings (const juce::String& version, SettingReade
                 "HKEY_CURRENT_USER\\Software\\Image-Line\\FL Studio " + version + "\\Devices\\Audio output\\Sample rate");
             return juce::WindowsRegistry::getValue (prefix + name);
         };
+#elif JUCE_MAC
+        return readMacFlStudioSettings (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+            .getChildFile ("Library/Preferences/Image-Line/reg.xml"), version);
 #else
         out.result = juce::Result::fail ("FL Studio settings discovery is not supported on this platform."); return out;
 #endif
@@ -91,6 +95,68 @@ FlStudioSettings readFlStudioSettings (const juce::String& version, SettingReade
     }
     if (out.values.isEmpty()) out.result = juce::Result::fail ("FL Studio export settings are unavailable.");
     return out;
+}
+
+FlStudioSettings readMacFlStudioSettings (const juce::File& registry, const juce::String& version)
+{
+    if (version.isEmpty() || version.length() > 3 || ! version.containsOnly ("0123456789"))
+        return readFlStudioSettings (version, [] (const juce::String&) { return juce::String{}; });
+    // Do not follow DTDs or external entities, or parse unbounded preference data.
+    juce::String text;
+    juce::FileInputStream input (registry);
+    if (input.openedOk() && input.getTotalLength() <= 8 * 1024 * 1024)
+    {
+        juce::MemoryBlock bytes;
+        input.readIntoMemoryBlock (bytes, 8 * 1024 * 1024 + 1);
+        if (bytes.getSize() <= 8 * 1024 * 1024 && input.getStatus().wasOk())
+            text = juce::String::createStringFromData (bytes.getData(), (int) bytes.getSize());
+    }
+    std::unique_ptr<juce::XmlElement> xml;
+    if (text.getNumBytesAsUTF8() <= 8 * 1024 * 1024 && ! text.containsIgnoreCase ("<!DOCTYPE")
+        && ! text.containsIgnoreCase ("<!ENTITY")) xml = juce::XmlDocument::parse (text);
+    const auto key = [] (const juce::XmlElement* parent, const juce::String& name) -> const juce::XmlElement*
+    {
+        const juce::XmlElement* found = nullptr;
+        if (parent) for (const auto* child : parent->getChildIterator())
+            if (child->hasTagName ("Key") && child->getStringAttribute ("Name") == name)
+            { if (found) return nullptr; found = child; }
+        return found;
+    };
+    const auto* node = xml && xml->hasTagName ("XMLReg") ? xml.get() : nullptr;
+    for (const auto& name : juce::StringArray { "Key1", "HKEY_CURRENT_USER", "Software", "Image-Line", "FL Studio " + version })
+        node = key (node, name);
+    const auto* render = key (key (node, "General"), "WAVRenderForm");
+    const auto* audio = key (key (node, "Devices"), "Audio output");
+    return readFlStudioSettings (version, [render, audio] (const juce::String& name)
+    {
+        const auto* parent = name == "SampleRate" ? audio : render;
+        const auto wanted = name == "SampleRate" ? juce::String ("Sample rate") : name;
+        juce::String found; int matches = 0;
+        if (parent) for (const auto* child : parent->getChildIterator())
+            if (child->hasTagName ("Value") && child->getStringAttribute ("Name") == wanted)
+            {
+                ++matches;
+                if (child->getStringAttribute ("Type") == "2") found = child->getAllSubText().trim();
+            }
+        return matches == 1 ? found : juce::String{};
+    });
+}
+
+juce::String flStudioSettingsVersion (const juce::File& application)
+{
+    auto folder = application;
+    if (folder.existsAsFile()) folder = folder.getParentDirectory();
+    for (int depth = 0; depth < 4; ++depth, folder = folder.getParentDirectory())
+    {
+        const auto name = folder.getFileNameWithoutExtension();
+        if (! name.startsWith ("FL Studio ")) continue;
+        const auto number = name.substring (10);
+        if (! number.containsOnly ("0123456789")) return {};
+        const auto version = number.getIntValue();
+        return version >= 2024 && version <= 2099 ? juce::String (version - 2000)
+             : version >= 20 && version < 100 ? number : juce::String{};
+    }
+    return {};
 }
 Sources collectProjects (const juce::File& source, bool recursive, const Cancel& cancelled)
 {
@@ -160,7 +226,12 @@ Command flStudioCommand (const juce::File& executable, const juce::File& project
     out.executable = executable; out.project = project; out.destination = destination;
     const auto fail = [&] (const char* reason)
     { out.result = juce::Result::fail (reason); return out; };
-    if (! executable.existsAsFile()) return fail ("FL Studio executable is unavailable.");
+    auto program = executable;
+   #if JUCE_MAC
+    if (program.isDirectory() && program.hasFileExtension ("app"))
+        program = RememberMac::applicationExecutable (program);
+   #endif
+    if (! program.existsAsFile()) return fail ("FL Studio executable is unavailable.");
     if (! project.existsAsFile() || ! project.hasFileExtension ("flp"))
         return fail ("Select an FL Studio project (.flp).");
     out.projectFileId = ProjectIdentity::fileId (project);
@@ -175,8 +246,13 @@ Command flStudioCommand (const juce::File& executable, const juce::File& project
         unique.addIfNotAlreadyThere (format);
     }
     // Explicit single-project rendering avoids FL's implicit folder recursion.
-    out.arguments = { executable.getFullPathName(), "/E" + unique.joinIntoString (","),
-                      "/R", project.getFullPathName(), "/O" + destination.getFullPathName() };
+   #if JUCE_MAC
+    const juce::String prefix = "-";
+   #else
+    const juce::String prefix = "/";
+   #endif
+    out.arguments = { program.getFullPathName(), prefix + "E" + unique.joinIntoString (","),
+                      prefix + "R", project.getFullPathName(), prefix + "O" + destination.getFullPathName() };
     out.formats = unique;
     for (const auto& format : unique)
     {
@@ -393,6 +469,8 @@ juce::Result requireFlStudioClosed()
             return juce::Result::fail ("Save your work and close FL Studio before starting offline rendering.");
     } while (Process32NextW (snapshot, &entry));
     return juce::Result::ok();
+#elif JUCE_MAC
+    return RememberMac::requireFlStudioClosed();
 #else
     return juce::Result::fail ("FL Studio process detection is not supported on this platform.");
 #endif

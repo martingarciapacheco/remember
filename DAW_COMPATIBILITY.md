@@ -8,6 +8,47 @@ Estados: **Implementado** = existe código; **Parcial** = tiene límites indicad
 **Pendiente** = falta implementación; **Genérico** = no necesita un lector específico.
 La validación se registra por separado; no se deduce del estado.
 
+## Desarrollo sin publicar — 11 de noviembre de 2026
+
+Rama `codex/macos-feature-parity`; la evidencia publicada de beta6 se conserva
+más abajo. Esta tabla complementa la matriz general con el estado específico de Mac.
+
+| Función de Mac | FL Studio | Ableton Live | Validación / pendiente |
+|---|---|---|---|
+| Búsqueda recursiva y vigilancia nativa | Implementado | Implementado | Music como raíz inicial; FSEvents con fallback. 291 candidatos reales en 2,99 s. |
+| Asociación automática desde el host | Parcial | Parcial | AppKit asíncrono, URL/título, rechaza ambigüedad y caché antigua. Fixtures aprobados; falta verificar ventanas reales con VST3. |
+| Apertura y descubrimiento de aplicaciones | Implementado | Implementado | Bundles versionados, ejecutable e icono nativos; falta aceptación del lanzamiento con proyectos reales. |
+| Statistics | Parcial | Implementado con límites existentes | 259 FLP + 32 ALS reales leídos sin errores; 28 clasificaciones FL desconocidas. |
+| Used Sounds | Parcial, límites existentes | Pendiente | 259 FLP leídos sin errores; no se añade lector Ableton. |
+| Renderizado offline | Parcial | Pendiente | CLI nativa: Empty en WAV/MP3/OGG/FLAC; XML de ajustes solo lectura, desconocidos explícitos. No certifica todos los controles ni canciones. |
+| Controles multimedia de la app | Genérico | Genérico | MediaPlayer/Now Playing y cierre probados con fixtures; teclas físicas/Centro de control pendientes. |
+
+App 17/17 y plugin 14/14 suites nativas aprobadas; pluginval 1.0.4 nivel 5,
+SUCCESS; AddressSanitizer focalizado 3/3 (Mac, vigilancia y frontend).
+Binarios universales; pruebas ejecutadas en arm64. Snapshots de app,
+plugin y offline revisados en inglés/español a tamaños mínimo y normal.
+Auditoría de proyectos solo en lectura; no se cambian canciones ni grabaciones.
+El perfil del usuario busca ahora en `/Users/martin/Music` con copia de seguridad
+de su configuración anterior.
+
+Logs y límites completos en `MAC_COMPATIBILITY.md`, sección de desarrollo.
+La versión local exige macOS 12 por Xcode 27.2; el objetivo de release sigue en
+11, pendiente de validación con una toolchain compatible. No se ha recompilado
+Windows ni validado Intel/Rosetta en esta tarea y no se ha publicado instalador.
+Siguen pendientes captura/recarga/asociación y arrastre en sesiones reales de
+FL Studio 26.1.7.5421 y Ableton Live 12.4.16. No se conoce todavía el formato real
+del título de Ableton; no se inventan reglas para interpretarlo.
+
+### Corrección de rutas importadas — 12 de noviembre de 2026
+
+La resolución compartida interpreta el nombre del archivo de rutas antiguas de
+Windows en Mac, incluidas carpetas `!ACABAR`, `!SAMPLES` y `!@TERMINADO`.
+Auditoría de solo lectura contra `Music/Proyectos` y `Music/Beats`: 14 entradas ya
+enlazadas, 34 recuperables y una sin archivo coincidente (`JJ`). Se conservan
+los controles de identidad, copias de seguridad y ambigüedad; no añade lectores
+ni soporte de host. Evidencia y límites de pruebas en `MAC_COMPATIBILITY.md`,
+apartado «Imported project paths». Sin publicación ni cambios en los metadatos reales.
+
 ## Plataformas — beta6
 
 Windows x64 y macOS universal (`arm64`/`x86_64`) tienen instaladores de app +
@@ -401,3 +442,13 @@ No marcar soporte a partir de la mera asociación del archivo o de la grabación
 - [PyFLP: eventos de mezclador y slots](https://github.com/demberto/PyFLP/blob/master/pyflp/mixer.py).
 - [Ejemplos ALS de descriptores VST/AU y cadenas](https://github.com/luizen/als-tools/blob/main/TEMP.txt).
 - [Ejemplo de metadatos VST3 en ALS](https://github.com/claytonwashington/hit/blob/main/VST_SYNC_SPEC.md).
+
+### Plugin instalado en Mac — 13 de noviembre de 2026
+
+El VST3 instalado todavía era el binario anterior sin detección automática Mac.
+Se ha sustituido por la compilación local universal con esa implementación,
+con copia de seguridad. Compilación, firma ad-hoc, pluginval nivel 5 y tres
+pruebas de asociación/captura/configuración aprobados; detalle en
+`MAC_COMPATIBILITY.md`. Requiere reiniciar el host. Sigue pendiente validar la
+asociación en sesiones reales de FL Studio y Ableton; no amplía la matriz de
+soporte ni constituye una publicación de instaladores.

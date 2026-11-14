@@ -2,6 +2,7 @@
 #pragma once
 #include "ProjectScanner.h"
 #include "../../Shared/RememberLookAndFeel.h"
+#include "../../Shared/MacIntegration.h"
 #if JUCE_WINDOWS
  #include <windows.h>
  #include <shellapi.h>
@@ -150,7 +151,8 @@ public:
         for (const auto& root : { juce::File ("/Applications"), juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Applications") })
             for (const auto& app : root.findChildFiles (juce::File::findDirectories, false, "*.app"))
                 for (const auto* name : { "Logic Pro", "GarageBand", "Ableton Live", "FL Studio", "REAPER", "Cubase", "Nuendo", "Studio One", "Bitwig Studio", "Pro Tools", "Reason", "Waveform", "Renoise" })
-                    if (app.getFileNameWithoutExtension().containsIgnoreCase (name)) apps.push_back ({ app.getFileNameWithoutExtension(), app, {} });
+                    if (app.getFileNameWithoutExtension().containsIgnoreCase (name))
+                        apps.push_back ({ app.getFileNameWithoutExtension(), app, RememberMac::applicationIcon (app) });
 #endif
         return apps;
     }

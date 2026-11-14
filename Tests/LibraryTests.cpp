@@ -5,6 +5,7 @@
 #include "../App/Source/SettingsDialog.h"
 #include "../App/Source/ProjectListComponent.h"
 #include "../Shared/LibraryStore.h"
+#include "../Shared/RememberLanguage.h"
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
@@ -145,6 +146,52 @@ ProjectEntry byMetadata (const juce::Array<ProjectEntry>& entries, const juce::F
 
 void testLibraryCache (const juce::File& fixtureRoot)
 {
+    const auto originalLanguage = RememberUI::language.load();
+    for (const auto language : { RememberUI::Language::English, RememberUI::Language::SpanishSpain })
+    {
+        RememberUI::setLanguage (language);
+        const auto languageRoot = fixtureRoot.getChildFile (language == RememberUI::Language::English ? "paths-en" : "paths-es");
+        const auto specialRoot = languageRoot.getChildFile ("projects @ home!");
+        const auto folder = specialRoot.getChildFile (juce::String::fromUTF8 ("!@TERMINADO/Producción !"));
+        check (folder.createDirectory().wasOk(), "Cannot create special-character search fixture");
+        const auto project = folder.getChildFile ("IN RETURN [SAMPLE].flp");
+        check (project.replaceWithText ("special-character project"), "Cannot seed special-character project");
+        ProjectIdentity::CandidateIndex lookup;
+        check (lookup.rebuild ({ specialRoot, folder }) && lookup.getCandidateCount() == 1,
+               "Special characters or overlapping roots broke enumeration");
+        check (lookup.resolve ("IN RETURN [SAMPLE]", "FL Studio") == project.getFullPathName(),
+               "Cannot find a project in folders containing @ and !");
+        check (lookup.resolve ("IN RETURN [SAMPLE]", "FL Studio", project.getFullPathName()) == project.getFullPathName(),
+               "Special characters broke an existing association");
+        const juce::String oldPath = "C:\\Users\\marti\\Desktop\\BEATS\\!@TERMINADO\\IN RETURN [SAMPLE]\\IN RETURN [SAMPLE].flp";
+        check (lookup.resolve ("Different display name", "FL Studio", oldPath) == project.getFullPathName(),
+               "Cannot recover a legacy Windows path by its original filename on Mac");
+        check (lookup.resolve ("Different display name", "FL Studio", "\\\\PC\\Music\\!@TERMINADO\\IN RETURN [SAMPLE].flp") == project.getFullPathName()
+               && lookup.resolve ("Different display name", "FL Studio", "C:/Music/!@TERMINADO/IN RETURN [SAMPLE].flp") == project.getFullPathName(),
+               "Cannot recover UNC or forward-slash Windows paths");
+        check (lookup.resolve ("IN RETURN [SAMPLE]", "FL Studio", oldPath, "other-file-id", "other-fingerprint").isEmpty(),
+               "Imported paths bypassed historical identity verification");
+        const auto library = languageRoot.getChildFile ("special-character-library");
+        const auto entry = library.getChildFile ("imported");
+        makeEntry (entry, project);
+        auto metadata = LibraryStore::readJson (entry.getChildFile ("metadata.json"));
+        metadata.getDynamicObject()->setProperty ("projectPath", oldPath);
+        metadata.getDynamicObject()->setProperty ("projectFileId", "");
+        metadata.getDynamicObject()->setProperty ("projectName", "Different display name");
+        check (LibraryStore::writeJsonAtomically (entry.getChildFile ("metadata.json"), metadata).wasOk(),
+               "Cannot seed imported manifest");
+        const auto rows = ProjectScanner::scan (library, { specialRoot }, &lookup);
+        check (rows.size() == 1 && rows[0].projectAvailable && rows[0].projectPath == project.getFullPathName()
+               && LibraryStore::readJson (entry.getChildFile ("metadata.json"))["projectPath"].toString() == project.getFullPathName(),
+               "Library scan did not persist the recovered Windows association");
+        const auto duplicate = specialRoot.getChildFile (project.getFileName());
+        check (duplicate.replaceWithText ("different project") && lookup.rebuild ({ specialRoot }),
+               "Cannot seed imported-path homonym");
+        check (lookup.resolve ("Different display name", "FL Studio", oldPath).isEmpty() && lookup.wasLastResolutionAmbiguous(),
+               "Imported Windows path guessed between homonymous projects");
+    }
+    RememberUI::setLanguage (originalLanguage);
+    std::cout << "PASS: @/! paths, overlapping roots and legacy Windows filename resolution in English and Spanish\n";
     testFlStudioBackups (fixtureRoot);
     const auto root = fixtureRoot.getChildFile ("cache-library");
     const auto projects = fixtureRoot.getChildFile ("cache-projects");

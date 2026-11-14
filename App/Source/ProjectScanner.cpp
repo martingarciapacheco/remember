@@ -328,7 +328,11 @@ static juce::Array<juce::File> rootsFromConfig (const juce::var& json)
     }
 
     if (out.isEmpty())
+       #if JUCE_MAC
+        out.add (juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+       #else
         out.add (juce::File::getSpecialLocation (juce::File::userDesktopDirectory));
+       #endif
 
     return out;
 }
